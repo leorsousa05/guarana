@@ -15,9 +15,12 @@ Status pipeline: SPECIFIED → TASKED → IMPLEMENTED → VALIDATED → SHIPPED
 | guarana:debug (optional) | **SHIPPED** | [proofs](features/guarana/proofs/debug-proofs.md) | [2026-08-21](changes/2026-08-21-debug.md) |
 | guarana:measure (optional) | **SHIPPED** | [proofs](features/guarana/proofs/measure-proofs.md) | [2026-08-21](changes/2026-08-21-measure.md) |
 
+| guarana CLI | **SHIPPED** | [spec](features/guarana/cli.md) | [2026-08-21](changes/2026-08-21-cli.md) |
+| guarana dashboard | **SHIPPED** | [spec](features/guarana/dashboard.md) | [2026-08-21](changes/2026-08-21-dashboard.md) |
+
 **DONE:** all 7 skills specified, audited, implemented, validated (worker-verify PASS per skill), shipped.
 **HUMAN FINAL GATE PASSED 2026-08-21** — evidence in `../human-gate-validation.md`; 4 observations accepted as reconciled. All 7 skills: **HUMAN-VERIFIED / CLOSED**. Build closed.
-**NEXT:** none. Optional future work: description trigger-optimization pass.
+**NEXT:** none. Optional future work: description trigger-optimization pass; npm publish of the CLI.
 **BLOCKED:** nothing.
 
 ## Index

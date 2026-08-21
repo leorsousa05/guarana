@@ -1,0 +1,13 @@
+{
+  "name": "guarana",
+  "version": "0.1.0",
+  "description": "Install/uninstall/list/update the guarana skill suite for OpenCode",
+  "bin": {
+    "guarana": "bin/guarana.js"
+  },
+  "files": [
+    "bin",
+    "cli"
+  ],
+  "license": "MIT"
+}

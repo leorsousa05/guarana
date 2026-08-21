@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-08-21 (human final gate PASSED; build closed)
+Last updated: 2026-08-21 (guarana dashboard VALIDATED — awaiting human gate)
 
 ## Per-skill status
 | Skill | Status |
@@ -12,12 +12,19 @@ Last updated: 2026-08-21 (human final gate PASSED; build closed)
 | guarana:remember | SHIPPED |
 | guarana:debug | SHIPPED (optional, trigger-only) |
 | guarana:measure | SHIPPED (optional, trigger-only) |
+| guarana CLI | SHIPPED |
+| guarana dashboard | VALIDATED |
 
 ## Current step
-Closed. Human final gate passed 2026-08-21 (see changes/2026-08-21-human-gate.md). No open work.
+Closed. Dashboard (curated Documents view, guided UX pass, decisions-needing-you proposal acceptance) + `guarana dashboard` CLI addendum: human-gated 2026-08-21 — SHIPPED (changes/2026-08-21-dashboard-design.md, changes/2026-08-21-cli.md). No open work. Optional future: npm publish of CLI; description trigger-optimization pass.
+
+## Checkpoint
+- Goal: none open.
+- Pending writes: none.
+- Budget: ADR-005 defaults.
 
 ## Proofs that exist
-Task-1 proofs for all 7 skills in `.specs/features/guarana/proofs/`; all acceptance criteria mapped; worker-verify PASS on every skill.
+Task-1 proofs for all 7 skills in `.specs/features/guarana/proofs/`; all acceptance criteria mapped; worker-verify PASS on every skill. CLI acceptance: 6/6 checks PASS (recorded in changes/2026-08-21-cli.md).
 
 ## BLOCKED
 Nothing. Budget numbers remain ADR-005 defaults pending human override (deferred Rule-0 item, recorded).
