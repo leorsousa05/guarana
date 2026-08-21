@@ -14,6 +14,13 @@ The meta-skill. The main thread holds this plus the suite index — nothing else
 4. The current feature spec in `.specs/features/guarana/`.
 Never reconstruct state from memory. Disk is truth (ADR-004).
 
+### Cold start (no `.specs/` on disk)
+If restore finds no `.specs/`, that is a signal, not an error:
+1. Do NOT fabricate a current step or restore from memory.
+2. Scaffold the initial system of record: `.specs/README.md` master tracker (DONE/NEXT/BLOCKED), `.specs/state/project-state.md` (current step, checkpoint, budgets), `.specs/decisions/ADR-*.md`.
+3. Bootstrap via Rule 0 (ADR-006): ask the human the contract questions (repo, runtime, conventions, verifier, budgets, acceptance gate); record each answer, deferred or rejected, as an ADR in `.specs/decisions/ADR-*.md`.
+Only after `.specs/` exists on disk does "disk is truth" (ADR-004) apply. Then proceed to routing (section 2).
+
 ## 2. Classify intent → route to exactly ONE skill
 | User intent | Route |
 |---|---|

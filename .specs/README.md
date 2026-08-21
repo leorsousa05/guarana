@@ -7,7 +7,7 @@ Status pipeline: SPECIFIED → TASKED → IMPLEMENTED → VALIDATED → SHIPPED
 
 | Skill | Status | Proof | Change |
 |---|---|---|---|
-| guarana:plan | **SHIPPED** | [proofs](features/guarana/proofs/plan-proofs.md) | [2026-08-21](changes/2026-08-21-plan.md) |
+| guarana:plan | **SHIPPED** | [proofs](features/guarana/proofs/plan-proofs.md) | [2026-08-21](changes/2026-08-21-plan.md) · [cold-start](changes/2026-08-21-plan-coldstart.md) |
 | guarana:build | **SHIPPED** | [proofs](features/guarana/proofs/build-proofs.md) | [2026-08-21](changes/2026-08-21-build.md) |
 | guarana:code | **SHIPPED** | [proofs](features/guarana/proofs/code-proofs.md) | [2026-08-21](changes/2026-08-21-code.md) |
 | guarana:verify | **SHIPPED** | [proofs](features/guarana/proofs/verify-proofs.md) | [2026-08-21](changes/2026-08-21-verify.md) |
@@ -20,7 +20,7 @@ Status pipeline: SPECIFIED → TASKED → IMPLEMENTED → VALIDATED → SHIPPED
 
 **DONE:** all 7 skills specified, audited, implemented, validated (worker-verify PASS per skill), shipped.
 **HUMAN FINAL GATE PASSED 2026-08-21** — evidence in `../human-gate-validation.md`; 4 observations accepted as reconciled. All 7 skills: **HUMAN-VERIFIED / CLOSED**. Build closed.
-**NEXT:** none. Optional future work: description trigger-optimization pass; npm publish of the CLI.
+**NEXT:** none. Optional future work: description trigger-optimization pass; npm publish of the CLI. Plan skill received a cold-start addendum 2026-08-21 (AC4, worker-verify PASS).
 **BLOCKED:** nothing.
 
 ## Index

@@ -16,6 +16,7 @@ Guarana has no entry point: nothing turns "a user wants something" into a routed
 1. **Routing completeness.** Given any of the 7 canonical trigger phrases (one per skill), plan's body names exactly one target skill and no second skill. Proof: checklist in plan-proofs.md mapping each trigger phrase → routed skill, by inspection of `skills/guarana/skills/plan/SKILL.md`. Demo I/O: input "a test failed and the run is oscillating" → output route `guarana:debug`.
 2. **State restoration order is fixed.** The body prescribes the exact read order README.md → state/project-state.md → decisions/* → current feature spec. Proof: grep of the body shows the four steps in that order. Demo I/O: fresh session with only `.specs/` on disk → agent restates current step without being told.
 3. **Dispatch contract.** Every dispatch instruction in the body includes (a) the verifiable condition and (b) the subagent budget from ADR-005. Proof: body inspection finds both fields in the dispatch template. Demo I/O: dispatch of worker-code includes "verifiable condition: …; budget: 8k tokens".
+4. **Cold start (no `.specs/` on disk).** Given a project with no `.specs/` directory, plan's body must not fabricate a restored state; it must detect the cold start, run Rule 0 (record the contract answers as ADRs), scaffold the initial tracker + project-state, and only then route. Proof: inspection of the cold-start branch in `skills/guarana/skills/plan/SKILL.md` shows the no-fabricate → Rule 0 → scaffold → route sequence. Demo I/O: fresh project with no `.specs/` → agent asks the Rule-0 questions and records ADRs before classifying intent.
 
 ## Demo criteria
 Runbook: present the three trigger inputs from criterion 1 in fresh contexts; accept when each routes to the stated skill and the dispatch includes condition + budget.
@@ -33,4 +34,4 @@ Frontmatter: `name: guarana:plan`; description triggering on starting any task, 
 - Internal: all six sibling skills (plan is their router).
 
 ## Definition of done
-All three acceptance criteria have written proofs in proofs/plan-proofs.md, worker-verify returned PASS, and the change is recorded in `.specs/changes/`.
+All four acceptance criteria have written proofs in proofs/plan-proofs.md, worker-verify returned PASS, and the change is recorded in `.specs/changes/`.

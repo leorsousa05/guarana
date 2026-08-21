@@ -7,3 +7,7 @@ Append-only. Proofs written BEFORE commit slices; committed proofs never altered
 - **AC2 (restoration order):** body lines 11–14 read, in order: `.specs/README.md` → `state/project-state.md` → `decisions/ADR-*.md` → current feature spec. PASS.
 - **AC3 (dispatch contract):** section 3 "Dispatch template" contains Worker, Verifiable condition, Budget (code 8k / verify 4k / debug 6k per ADR-005), State pointers. PASS.
 - worker-verify verdict: PASS (fresh-context review of body vs. spec).
+- worker-verify re-review: PASS after ordering fix — cold-start branch scaffolds `.specs/decisions/` (step 2) before writing ADRs (step 3); original AC4 condition preserved; body stays ≤150 lines / ≤2k tokens.
+
+## Task 2 — Cold-start addendum to plan/SKILL.md (2026-08-21)
+- **AC4 (cold-start bootstrap):** the restore step (section 1) gains a "Cold start (no `.specs/` on disk)" branch. It treats absent `.specs/` as a signal, states "Do NOT fabricate a current step", bootstraps via Rule 0 (ADR-006, records ADRs), scaffolds the initial tracker + project-state, and only then proceeds to routing. Evidence: body inspection of `skills/guarana/skills/plan/SKILL.md` — the cold-start branch text contains "Cold start (no `.specs/` on disk)", "Do NOT fabricate", "Rule 0", and "scaffold"; routing remains a separate section 2 reached after the branch. PASS.
