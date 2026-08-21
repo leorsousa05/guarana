@@ -1,6 +1,6 @@
 # Change: dashboard design overhaul ("ledger" direction) — 2026-08-21
 
-**Spec:** [features/guarana/dashboard.md](../features/guarana/dashboard.md) addenda (checks 17–45)
+**Spec:** [features/dashboard/dashboard.md](../features/dashboard/dashboard.md) addenda (checks 17–45)
 **Status:** SHIPPED — human final gate accepted 2026-08-21 (ledger redesign + curated Documents + UX pass + decisions panel)
 
 ## Direction

@@ -11,7 +11,7 @@ The meta-skill. The main thread holds this plus the suite index — nothing else
 1. `.specs/README.md` — master tracker (DONE/NEXT/BLOCKED).
 2. `.specs/state/project-state.md` — per-skill status, current step.
 3. `.specs/decisions/ADR-*.md` — append-only decisions.
-4. The current feature spec in `.specs/features/guarana/`.
+4. The current feature spec in `.specs/features/` (one directory per feature).
 Never reconstruct state from memory. Disk is truth (ADR-004).
 
 ### Cold start (no `.specs/` on disk)

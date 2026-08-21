@@ -11,7 +11,7 @@ Memory is on disk, not in context (hard truth 3, ADR-004). **Anything that exist
 1. `.specs/README.md`
 2. `.specs/state/project-state.md`
 3. `.specs/decisions/ADR-*.md`
-4. The current feature spec in `.specs/features/guarana/`
+4. The current feature spec in `.specs/features/` (one directory per feature)
 
 ## Write triggers (all four are MUST-write)
 1. **End of task** → update `state/project-state.md` (never mid-task).

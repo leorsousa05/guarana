@@ -6,7 +6,7 @@
 The suite needs a stable root identity used by the namespace, paths, and all specs.
 
 ## Decision
-The project name is **guarana** — final. It names the suite (`skills/guarana/`), the namespace (`guarana:*`), and the ledger feature (`.specs/features/guarana/`). Never renamed.
+The project name is **guarana** — final. It names the suite (`skills/guarana/`), the namespace (`guarana:*`), and the ledger feature (`.specs/features/`, one directory per feature: `guarana/`, `cli/`, `dashboard/`, …). Never renamed.
 
 ## Tradeoffs
 - A fixed name removes a whole class of rename churn across proofs, ADRs, and specs.

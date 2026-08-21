@@ -7,7 +7,7 @@ The model forgets between runs; only files survive (hard truth 3). Anything that
 - Status → `.specs/README.md` + `.specs/state/project-state.md`
 - Decisions → `.specs/decisions/ADR-*.md` (append-only)
 - Failures → `.specs/state/known-issues.md`
-- Specs/acceptance → `.specs/features/guarana/*`
+- Specs/acceptance → `.specs/features/*` (one directory per feature; skills under `features/guarana/`)
 - Evidence → `.specs/features/guarana/proofs/*` (append-only, written before commit)
 - Change log → `.specs/changes/*.md`
 

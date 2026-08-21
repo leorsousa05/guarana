@@ -15,12 +15,12 @@ Status pipeline: SPECIFIED → TASKED → IMPLEMENTED → VALIDATED → SHIPPED
 | guarana:debug (optional) | **SHIPPED** | [proofs](features/guarana/proofs/debug-proofs.md) | [2026-08-21](changes/2026-08-21-debug.md) |
 | guarana:measure (optional) | **SHIPPED** | [proofs](features/guarana/proofs/measure-proofs.md) | [2026-08-21](changes/2026-08-21-measure.md) |
 
-| guarana CLI | **SHIPPED** | [spec](features/guarana/cli.md) | [2026-08-21](changes/2026-08-21-cli.md) |
-| guarana dashboard | **SHIPPED** | [spec](features/guarana/dashboard.md) | [2026-08-21](changes/2026-08-21-dashboard.md) |
+| guarana CLI | **SHIPPED** | [spec](features/cli/cli.md) | [2026-08-21](changes/2026-08-21-cli.md) |
+| guarana dashboard | **SHIPPED** | [spec](features/dashboard/dashboard.md) | [2026-08-21](changes/2026-08-21-dashboard.md) |
 
 **DONE:** all 7 skills specified, audited, implemented, validated (worker-verify PASS per skill), shipped.
 **HUMAN FINAL GATE PASSED 2026-08-21** — evidence in `../human-gate-validation.md`; 4 observations accepted as reconciled. All 7 skills: **HUMAN-VERIFIED / CLOSED**. Build closed.
-**NEXT:** none. Optional future work: description trigger-optimization pass; npm publish of the CLI. Plan skill received a cold-start addendum 2026-08-21 (AC4, worker-verify PASS).
+**NEXT:** none. Optional future work: description trigger-optimization pass; npm publish of the CLI. Plan cold-start addenda (AC4–AC6) and features/ layout restructure shipped 2026-08-21 (worker-verify PASS).
 **BLOCKED:** nothing.
 
 ## Index
@@ -29,8 +29,8 @@ Status pipeline: SPECIFIED → TASKED → IMPLEMENTED → VALIDATED → SHIPPED
 - [conventions.md](conventions.md) — naming, vague-word ban, proof-before-commit
 - [glossary.md](glossary.md) — terms
 - [state/](state/) — [project-state](state/project-state.md) · [known-issues](state/known-issues.md)
-- [features/guarana/](features/guarana/) — [overview](features/guarana/overview.md) + 7 specs + [proofs/](features/guarana/proofs/) + [audits/](features/guarana/audits/)
-- [decisions/](decisions/) — ADR-001…006 (append-only)
+- [features/](features/) — [overview](features/overview.md) + [guarana/](features/guarana/) (7 specs + [proofs/](features/guarana/proofs/) + [audits/](features/guarana/audits/)) + [cli/](features/cli/) + [dashboard/](features/dashboard/)
+- [decisions/](decisions/) — ADR-001…007 (append-only)
 - [changes/](changes/) — validated change ledger
 - [archive/](archive/) — superseded artifacts
 - Runtime suite: `../skills/guarana/` · Knowledge: `../docs/reference/`

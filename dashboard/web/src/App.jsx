@@ -78,7 +78,7 @@ const escapeHtml = (s) => String(s)
   .replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;');
 
-// Internal spec-relative link target (e.g. features/guarana/plan.md).
+// Internal spec-relative link target (e.g. features/guarana/plan.md, features/cli/cli.md).
 const isSpecPath = (href) => /\.md$/i.test(String(href)) && !/^(https?:|mailto:|#|\/|data:)/i.test(String(href));
 
 const md = new Marked();
@@ -145,7 +145,7 @@ function MdLink({ text, onOpenFile, canOpen }) {
 // lives under the curated categories or is a top-level .specs doc; otherwise
 // its label renders as plain text.
 const isDocPath = (rel) =>
-  /^(changes|decisions|features\/guarana|archive)\//.test(rel) || !/\//.test(rel);
+  /^(changes|decisions|features|archive)\//.test(rel) || !/\//.test(rel);
 
 const fallbackTitle = (rel) => rel.split('/').pop().replace(/\.md$/i, '');
 
@@ -160,7 +160,9 @@ function buildGroups(tree) {
     .filter((p) => /^decisions\/ADR-\d+[^/]*\.md$/.test(p))
     .sort((a, b) => adrNum(a) - adrNum(b));
   const changes = list.filter((p) => /^changes\/[^/]+\.md$/.test(p)).sort();
-  const features = list.filter((p) => /^features\/guarana\/[^/]+\.md$/.test(p)).sort();
+  const features = list
+    .filter((p) => /^features\/[^/]+\.md$/.test(p) || /^features\/[^/]+\/[^/]+\.md$/.test(p))
+    .sort();
   const archive = list.filter((p) => /^archive\/[^/]+\.md$/.test(p)).sort();
   const foundations = list.filter((p) => /^[^/]+\.md$/.test(p)).sort();
   return [

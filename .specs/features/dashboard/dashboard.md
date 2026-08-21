@@ -82,7 +82,7 @@ User-reported defects + feature:
 - Keep ledger styling: rendered markdown styled with the same tokens (hairlines, mono, stamps where feasible are optional).
 
 ### Acceptance (addendum)
-23. `/api/specs/tree` lists ≥15 md files including decisions/ADR-001..006 and features/guarana/*.md.
+23. `/api/specs/tree` lists ≥15 md files including decisions/ADR-001..006, features/overview.md, features/guarana/*.md, features/cli/cli.md, features/dashboard/dashboard.md.
 24. `/api/specs/file?path=state/project-state.md` → 200 with content; `?path=../../etc/passwd` and `?path=../package.json` → 4xx, no content leaked.
 25. project-state + known-issues render formatted (headings, tables, bold), not raw `#`/`|`.
 26. Files view: clicking ADR-004 in the sidebar shows it formatted.
@@ -97,7 +97,7 @@ User rejected the file-browser/editor concept. Replace it: the Specs section bec
 - Documents view groups files from `/api/specs/tree` into categories by top-level path segment:
   - **Decisions** — `decisions/ADR-*.md` (list by ADR number, e.g. "ADR-001 — Project root name is guarana").
   - **Changes** — `changes/*.md` (validated change ledger).
-  - **Features** — `features/guarana/*.md` (overview + 7 skill specs; proofs/ and audits/ are NOT primary items — surface feature specs only).
+  - **Features** — feature specs under `features/` (overview + 7 skill specs in guarana/ + cli/cli.md + dashboard/dashboard.md; proofs/ and audits/ are NOT primary items — surface feature specs only).
   - **Archive** — `archive/*.md`.
   - **Overview docs** — top-level `README.md`, `project.md`, `architecture.md`, `conventions.md`, `glossary.md` grouped as "Foundations" (state/ stays in the Overview tab).
 - Each category renders as a titled block; documents shown as a clean list with a human title (derive from the ADR `#` heading if readable, else the filename minus extension and dirs), not raw file paths. No numeric "01/02" markers (records, not a sequence).

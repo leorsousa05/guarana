@@ -1,6 +1,6 @@
 # Change: guarana dashboard — 2026-08-21
 
-**Spec:** [features/guarana/dashboard.md](../features/guarana/dashboard.md)
+**Spec:** [features/dashboard/dashboard.md](../features/dashboard/dashboard.md)
 **Status:** SHIPPED — human final gate accepted 2026-08-21
 
 ## What changed
