@@ -16,7 +16,7 @@ Last updated: 2026-08-21 (guarana dashboard VALIDATED — awaiting human gate)
 | guarana dashboard | VALIDATED |
 
 ## Current step
-Closed. Dashboard (curated Documents view, guided UX pass, decisions-needing-you proposal acceptance) + `guarana dashboard` CLI addendum: human-gated 2026-08-21 — SHIPPED (changes/2026-08-21-dashboard-design.md, changes/2026-08-21-cli.md). Plus 2026-08-21 plan cold-start addendum (AC4): worker-verify PASS — SHIPPED (changes/2026-08-21-plan-coldstart.md). No open work. Optional future: npm publish of CLI; description trigger-optimization pass.
+Closed. Dashboard (curated Documents view, guided UX pass, decisions-needing-you proposal acceptance) + `guarana dashboard` CLI addendum: human-gated 2026-08-21 — SHIPPED (changes/2026-08-21-dashboard-design.md, changes/2026-08-21-cli.md). Plan cold-start addendum AC4 (changes/2026-08-21-plan-coldstart.md) and v2 AC5+AC6 no-pre-seed + legacy recovery (changes/2026-08-21-plan-coldstart-v2.md): both worker-verify PASS — SHIPPED. No open work. Optional future: npm publish of CLI; description trigger-optimization pass.
 
 ## Checkpoint
 - Goal: none open.
