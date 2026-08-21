@@ -21,3 +21,9 @@ Every feature spec states its token budget per subagent, per-run cap, and wall-c
 
 ## ASK-first gate
 The ASK-first gate (Rule 0) always precedes implementation. Unanswered items are recorded as ADRs; the record must exist before work proceeds.
+
+## Versioning
+The project version (root `package.json`, read by `cli/main.js` for `guarana --version`) is ALWAYS bumped on every shipped change. No commit that ships user-facing behavior lands without a version bump.
+
+## Git conventions
+Every commit message follows the Conventional Commits format: `<type>(<scope>): <subject>`, where `type` is one of `feat`, `fix`, `docs`, `refactor`, `perf`, `test`, `chore` (and `breaking` for backward-incompatible changes). Body lines describe the what and why, and reference the proof (worker-verify PASS) when applicable. Do not commit/push without explicit human instruction.
