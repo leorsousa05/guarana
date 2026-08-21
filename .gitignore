@@ -1,0 +1,33 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs and temp files
+*.log
+*.tmp
+tmp/
+
+# Dependencies (if tooling is added later)
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+
+# Local environment / secrets
+.env
+.env.*
+!.env.example
+
+# Local skill installs (ship source is skills/guarana/; global install lives in ~/.agents/skills/)
+.agents/
+.opencode/
+
+# Local gate evidence (cited by .specs/changes/2026-08-21-human-gate.md; kept on disk, not shipped)
+human-gate-validation.md
