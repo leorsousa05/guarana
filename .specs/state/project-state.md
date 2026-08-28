@@ -22,7 +22,6 @@ Last updated: 2026-08-22 (guarana dashboard SHIPPED — defect fixes verified)
 - Goal: Fix dashboard token tracking, NOW-panel goal display, and skill spec goal field.
 - Pending writes: none.
 - Budget: ADR-005 defaults.
-- Budget: ADR-005 defaults.
 
 ## Proofs that exist
 Task-1 proofs for all 7 skills in `.specs/features/guarana/proofs/`; all acceptance criteria mapped; worker-verify PASS on every skill. CLI acceptance: 6/6 checks PASS (recorded in changes/2026-08-21-cli.md).

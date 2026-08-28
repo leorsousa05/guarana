@@ -9,5 +9,13 @@
     "bin",
     "cli"
   ],
+  "scripts": {
+    "test": "node --test dashboard/server/lib/*.test.js plugin/*.test.mjs",
+    "test:all": "node --test '*/**/*.test.{js,mjs}'",
+    "sync-cli": "node scripts/sync-cli-bundle.mjs",
+    "check-cli": "node scripts/check-cli-bundle.mjs",
+    "build:dashboard": "cd dashboard && npm run build",
+    "build": "npm run build:dashboard && npm run sync-cli"
+  },
   "license": "MIT"
 }
