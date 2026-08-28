@@ -11,6 +11,7 @@ const specsDir = path.join(root, '.specs');
 const telemetryFile = path.join(specsDir, 'state', 'telemetry', 'events.jsonl');
 
 const app = express();
+app.use(express.json());
 
 function readJsonl(file) {
   try {
@@ -118,6 +119,53 @@ app.get('/api/specs/tracker', (_req, res) => {
   res.json(parseTracker(markdown));
 });
 
+function listSpecFiles(dir) {
+  const out = [];
+  const walk = (current, rel) => {
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const full = path.join(current, entry.name);
+      const nextRel = rel ? `${rel}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) walk(full, nextRel);
+      else if (entry.isFile() && entry.name.endsWith('.md')) out.push(nextRel);
+    }
+  };
+  walk(dir, '');
+  return out.sort();
+}
+
+app.get('/api/specs/tree', (_req, res) => {
+  let files = [];
+  try {
+    files = listSpecFiles(specsDir);
+  } catch {
+    /* no specs dir */
+  }
+  res.json({ files });
+});
+
+app.get('/api/specs/file', (req, res) => {
+  const rel = req.query.path;
+  if (typeof rel !== 'string' || rel.length === 0) return res.status(400).end();
+  if (path.isAbsolute(rel)) return res.status(400).end();
+  const root = path.resolve(specsDir);
+  const resolved = path.resolve(root, rel);
+  if (resolved !== root && !resolved.startsWith(root + path.sep)) return res.status(400).end();
+  if (!resolved.endsWith('.md')) return res.status(400).end();
+  let realTarget, realRoot;
+  try {
+    realTarget = fs.realpathSync(resolved);
+    realRoot = fs.realpathSync(root);
+  } catch {
+    return res.status(404).end();
+  }
+  if (realTarget !== realRoot && !realTarget.startsWith(realRoot + path.sep)) return res.status(400).end();
+  try {
+    return res.type('text/markdown').send(fs.readFileSync(realTarget, 'utf8'));
+  } catch {
+    return res.status(404).end();
+  }
+});
+
 app.get('/api/specs/state', (_req, res) => {
   const read = (name) => {
     try {
@@ -130,6 +178,83 @@ app.get('/api/specs/state', (_req, res) => {
     projectState: read('project-state.md'),
     knownIssues: read('known-issues.md'),
   });
+});
+
+const decisionDirs = [
+  path.join(specsDir, 'decisions'),
+  path.join(specsDir, 'features', 'guarana'),
+];
+const pendingLineRe = /^\s*-\s*\*\*Decision:\*\*\s*pending:\s*(.*)$/i;
+const resolvedLineRe = /^\s*-\s*\*\*Resolved/i;
+
+app.get('/api/decisions/pending', (_req, res) => {
+  const decisions = [];
+  for (const dir of decisionDirs) {
+    let names = [];
+    try {
+      names = fs.readdirSync(dir).filter((n) => n.endsWith('.md'));
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      const full = path.join(dir, name);
+      let text;
+      try {
+        text = fs.readFileSync(full, 'utf8');
+      } catch {
+        continue;
+      }
+      const rel = path.relative(root, full);
+      const lines = text.split('\n');
+      const alreadyResolved = lines.some((l) => resolvedLineRe.test(l));
+      for (const line of lines) {
+        const m = line.match(pendingLineRe);
+        if (!m || alreadyResolved) continue;
+        decisions.push({ file: rel, statement: m[1].trim() });
+      }
+    }
+  }
+  res.json({ decisions });
+});
+
+app.post('/api/decisions/resolve', (req, res) => {
+  const body = req.body || {};
+  const { file, statement, outcome } = body;
+  if (outcome !== 'accepted' && outcome !== 'rejected') return res.status(400).end();
+  if (typeof file !== 'string' || file.length === 0) return res.status(400).end();
+  if (typeof statement !== 'string') return res.status(400).end();
+  if (path.isAbsolute(file)) return res.status(400).end();
+  if (!file.endsWith('.md')) return res.status(400).end();
+  const resolved = path.resolve(root, file);
+  const allowedRoots = decisionDirs.map((d) => path.resolve(d));
+  if (!allowedRoots.some((r) => resolved === r || resolved.startsWith(r + path.sep))) {
+    return res.status(400).end();
+  }
+  let realTarget, realRoots;
+  try {
+    realTarget = fs.realpathSync(resolved);
+    realRoots = allowedRoots.map((r) => fs.realpathSync(r));
+  } catch {
+    return res.status(404).end();
+  }
+  if (!realRoots.some((r) => realTarget === r || realTarget.startsWith(r + path.sep))) {
+    return res.status(400).end();
+  }
+  let text;
+  try {
+    text = fs.readFileSync(realTarget, 'utf8');
+  } catch {
+    return res.status(404).end();
+  }
+  const lines = text.split('\n');
+  const hasPending = lines.some((l) => pendingLineRe.test(l));
+  const alreadyResolved = lines.some((l) => resolvedLineRe.test(l));
+  if (alreadyResolved || !hasPending) return res.status(409).end();
+  const today = new Date().toISOString().slice(0, 10);
+  const addition = `- **Resolved (${today}):** ${outcome} — via dashboard.`;
+  const sep = text.endsWith('\n') ? '' : '\n';
+  fs.appendFileSync(realTarget, `${sep}${addition}\n`);
+  res.json({ ok: true });
 });
 
 // Serve built frontend.

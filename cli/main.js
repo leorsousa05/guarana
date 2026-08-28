@@ -24,7 +24,7 @@ Usage:
   guarana update [--project]      Re-install from the CLI's bundled skills
   guarana plugin install [--project]    Install the telemetry plugin
   guarana plugin uninstall [--project]  Remove the telemetry plugin
-  guarana dashboard [--port N] [--no-open]  Start the guarana dashboard and open it in the browser
+  guarana web [--port N] [--no-open]  Start the guarana dashboard and open it in the browser
   guarana --help                  Show this help
   guarana --version               Show version
 
@@ -225,7 +225,7 @@ function main(args) {
     return;
   }
 
-  if (cmd === 'dashboard') {
+  if (cmd === 'web') {
     dashboard(rest.slice(1));
     return;
   }

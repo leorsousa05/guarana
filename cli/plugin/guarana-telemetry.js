@@ -66,11 +66,20 @@ export const GuaranaTelemetry = async ({ directory }) => {
       const sid =
         part.sessionID || props.sessionID || (event && event.sessionID);
       if (sid) ev.sessionID = String(sid);
-      // record only fields that actually exist
-      if (part.tokens != null && typeof part.tokens === "object") {
-        ev.tokens = {};
-        for (const k of ["input", "output", "reasoning", "cache", "total"]) {
-          if (part.tokens[k] != null) ev.tokens[k] = part.tokens[k];
+      // record only fields that actually exist; dashboard aggregates a numeric total
+      if (part.tokens != null) {
+        if (typeof part.tokens === "number") {
+          ev.tokens = part.tokens;
+        } else if (typeof part.tokens === "object") {
+          if (typeof part.tokens.total === "number") {
+            ev.tokens = part.tokens.total;
+          } else {
+            let total = 0;
+            for (const k of ["input", "output", "reasoning", "cache"]) {
+              if (typeof part.tokens[k] === "number") total += part.tokens[k];
+            }
+            if (total > 0) ev.tokens = total;
+          }
         }
       }
       if (part.cost != null) ev.cost = part.cost;

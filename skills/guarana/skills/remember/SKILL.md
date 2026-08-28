@@ -21,7 +21,7 @@ Memory is on disk, not in context (hard truth 3, ADR-004). **Anything that exist
 
 ## Silent context truncation
 Contexts truncate without warning. Defense:
-- **Checkpoint:** at each stage boundary, append open facts (current goal, condition, budget remaining, pending writes) to a checkpoint block in `state/project-state.md`.
+- **Checkpoint:** at each stage boundary, append open facts (current goal as `- Goal: <goal>` or `- Goal: none`, condition, budget remaining, pending writes) to a checkpoint block in `state/project-state.md`.
 - **Detect:** on restore, compare expected checkpoint (from your run position) with what's on disk.
 - **Recover:** on mismatch or gap, re-read from disk. NEVER reconstruct missing facts from memory.
 

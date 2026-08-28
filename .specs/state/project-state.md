@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-08-21 (guarana dashboard VALIDATED — awaiting human gate)
+Last updated: 2026-08-22 (guarana dashboard SHIPPED — defect fixes verified)
 
 ## Per-skill status
 | Skill | Status |
@@ -16,11 +16,12 @@ Last updated: 2026-08-21 (guarana dashboard VALIDATED — awaiting human gate)
 | guarana dashboard | VALIDATED |
 
 ## Current step
-Closed. Dashboard (curated Documents view, guided UX pass, decisions-needing-you proposal acceptance) + `guarana dashboard` CLI addendum: human-gated 2026-08-21 — SHIPPED (changes/2026-08-21-dashboard-design.md, changes/2026-08-21-cli.md). Plan cold-start addenda AC4 (changes/2026-08-21-plan-coldstart.md) and v2 AC5+AC6 no-pre-seed + legacy recovery (changes/2026-08-21-plan-coldstart-v2.md): worker-verify PASS — SHIPPED. features/ layout restructured to per-feature dirs (changes/2026-08-21-features-layout.md): worker-verify PASS (9/9) — SHIPPED. No open work. Optional future: npm publish of CLI; description trigger-optimization pass.
+**Closed.** Dashboard defects fixed and verified: token tracking (plugin emits numeric totals), NOW-panel goal display (renders in empty and populated states), skill spec goal field (`guarana:plan` and `guarana:remember` now mandate a `- Goal:` checkpoint). Worker-verify PASS.
 
 ## Checkpoint
-- Goal: none open.
+- Goal: Fix dashboard token tracking, NOW-panel goal display, and skill spec goal field.
 - Pending writes: none.
+- Budget: ADR-005 defaults.
 - Budget: ADR-005 defaults.
 
 ## Proofs that exist
