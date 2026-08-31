@@ -120,4 +120,43 @@ describe('GuaranaTelemetry', () => {
       assert.equal(ev.project, projectName());
     });
   });
+
+  describe('tool result error detection', () => {
+    it('flags object { error } results as ok:false with the message', async () => {
+      await api['tool.execute.after'](
+        { tool: 'memory_save_decision', sessionID: 'e1' },
+        { error: 'memory engine not available' }
+      );
+      const ev = readEvents()[0];
+      assert.equal(ev.ok, false);
+      assert.equal(ev.error, 'memory engine not available');
+    });
+
+    it('flags JSON-string { error } results (custom tool boundary) as ok:false', async () => {
+      await api['tool.execute.after'](
+        { tool: 'memory_save_decision', sessionID: 'e2' },
+        { output: JSON.stringify({ error: 'memory engine not available' }) }
+      );
+      const ev = readEvents()[0];
+      assert.equal(ev.ok, false);
+      assert.equal(ev.error, 'memory engine not available');
+    });
+
+    it('treats a non-error JSON-string result as ok:true', async () => {
+      await api['tool.execute.after'](
+        { tool: 'memory_save_decision', sessionID: 'e3' },
+        { output: JSON.stringify({ id: 'mem-x', status: 'confirmed' }) }
+      );
+      const ev = readEvents()[0];
+      assert.equal(ev.ok, true);
+      assert.equal(ev.error, undefined);
+    });
+
+    it('treats a plain string result as ok:true', async () => {
+      await api['tool.execute.after']({ tool: 'bash', sessionID: 'e4' }, { output: 'all good' });
+      const ev = readEvents()[0];
+      assert.equal(ev.ok, true);
+      assert.equal(ev.error, undefined);
+    });
+  });
 });

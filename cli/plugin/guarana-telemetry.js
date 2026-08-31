@@ -59,8 +59,35 @@ export const GuaranaTelemetry = async ({ directory }) => {
     }
   };
 
+  // Extract an error message from a tool result, whether the result is a plain
+  // object {error} or a JSON-string result (custom tools return strings).
+  // Returns null when the tool succeeded. Never throws.
+  function resultError(output) {
+    if (output == null) return null;
+    if (typeof output === "object") {
+      if (output.error != null) return String(output.error);
+      // Custom tool results may nest the value under .output / .result.
+      if (output.output != null) return resultError(output.output);
+      if (output.result != null) return resultError(output.result);
+      return null;
+    }
+    if (typeof output === "string") {
+      const s = output.trim();
+      if (s.startsWith("{")) {
+        try {
+          const o = JSON.parse(s);
+          if (o && o.error != null) return String(o.error);
+        } catch {
+          /* not JSON — treat as success */
+        }
+      }
+    }
+    return null;
+  }
+
   const recordTool = (input, output) => {
     try {
+      const error = resultError(output);
       const ev = {
         ts: Date.now(),
         type: "tool",
@@ -69,9 +96,9 @@ export const GuaranaTelemetry = async ({ directory }) => {
           (input && input.sessionID) ||
           (output && output.sessionID) ||
           "unknown",
-        ok: !(output && output.error),
+        ok: !error,
       };
-      if (output && output.error != null) ev.error = String(output.error);
+      if (error) ev.error = error;
       append(ev);
     } catch (err) {
       append({ ts: Date.now(), type: "telemetry-error", error: String(err) });

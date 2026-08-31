@@ -98,9 +98,13 @@ async function run(args) {
       const nodes = graph.listNodes(vaultDir);
       const edges = graph.listEdges(vaultDir);
       const drafts = nodes.filter((n) => n.status === 'draft').length;
+      const cfg = vault.loadConfig(vaultDir);
       console.log(`vault: ${vaultDir}`);
       console.log(`nodes: ${nodes.length} (${drafts} draft, ${nodes.length - drafts} confirmed)`);
       console.log(`edges: ${edges.length}`);
+      if (cfg.maxNodes != null && nodes.length > cfg.maxNodes) {
+        console.log(`WARNING: node count (${nodes.length}) exceeds maxNodes (${cfg.maxNodes}). Run \`guarana memory compact\` or \`guarana memory prune\`.`);
+      }
       break;
     }
     case 'search': {

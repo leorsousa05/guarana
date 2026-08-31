@@ -3,14 +3,30 @@
 import { listNodes } from "./graph.js";
 import { loadConfig } from "./vault.js";
 
-const tokenize = (text) =>
-  String(text)
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((t) => t.length > 1);
+// Unicode-aware, multilingual (PT/EN) tokenizer. Keeps letters+digits in any
+// script (\p{L}/\p{N}); also folds diacritics to ASCII so "resolução" and
+// "resolucao" match each other. Both token streams are unioned and deduped.
+const foldDiacritics = (s) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+const tokenize = (text) => {
+  const s = String(text).toLowerCase();
+  const raw = s.match(/[\p{L}\p{N}]+/gu) || [];
+  const folded = foldDiacritics(s).match(/[a-z0-9]+/g) || [];
+  return Array.from(new Set([...raw, ...folded])).filter((t) => t.length > 1);
+};
 
 const nodeText = (n) =>
-  [n.intent, n.summary, (n.tags || []).join(" ")].filter(Boolean).join(" ");
+  [
+    n.intent,
+    n.summary,
+    n.decision,
+    n.input,
+    n.output,
+    (n.tags || []).join(" "),
+    (n.rejectedAlternatives || []).join(" "),
+  ]
+    .filter(Boolean)
+    .join(" ");
 
 function cosine(a, b) {
   let dot = 0;
@@ -41,7 +57,20 @@ function tfidfRank(query, docs) {
   return docs.map((d, i) => ({ node: d.node, score: cosine(qv, vec(corpus[i])) }));
 }
 
-async function providerRank(providerName, query, docs) {
+// Embedding providers must be explicit, reviewable identifiers — never an
+// arbitrary filesystem path or bare module name resolved from runtime config
+// (which would let config.json stage arbitrary code via import()). Built-ins
+// are registered here; anything else is ignored (falls back to TF-IDF).
+const EMBEDDING_PROVIDERS = new Set([
+  // e.g. "builtin/count-vectors" — none shipped yet; the seam is the contract.
+]);
+
+function providerRank(providerName, query, docs) {
+  const modValid = EMBEDDING_PROVIDERS.has(providerName);
+  return modValid ? providerEmbed(providerName, query, docs) : null;
+}
+
+async function providerEmbed(providerName, query, docs) {
   const mod = await import(providerName);
   const embed = mod.embed || (mod.default && mod.default.embed);
   if (typeof embed !== "function") throw new Error("provider has no embed()");
@@ -75,9 +104,10 @@ export async function searchVault(vaultDir, opts = {}) {
   let ranked;
   if (query && docs.length) {
     const provider = loadConfig(vaultDir).embeddingProvider;
-    if (provider) {
+    if (provider && EMBEDDING_PROVIDERS.has(provider)) {
       try {
-        ranked = await providerRank(provider, query, docs);
+        const r = await providerRank(provider, query, docs);
+        ranked = r || tfidfRank(query, docs);
       } catch {
         ranked = tfidfRank(query, docs); // fall back on any provider error
       }

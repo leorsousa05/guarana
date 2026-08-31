@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-08-31 (memory final gate PASSED — fresh-session resume scenario recovered decisions/rejected alternatives/bug via explicit memory_get_context_for_task)
+Last updated: 2026-08-31 (memory hardening/enhancement batch applied — telemetry ok-flag, atomic writes, provider allowlist, unicode tokenizer, maxNodes, CLI tests)
 
 ## Per-skill status
 | Skill | Status |
@@ -14,19 +14,16 @@ Last updated: 2026-08-31 (memory final gate PASSED — fresh-session resume scen
 | guarana:measure | SHIPPED (optional, trigger-only) |
 | guarana CLI | SHIPPED |
 | guarana dashboard | VALIDATED |
-| guarana memory | **FINAL GATE PASSED** (6/6 slices + deployability fix + live resume verified) |
+| guarana memory | **FINAL GATE PASSED** + hardening batch applied |
 
 ## Current step
-**Memory final gate PASSED (2026-08-31, fresh session).** With the fixed plugin loaded, the end-to-end resume scenario succeeded:
-- `memory_save_decision` → confirmed node persisted (deployability fix decision, id `mem-1788214736792-...`).
-- Second confirmed node recorded the surfaced deployability bug (`mem-1788214742841-...`).
-- `memory_get_context_for_task` (task: installed memory tools → engine not available) returned a bounded subgraph from disk recovering **both decisions w/ rationale + rejected alternatives + prior-bug content**, drafts excluded, no `"memory engine not available"`. Live installed plugin resolves `../memory` correctly.
+**Memory hardening/enhancement (2026-08-31).** After the final gate closed, applied a robustness/security/usability batch (details in `.specs/changes/2026-08-31-memory-hardening.md`): telemetry now flags `ok:false` on tool errors (fixes the masking that hid the deploy bug); atomic JSONL writes; embedding-provider allowlist (no arbitrary `import()`); unicode/multilingual tokenizer with diacritic folding; `maxNodes` growth warning; full CLI command test coverage; at-rest plaintext caveat documented. `npm test` 112/112, `check-cli` PASS, engine re-deployed. Version 0.6.2.
 
-Remaining (now the close-out): version bump (ADR-007, 0.6.0 → 0.6.1) + commit the fix + update memory.md status/acceptance + human close of the final gate + ADR if warranted.
+**Pending:** commit the batch (ADR-007, uncommitted); human review.
 
 ## Checkpoint
-- Goal: none (gate passed). Close out: version bump (ADR-007) + commit fix + mark memory feature FINAL-GATE-PASSED / SHIPPED in tracker + human sign-off.
-- Pending writes: version bump + ADR + tracker update + commit.
+- Goal: none (feature closed). Commit the hardening batch + engine upgrade if desired.
+- Pending writes: none (change ledger + state updated).
 - Budget: ADR-005 defaults.
 
 ## Per-skill status

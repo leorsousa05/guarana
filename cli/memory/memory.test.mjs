@@ -12,6 +12,7 @@ import {
   importVault,
   paths,
   readJsonl,
+  writeJsonl,
 } from "./vault.js";
 import {
   addNode,
@@ -69,6 +70,20 @@ describe("vault lifecycle", () => {
     assert.equal(cfg.compactionThreshold, 5);
     assert.equal(cfg.embeddingProvider, null);
     assert.equal(cfg.capture.enabled, true);
+  });
+
+  it("writeJsonl is atomic (no stray temp files; content replaced cleanly)", () => {
+    const p = paths(vaultDir).nodes;
+    writeJsonl(p, [{ id: "a", ts: 1 }]);
+    assert.equal(readJsonl(p).length, 1);
+    // Overwrite via the read-modify-write path many times; must never tear.
+    for (let i = 0; i < 20; i++) {
+      const current = readJsonl(p).map((r) => ({ ...r, bump: i }));
+      writeJsonl(p, current);
+    }
+    assert.ok(readJsonl(p).every((r) => r.bump === 19));
+    const leftovers = fs.readdirSync(path.dirname(p)).filter((f) => f.includes(".tmp"));
+    assert.deepEqual(leftovers, []);
   });
 });
 
@@ -197,6 +212,34 @@ describe("search", () => {
     assert.ok(res.length >= 1);
     assert.ok(res.every((n) => n.status === "confirmed"));
   });
+
+  it("never imports an unallowlisted embedding provider" + " — only allowlisted ids resolve", async () => {
+    // Set embeddingProvider to a module that, if imported, would drop a marker
+    // file. The allowlist must prevent the import, so the marker never appears.
+    const boom = path.join(tmpDir, "boom.mjs");
+    fs.writeFileSync(boom, `import fs from "node:fs";\nfs.writeFileSync("${path.join(tmpDir, "IMPORTED")}","x");\nexport const embed = async () => [];\n`);
+    fs.writeFileSync(paths(vaultDir).config, JSON.stringify({ embeddingProvider: boom }));
+    await searchVault(vaultDir, { query: "JSONL" });
+    assert.ok(!fs.existsSync(path.join(tmpDir, "IMPORTED")), "provider module was imported — security bypass");
+  });
+
+  it("tokenizes accented content so folded and accented queries both match", async () => {
+    const hash = projectHashFor(tmpDir);
+    createNode(vaultDir, {
+      type: "decision",
+      status: "confirmed",
+      ts: 1,
+      intent: "escolhemos usar resolução e armazenamento próprio",
+      summary: "decisão sobre resolução",
+      tags: ["pt"],
+      projectHash: hash,
+    });
+    const byFold = await searchVault(vaultDir, { query: "resolucao" });
+    assert.ok(byFold.length >= 1);
+    assert.equal(byFold[0].intent.includes("resolução"), true, "folded query should hit accented node");
+    const byAccent = await searchVault(vaultDir, { query: "resolucão armazenamento" });
+    assert.ok(byAccent.length >= 1);
+  });
 });
 
 describe("security", () => {
@@ -270,6 +313,22 @@ describe("security", () => {
     assert.ok(r.node.input.includes("[REDACTED]"));
     const onDisk = fs.readFileSync(paths(vaultDir).nodes, "utf8");
     assert.ok(!onDisk.includes(secret));
+  });
+
+  it("export after memory_save_decision never contains raw secrets", async () => {
+    const secret = "supersecretvalue123";
+    const { memorySaveDecision } = await import("./tools.js");
+    await memorySaveDecision(vaultDir, {
+      intent: "called api",
+      decision: `the returned key was api_key=${secret}, rotated next day`,
+      rejectedAlternatives: [],
+      tags: ["sec"],
+      author: "agent",
+    });
+    const outFile = path.join(tmpDir, "sec-export.json");
+    exportVault(vaultDir, outFile);
+    const text = fs.readFileSync(outFile, "utf8");
+    assert.ok(!text.includes(secret));
   });
 });
 

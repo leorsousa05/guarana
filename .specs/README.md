@@ -21,7 +21,7 @@ Status pipeline: SPECIFIED → TASKED → IMPLEMENTED → VALIDATED → SHIPPED
 
 **DONE:** all 7 skills specified, audited, implemented, validated (worker-verify PASS per skill), shipped. Memory feature **closed** — 6/6 slices + deployability fix + human final gate PASSED (end-to-end resume recovered decisions/rejected alternatives/bug via explicit memory tool calls).
 **HUMAN FINAL GATE PASSED 2026-08-21** — evidence in `../human-gate-validation.md`; 4 observations accepted as reconciled. All 7 skills: **HUMAN-VERIFIED / CLOSED**. Build closed.
-**NEXT:** version bump (ADR-007) + commit for the memory deployability fix; then human close of memory final gate + optional capacity review of ADR-005 budgets.
+**NEXT:** memory hardening/enhancement batch applied (telemetry ok-flag, atomic writes, provider allowlist, unicode tokenizer, maxNodes, CLI tests) — see [change](changes/2026-08-31-memory-hardening.md). Pending commit. Prior: version bump (ADR-007) + commit for the memory deployability fix.
 **BLOCKED:** nothing.
 
 ## Index

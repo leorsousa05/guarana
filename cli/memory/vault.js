@@ -5,7 +5,8 @@ import os from "node:os";
 
 export const DEFAULT_CONFIG = {
   compactionThreshold: 1000,
-  embeddingProvider: null,
+  embeddingProvider: null, // allowlisted ids only (see search.js EMBEDDING_PROVIDERS)
+  maxNodes: 20000, // soft warning cap for `guarana memory status`; null disables
   capture: { enabled: true },
 };
 
@@ -35,7 +36,19 @@ export function readJsonl(file) {
 }
 
 export function writeJsonl(file, rows) {
-  fs.writeFileSync(file, rows.map((r) => JSON.stringify(r)).join("\n") + (rows.length ? "\n" : ""), "utf8");
+  // Atomic replace: write to a temp file in the same directory, then rename
+  // over the target. Protects against partial/torn writes (crash mid-write,
+  // concurrent reader seeing a truncated buffer). rename() is atomic on a
+  // single filesystem.
+  const dir = path.dirname(file);
+  const tmp = path.join(
+    dir,
+    `.${path.basename(file)}.${process.pid}.${Date.now()}.tmp`
+  );
+  const content =
+    rows.map((r) => JSON.stringify(r)).join("\n") + (rows.length ? "\n" : "");
+  fs.writeFileSync(tmp, content, "utf8");
+  fs.renameSync(tmp, file);
 }
 
 function deepMerge(base, over) {
@@ -90,6 +103,9 @@ export function exportVault(vaultDir, outFile) {
   const data = {
     version: 1,
     exportedAt: new Date().toISOString(),
+    // CAVEAT (ADR-010): the vault stores memory at rest in PLAINTEXT JSONL.
+    // Exports inherit that. No encryption or key material is applied here;
+    // secrets are rejected/redacted at capture time (security.js), never stored.
     nodes: readJsonl(p.nodes),
     edges: readJsonl(p.edges),
   };
