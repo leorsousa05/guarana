@@ -16,18 +16,19 @@ function assertGuard(target, action) {
   process.exit(1);
 }
 
-// Marker present in every guarana-authored version of the telemetry plugin.
+// Markers present in every guarana-authored version of each plugin.
 const PLUGIN_MARKER = '// guarana telemetry plugin';
+const MEMORY_PLUGIN_MARKER = '// guarana memory plugin';
 
 // Plugin guard: a target file is "guarana-installed" iff it is byte-identical
 // to the current bundle OR carries the guarana marker header (i.e. an older
 // guarana version). Files without the marker are foreign and never touched.
-function pluginIsOurs(target, bundlePath) {
+function pluginIsOurs(target, bundlePath, marker = PLUGIN_MARKER) {
   if (!fs.existsSync(target)) return false;
   const a = fs.readFileSync(target);
   const b = fs.readFileSync(bundlePath);
   if (a.length === b.length && a.equals(b)) return true;
-  return a.toString('utf8', 0, 512).includes(PLUGIN_MARKER);
+  return a.toString('utf8', 0, 512).includes(marker);
 }
 
-module.exports = { assertGuard, pluginIsOurs, STAMP };
+module.exports = { assertGuard, pluginIsOurs, STAMP, PLUGIN_MARKER, MEMORY_PLUGIN_MARKER };

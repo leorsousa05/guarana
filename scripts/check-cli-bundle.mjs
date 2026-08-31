@@ -16,8 +16,10 @@ const root = path.resolve(__dirname, '..');
 const pairs = [
   ['skills/guarana', 'cli/skills/guarana'],
   ['plugin/guarana-telemetry.js', 'cli/plugin/guarana-telemetry.js'],
+  ['plugin/guarana-memory.js', 'cli/plugin/guarana-memory.js'],
   ['dashboard/server', 'cli/dashboard/server'],
   ['dashboard/web/dist', 'cli/dashboard/web/dist'],
+  ['memory', 'cli/memory'],
 ];
 
 let ok = true;

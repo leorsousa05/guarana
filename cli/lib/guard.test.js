@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { pluginIsOurs } = require('./guard.js');
+const { pluginIsOurs, MEMORY_PLUGIN_MARKER } = require('./guard.js');
 
 const BUNDLE_TEXT = '// guarana telemetry plugin (Component A)\n// current bundle\n';
 const OLD_VERSION_TEXT = '// guarana telemetry plugin (Component A)\n// older version, different bytes\n';
@@ -42,5 +42,15 @@ describe('pluginIsOurs', () => {
   it('rejects a foreign file without the marker', () => {
     fs.writeFileSync(target, FOREIGN_TEXT, 'utf8');
     assert.equal(pluginIsOurs(target, bundle), false);
+  });
+
+  it('accepts an older memory plugin version carrying the memory marker', () => {
+    fs.writeFileSync(target, '// guarana memory plugin (Component B)\n// older version\n', 'utf8');
+    assert.equal(pluginIsOurs(target, bundle, MEMORY_PLUGIN_MARKER), true);
+  });
+
+  it('rejects a telemetry-marked file when checking the memory marker', () => {
+    fs.writeFileSync(target, OLD_VERSION_TEXT, 'utf8');
+    assert.equal(pluginIsOurs(target, bundle, MEMORY_PLUGIN_MARKER), false);
   });
 });

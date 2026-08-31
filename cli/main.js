@@ -10,6 +10,7 @@ const COMMANDS = {
   update: require('./commands/update.js'),
   plugin: require('./commands/plugin.js'),
   web: require('./commands/web.js'),
+  memory: require('./commands/memory.js'),
 };
 
 function main(args) {

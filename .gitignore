@@ -37,3 +37,4 @@ human-gate-validation.md
 
 # Runtime telemetry (produced by the plugin during runs; not source)
 .specs/state/telemetry/
+.guarana/memory/

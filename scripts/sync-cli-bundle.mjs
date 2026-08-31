@@ -37,8 +37,10 @@ function copyFile(src, dest) {
 const mappings = [
   { from: 'skills/guarana', to: 'cli/skills/guarana' },
   { from: 'plugin/guarana-telemetry.js', to: 'cli/plugin/guarana-telemetry.js' },
+  { from: 'plugin/guarana-memory.js', to: 'cli/plugin/guarana-memory.js' },
   { from: 'dashboard/server', to: 'cli/dashboard/server' },
   { from: 'dashboard/web/dist', to: 'cli/dashboard/web/dist' },
+  { from: 'memory', to: 'cli/memory' },
 ];
 
 for (const { from, to } of mappings) {

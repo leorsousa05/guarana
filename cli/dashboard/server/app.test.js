@@ -4,6 +4,8 @@ import { createApp } from './app.js';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
+import { initVault } from '../../memory/vault.js';
+import { createNode } from '../../memory/graph.js';
 
 describe('GET /api/telemetry/stream (SSE)', () => {
   let tmp;
@@ -78,5 +80,105 @@ describe('GET /api/telemetry/stream (SSE)', () => {
 
     controller.abort();
     await pump.catch(() => {});
+  });
+});
+
+describe('GET/POST /api/memory', () => {
+  let tmp;
+  let server;
+  let base;
+
+  beforeEach(async () => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-memapp-'));
+    const vaultDir = initVault(tmp);
+    createNode(vaultDir, {
+      type: 'decision',
+      status: 'confirmed',
+      intent: 'dash decision',
+      summary: 'confirmed decision for dashboard',
+    });
+    createNode(vaultDir, {
+      type: 'atom',
+      status: 'draft',
+      intent: 'draft leak check',
+      summary: 'must not appear in search/summary/graph',
+    });
+    const app = createApp({ root: tmp, distDir: path.join(tmp, 'dist') });
+    await new Promise((resolve) => {
+      server = app.listen(0, () => resolve());
+    });
+    base = `http://localhost:${server.address().port}`;
+  });
+
+  afterEach(async () => {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('summary returns correct counts and never exposes drafts', async () => {
+    const res = await fetch(`${base}/api/memory/summary`);
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(body.nodes.total, 2);
+    assert.equal(body.nodes.confirmed, 1);
+    assert.equal(body.nodes.draft, 1);
+    assert.equal(body.nodes.byType.decision, 1);
+  });
+
+  it('search returns only confirmed matches', async () => {
+    const res = await fetch(`${base}/api/memory/search?q=decision`);
+    const body = await res.json();
+    assert.equal(body.results.some((n) => n.intent === 'dash decision'), true);
+    assert.equal(body.results.some((n) => n.intent === 'draft leak check'), false);
+  });
+
+  it('graph returns bounded confirmed nodes only', async () => {
+    const res = await fetch(`${base}/api/memory/graph?limit=10`);
+    const body = await res.json();
+    assert.equal(body.nodes.length, 1);
+    assert.equal(body.nodes.some((n) => n.intent === 'draft leak check'), false);
+  });
+
+  it('drafts lists draft nodes and review confirms them', async () => {
+    const listRes = await fetch(`${base}/api/memory/drafts`);
+    const listBody = await listRes.json();
+    assert.equal(listBody.drafts.length, 1);
+    const id = listBody.drafts[0].id;
+
+    const reviewRes = await fetch(`${base}/api/memory/review`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, action: 'confirm' }),
+    });
+    const reviewBody = await reviewRes.json();
+    assert.equal(reviewRes.status, 200);
+    assert.equal(reviewBody.node.status, 'confirmed');
+
+    const emptyDrafts = await (await fetch(`${base}/api/memory/drafts`)).json();
+    assert.equal(emptyDrafts.drafts.length, 0);
+  });
+
+  it('missing vault returns empty/error, never 500', async () => {
+    fs.rmSync(tmp, { recursive: true, force: true });
+    const res = await fetch(`${base}/api/memory/summary`);
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(body.nodes.total, 0);
+
+    const searchRes = await fetch(`${base}/api/memory/search?q=x`);
+    assert.equal(searchRes.status, 200);
+    assert.deepEqual(await searchRes.json(), { results: [], count: 0 });
+
+    const graphRes = await fetch(`${base}/api/memory/graph`);
+    assert.equal(graphRes.status, 200);
+    assert.deepEqual(await graphRes.json(), { nodes: [], edges: [] });
+
+    const reviewRes = await fetch(`${base}/api/memory/review`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: 'x', action: 'confirm' }),
+    });
+    assert.equal(reviewRes.status, 400);
+    assert.ok((await reviewRes.json()).error);
   });
 });

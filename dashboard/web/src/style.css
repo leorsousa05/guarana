@@ -93,24 +93,40 @@ code {
   color: var(--leaf);
 }
 
-/* ---------- section nav ---------- */
+/* ---------- sidebar / app shell ---------- */
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.app-content {
+  min-width: 0;
+}
+
+.sidebar {
+  position: sticky;
+  top: 1rem;
+  z-index: 40;
+}
 
 .sect-nav {
-  position: sticky;
-  top: 0;
-  z-index: 40;
   display: flex;
+  flex-direction: column;
   gap: 0.25rem;
-  border-bottom: 1px solid var(--ink);
+  border: 1px solid var(--ink);
   background: var(--aril);
-  padding: 0.4rem 0.75rem;
+  padding: 0.4rem;
 }
 
 .sect-nav-btn {
   border: 1px solid var(--hairline);
   background: transparent;
   color: var(--ink);
-  padding: 0.2rem 0.6rem;
+  padding: 0.45rem 0.6rem;
+  text-align: left;
   font-family: var(--display);
   font-size: 0.75rem;
   text-transform: uppercase;
@@ -120,6 +136,12 @@ code {
 
 .sect-nav-btn:hover {
   background: #efe9d8;
+}
+
+.sect-nav-btn--active {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--aril);
 }
 
 /* ---------- section titles ---------- */
@@ -665,6 +687,270 @@ table.ledger {
   .reading-pane {
     margin-top: 0.25rem;
     max-width: 100%;
+  }
+}
+
+/* ---------- memory view ---------- */
+
+.mem-summary {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.mem-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 0 0 0.9rem;
+  border-bottom: 1px solid var(--hairline);
+  padding-bottom: 0.4rem;
+}
+
+.mem-tab {
+  font-family: var(--display);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--hairline);
+  border-bottom: none;
+  border-radius: 3px 3px 0 0;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.mem-tab:hover {
+  border-color: var(--ink);
+}
+
+.mem-tab--active {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--aril);
+}
+
+.mem-search {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
+.mem-search input {
+  flex: 1 1 220px;
+  border: 1px solid var(--ink);
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.mem-search select {
+  font-family: var(--display);
+  font-size: 0.78rem;
+  border: 1px solid var(--ink);
+  background: transparent;
+  color: var(--ink);
+  padding: 0.1rem 0.4rem;
+}
+
+.mem-search button {
+  border: 1px solid var(--ink);
+  background: transparent;
+  color: var(--ink);
+  padding: 0.2rem 0.7rem;
+  font-family: var(--display);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.mem-search button:hover {
+  background: #efe9d8;
+}
+
+.mem-summ {
+  overflow-wrap: anywhere;
+}
+
+.mem-type {
+  display: inline-block;
+  border: 1px solid var(--ink);
+  padding: 0 0.3em;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.mem-type--decision { color: var(--ink); }
+.mem-type--bug { color: var(--guarana); border-color: var(--guarana); }
+.mem-type--solution { color: var(--leaf); border-color: var(--leaf); }
+.mem-type--refactor { color: var(--amber); border-color: var(--amber); }
+.mem-type--supernode { color: var(--ink); font-weight: 700; border-width: 2px; }
+.mem-type--atom { color: var(--ink); opacity: 0.7; }
+
+.mem-graph {
+  border: 1px solid var(--hairline);
+  padding: 0.6rem 0.75rem;
+}
+
+.mem-graph-svg {
+  width: 100%;
+  height: auto;
+  background: #faf6ec;
+  border: 1px solid var(--hairline);
+  cursor: grab;
+  touch-action: none;
+}
+
+.mem-edge line {
+  stroke: var(--hairline);
+  stroke-width: 1.5;
+}
+
+.mem-edge--active line {
+  stroke: var(--guarana);
+  stroke-width: 2.5;
+}
+
+.mem-edge-label {
+  fill: var(--amber);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.mem-node circle {
+  stroke: var(--ink);
+  stroke-width: 1.5;
+  fill: var(--aril);
+  cursor: pointer;
+}
+
+.mem-node--active circle {
+  stroke-width: 3;
+  fill: #efe9d8;
+}
+
+.mem-node-text {
+  fill: var(--ink);
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+}
+
+.mem-detail {
+  margin-top: 0.75rem;
+  border: 1px solid var(--ink);
+  padding: 0.75rem 0.9rem;
+  position: relative;
+}
+
+.mem-detail-close {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.5rem;
+  border: 1px solid var(--hairline);
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+}
+
+.mem-detail-meta {
+  font-size: 0.72rem;
+  opacity: 0.6;
+  margin: 0.1rem 0 0.4rem;
+}
+
+.mem-detail-text {
+  margin: 0.3rem 0;
+  overflow-wrap: anywhere;
+}
+
+.mem-detail-sub {
+  font-family: var(--display);
+  font-size: 0.8rem;
+  margin: 0.7rem 0 0.3rem;
+  border-top: 1px solid var(--hairline);
+  padding-top: 0.4rem;
+}
+
+.mem-detail-links {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.mem-detail-links li {
+  padding: 0.2rem 0;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 0.82rem;
+}
+
+.mem-detail-neighbor {
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  text-decoration: underline;
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+}
+
+.mem-detail-neighbor:hover {
+  color: var(--guarana);
+}
+
+@media (max-width: 600px) {
+  .mem-graph {
+    padding: 0.4rem;
+  }
+}
+
+.mem-edge-rel {
+  color: var(--leaf);
+}
+
+.mem-drafts {
+  border-top: 1px solid var(--hairline);
+}
+
+.mem-draft-meta {
+  font-size: 0.72rem;
+  opacity: 0.6;
+  margin-top: 0.15rem;
+}
+
+.decision-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+@media (max-width: 600px) {
+  .mem-graph {
+    grid-template-columns: 1fr;
+  }
+  .app-shell {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+  .sidebar {
+    position: static;
+  }
+  .sect-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
   }
 }
 

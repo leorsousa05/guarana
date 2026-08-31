@@ -2,18 +2,20 @@ import { useEffect, useState } from 'react';
 import { usePoll } from './hooks/usePoll.js';
 import { useLiveTick } from './hooks/useLiveTick.js';
 import { Header } from './components/Header.jsx';
-import { SectionNav } from './components/SectionNav.jsx';
-import { EmptyState, ErrorBanner } from './components/common.jsx';
+import { Sidebar } from './components/Sidebar.jsx';
+import { ErrorBanner } from './components/common.jsx';
 import { NowPanel } from './components/NowPanel.jsx';
 import { Ticker } from './components/Ticker.jsx';
 import { Runs } from './components/Runs.jsx';
 import { Specs } from './components/Specs.jsx';
+import { Memory } from './components/Memory.jsx';
 
 export default function App() {
   const liveTick = useLiveTick('/api/telemetry/stream');
   const summary = usePoll('/api/telemetry/summary', 5000, liveTick);
   const state = usePoll('/api/specs/state', 5000, liveTick);
   const tracker = usePoll('/api/specs/tracker', 5000, liveTick);
+  const [active, setActive] = useState('now');
   const [mergedEvents, setMergedEvents] = useState([]);
 
   // Fetch events for the ~5 most recent sessions and merge by ts.
@@ -51,17 +53,24 @@ export default function App() {
   return (
     <main>
       <Header lastEventTs={lastEventTs} tickerTick={mergedEvents.length} />
-      <SectionNav />
-      {summary.error && <ErrorBanner text={summary.error} />}
-      {!summary.data && !summary.error && <p className="loading">loading…</p>}
-      {summary.data && (
-        <>
-          <NowPanel summary={summary.data} mergedEvents={mergedEvents} state={state.data} />
-          {hasTelemetry && <Ticker events={mergedEvents} />}
-          <Runs summary={summary.data} mergedEvents={mergedEvents} />
-        </>
-      )}
-      <Specs tracker={tracker.data} state={state.data} tick={liveTick} />
+      <div className="app-shell">
+        <Sidebar active={active} onSelect={setActive} />
+        <div className="app-content">
+          {summary.error && <ErrorBanner text={summary.error} />}
+          {!summary.data && !summary.error && <p className="loading">loading…</p>}
+          {active === 'now' && summary.data && (
+            <>
+              <NowPanel summary={summary.data} mergedEvents={mergedEvents} state={state.data} />
+              {hasTelemetry && <Ticker events={mergedEvents} />}
+            </>
+          )}
+          {active === 'runs' && summary.data && (
+            <Runs summary={summary.data} mergedEvents={mergedEvents} />
+          )}
+          {active === 'specs' && <Specs tracker={tracker.data} state={state.data} tick={liveTick} />}
+          {active === 'memory' && <Memory />}
+        </div>
+      </div>
     </main>
   );
 }

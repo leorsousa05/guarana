@@ -8,10 +8,10 @@ function targetDir(useProject) {
     : path.join(os.homedir(), '.agents', 'skills', 'guarana');
 }
 
-function pluginTarget(useProject) {
+function pluginTarget(useProject, name = PLUGIN_NAME) {
   return useProject
-    ? path.join(process.cwd(), '.opencode', 'plugins', PLUGIN_NAME)
-    : path.join(os.homedir(), '.config', 'opencode', 'plugins', PLUGIN_NAME);
+    ? path.join(process.cwd(), '.opencode', 'plugins', name)
+    : path.join(os.homedir(), '.config', 'opencode', 'plugins', name);
 }
 
 module.exports = { targetDir, pluginTarget };

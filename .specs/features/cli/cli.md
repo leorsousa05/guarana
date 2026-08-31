@@ -16,7 +16,7 @@ A Node.js CLI named `guarana` that installs/uninstalls/lists/updates the guarana
 - `guarana --version`, `guarana --help`.
 
 ## Addendum 2026-08-21: plugin command
-- `guarana plugin install [--project]` — install the telemetry plugin (`plugin/guarana-telemetry.js`, bundled in the CLI package):
+- `guarana plugin install [--project]` — install both plugins (`plugin/guarana-telemetry.js` and `plugin/guarana-memory.js`, bundled in the CLI package; per-plugin target names, same dirs):
   - Default (global): `~/.config/opencode/plugins/guarana-telemetry.js`
   - `--project`: `./.opencode/plugins/guarana-telemetry.js`
 - `guarana plugin uninstall [--project]` — remove it.

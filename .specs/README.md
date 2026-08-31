@@ -17,10 +17,11 @@ Status pipeline: SPECIFIED → TASKED → IMPLEMENTED → VALIDATED → SHIPPED
 
 | guarana CLI | **SHIPPED** | [spec](features/cli/cli.md) | [2026-08-21](changes/2026-08-21-cli.md) |
 | guarana dashboard | **SHIPPED** | [spec](features/dashboard/dashboard.md) | [2026-08-21](changes/2026-08-21-dashboard.md) · [bugfix](changes/2026-08-22-dashboard-bugfix.md) |
+| guarana memory | **ALL 5 SLICES VALIDATED** (5/5) | [spec](features/memory/memory.md) | [slices 1–5](changes/2026-08-30-memory-slice1.md) · [2](changes/2026-08-30-memory-slice2.md) · [3](changes/2026-08-30-memory-slice3.md) · [4](changes/2026-08-30-memory-slice4.md) · [5](changes/2026-08-30-memory-slice5.md) |
 
 **DONE:** all 7 skills specified, audited, implemented, validated (worker-verify PASS per skill), shipped.
 **HUMAN FINAL GATE PASSED 2026-08-21** — evidence in `../human-gate-validation.md`; 4 observations accepted as reconciled. All 7 skills: **HUMAN-VERIFIED / CLOSED**. Build closed.
-**NEXT:** none. Optional future work: description trigger-optimization pass; npm publish of the CLI. Plan cold-start addenda (AC4–AC6) and features/ layout restructure shipped 2026-08-21 (worker-verify PASS).
+**NEXT:** memory feature complete (5/5 slices, web view shipped). Pending: human final gate — end-to-end resume scenario via explicit `memory_*` tool calls (spec: Final gate). Then version bump + commit.
 **BLOCKED:** nothing.
 
 ## Index
@@ -30,7 +31,7 @@ Status pipeline: SPECIFIED → TASKED → IMPLEMENTED → VALIDATED → SHIPPED
 - [glossary.md](glossary.md) — terms
 - [state/](state/) — [project-state](state/project-state.md) · [known-issues](state/known-issues.md)
 - [features/](features/) — [overview](features/overview.md) + [guarana/](features/guarana/) (7 specs + [proofs/](features/guarana/proofs/) + [audits/](features/guarana/audits/)) + [cli/](features/cli/) + [dashboard/](features/dashboard/)
-- [decisions/](decisions/) — ADR-001…007 (append-only)
+- [decisions/](decisions/) — ADR-001…010 (append-only)
 - [changes/](changes/) — validated change ledger
 - [archive/](archive/) — superseded artifacts
 - Runtime suite: `../skills/guarana/` · Knowledge: `../docs/reference/`
