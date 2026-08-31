@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-08-30 (memory Slice 5 VALIDATED — web view; ALL 5 SLICES DONE, stop_reason: condition-met)
+Last updated: 2026-08-31 (memory final gate PASSED — fresh-session resume scenario recovered decisions/rejected alternatives/bug via explicit memory_get_context_for_task)
 
 ## Per-skill status
 | Skill | Status |
@@ -14,14 +14,19 @@ Last updated: 2026-08-30 (memory Slice 5 VALIDATED — web view; ALL 5 SLICES DO
 | guarana:measure | SHIPPED (optional, trigger-only) |
 | guarana CLI | SHIPPED |
 | guarana dashboard | VALIDATED |
-| guarana memory | ALL 5 SLICES VALIDATED (5/5) |
+| guarana memory | **FINAL GATE PASSED** (6/6 slices + deployability fix + live resume verified) |
 
 ## Current step
-**Slice 5 closed** (web view): `/api/memory/*` routes (summary/search/graph/drafts/review) + React Memory page (cards, hybrid search, linked-node graph, drafts review) + nav. 93/93 tests, verify PASS first gate. **Memory feature complete (5/5 slices).** Remaining: human final gate (end-to-end resume scenario), then version bump (ADR-007) + commit.
+**Memory final gate PASSED (2026-08-31, fresh session).** With the fixed plugin loaded, the end-to-end resume scenario succeeded:
+- `memory_save_decision` → confirmed node persisted (deployability fix decision, id `mem-1788214736792-...`).
+- Second confirmed node recorded the surfaced deployability bug (`mem-1788214742841-...`).
+- `memory_get_context_for_task` (task: installed memory tools → engine not available) returned a bounded subgraph from disk recovering **both decisions w/ rationale + rejected alternatives + prior-bug content**, drafts excluded, no `"memory engine not available"`. Live installed plugin resolves `../memory` correctly.
+
+Remaining (now the close-out): version bump (ADR-007, 0.6.0 → 0.6.1) + commit the fix + update memory.md status/acceptance + human close of the final gate + ADR if warranted.
 
 ## Checkpoint
-- Goal: Pass human final gate — resume an interrupted task via explicit `memory_*` tool calls (or inspect via `guarana web`), recovering decision rationale, rejected alternatives, prior bugs. Then bump version + commit.
-- Pending writes: none.
+- Goal: none (gate passed). Close out: version bump (ADR-007) + commit fix + mark memory feature FINAL-GATE-PASSED / SHIPPED in tracker + human sign-off.
+- Pending writes: version bump + ADR + tracker update + commit.
 - Budget: ADR-005 defaults.
 
 ## Per-skill status

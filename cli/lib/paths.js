@@ -14,4 +14,9 @@ function pluginTarget(useProject, name = PLUGIN_NAME) {
     : path.join(os.homedir(), '.config', 'opencode', 'plugins', name);
 }
 
-module.exports = { targetDir, pluginTarget };
+function memoryEngineTarget(useProject) {
+  const pluginsParent = path.dirname(path.dirname(pluginTarget(useProject)));
+  return path.join(pluginsParent, 'memory');
+}
+
+module.exports = { targetDir, pluginTarget, memoryEngineTarget };
