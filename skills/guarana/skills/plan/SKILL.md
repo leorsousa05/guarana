@@ -14,6 +14,9 @@ The meta-skill. The main thread holds this plus the suite index — nothing else
 4. The current feature spec in `.specs/features/` (one directory per feature).
 Never reconstruct state from memory. Disk is truth (ADR-004).
 
+## Memory
+The memory vault is a pull-only complement to disk, never an auto-injection. On an interrupted/resume task, when you judge it valuable, call `memory_get_context_for_task` to recover prior decision rationale, rejected alternatives, and bugs. When closing/completing a run, consider `memory_save_decision` to persist the key decision. Both are explicit, judgment-based calls — never mandatory.
+
 ### Cold start (no `.specs/` on disk)
 If restore finds no `.specs/`, that is a signal, not an error:
 1. Do NOT fabricate a current step or restore from memory.
@@ -32,6 +35,7 @@ Only after `.specs/` exists on disk does "disk is truth" (ADR-004) apply. Then p
 | Implement, edit, write code | guarana:code |
 | Check work, pass/fail, "is it done" | guarana:verify |
 | State, memory, resume, context loss | guarana:remember |
+| Using/querying the memory vault; recovering prior decisions/bugs | guarana:memory |
 | A test FAILED or a run misbehaves | guarana:debug (optional — only now) |
 | Cost tuning, telemetry, stop-reason stats | guarana:measure (optional — only now) |
 

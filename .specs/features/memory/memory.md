@@ -1,6 +1,6 @@
 # Feature spec: guarana persistent memory
 
-**Status:** SPECIFIED → VALIDATED (Slices 1–4) · Slice 5 (web view) SPECIFIED
+**Status:** SPECIFIED → VALIDATED (Slices 1–5) · Slice 6 (workflow integration) SPECIFIED
 **Date:** 2026-08-30
 
 ## Goal
@@ -43,6 +43,7 @@ Give the OpenCode agent long-term, project-local memory: a graph of decisions, b
 | 3 | **Tools + review** | 4 custom tools; draft→confirmed review workflow (CLI `memory review` + reviewer-agent path via `memory_review_draft`) |
 | 4 | **Compaction** | threshold config, supernode summarization, provenance edges, prune integration |
 | 5 | **Web view** | dashboard memory routes + React page + nav (addendum 2026-08-30) |
+| 6 | **Workflow integration** | teach plan/remember when to call memory tools; new guarana:memory skill (addendum 2026-08-31) |
 
 ## Verifiable condition (acceptance, per slice)
 **Slice 1:**
@@ -81,5 +82,21 @@ Give the OpenCode agent long-term, project-local memory: a graph of decisions, b
 16. `guarana web` on a seeded project → `/api/memory/summary` returns correct counts; `/api/memory/search?q=` returns only confirmed matches; `/api/memory/graph` returns bounded nodes+edges; drafts listed; review confirm/discard mutates the vault and updates subsequent reads.
 17. Server route/lib unit tests green; security: graph/search responses never include draft content beyond the drafts endpoint; no vault or engine error crashes the route (404/empty, not 500).
 18. `npm run check-cli` passes (bundle includes dashboard + memory engine + server).
+
+**Slice 5 acceptance:**
+16. `guarana web` on a seeded project → `/api/memory/summary` returns correct counts; `/api/memory/search?q=` returns only confirmed matches; `/api/memory/graph` returns bounded nodes+edges; drafts listed; review confirm/discard mutates the vault and updates subsequent reads.
+17. Server route/lib unit tests green; security: graph/search responses never include draft content beyond the drafts endpoint; no vault or engine error crashes the route (404/empty, not 500).
+18. `npm run check-cli` passes (bundle includes dashboard + memory engine + server).
+
+**Slice 6 (addendum 2026-08-31): workflow integration — teach the skills when to use memory**
+Close the gap: the memory tools exist but no skill instructs when to call them (pull-only by design, but "explicit" must be *taught*, not left to chance). Three changes:
+- **guarana:plan** — on state restore, consider `memory_get_context_for_task` when resuming/interrupting work; after closing a run, consider `memory_save_decision`.
+- **guarana:remember** — document the memory vault as an additional resume layer (query `memory_get_context_for_task` on context loss, alongside the `.specs/` disk restore).
+- **New skill `guarana:memory`** — a dedicated skill body: when to call each of the 4 tools, the draft→confirmed lifecycle, and the guidance that retrieval is always explicit (never auto-injected). Registered in the suite index + routed from plan.
+
+**Slice 6 acceptance:**
+19. `guarana:plan` SKILL.md instructs explicit `memory_get_context_for_task` on resume and `memory_save_decision` on run close — without auto-injecting vault content.
+20. `guarana:remember` SKILL.md documents the vault as a resume layer; new `skills/memory/SKILL.md` exists, covers the 4 tools + draft lifecycle; suite index lists it; plan routing table routes to it.
+21. `npm run check-cli` passes (skills synced to bundle); no `.specs/` content or vault content is hardcoded into skill bodies (no project-specific facts).
 
 **Final gate (human):** the end-to-end resume scenario — interrupt work, wipe session, resume via explicit tool calls, recover decision rationale, rejected alternatives, and prior bugs.
