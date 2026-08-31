@@ -16,12 +16,12 @@ function LedgerPage({ title, text }) {
 const isDocPath = (rel) =>
   /^(changes|decisions|features|archive)\//.test(rel) || !/\//.test(rel);
 
-export function Specs({ tracker, state }) {
+export function Specs({ tracker, state, tick = 0 }) {
   const [view, setView] = useState('overview');
   const [tree, setTree] = useState(null);
   const [active, setActive] = useState(null);
   const [titles, setTitles] = useState({});
-  const pending = usePoll('/api/decisions/pending');
+  const pending = usePoll('/api/decisions/pending', 5000, tick);
   const resolveDecision = async (file, statement, outcome) => {
     try {
       await fetch('/api/decisions/resolve', {

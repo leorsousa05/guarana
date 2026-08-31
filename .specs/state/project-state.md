@@ -19,7 +19,7 @@ Last updated: 2026-08-22 (guarana dashboard SHIPPED — defect fixes verified)
 **Closed.** Dashboard defects fixed and verified: token tracking (plugin emits numeric totals), NOW-panel goal display (renders in empty and populated states), skill spec goal field (`guarana:plan` and `guarana:remember` now mandate a `- Goal:` checkpoint). Worker-verify PASS.
 
 ## Checkpoint
-- Goal: Fix dashboard token tracking, NOW-panel goal display, and skill spec goal field.
+- Goal: Fix token counting (message.updated), add project filtering and run pagination to the dashboard.
 - Pending writes: none.
 - Budget: ADR-005 defaults.
 

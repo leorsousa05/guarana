@@ -11,7 +11,7 @@ function pluginInstall(target) {
   const existed = fs.existsSync(target);
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.copyFileSync(PLUGIN_BUNDLE, target);
-  console.log(`${existed ? 'already installed (identical)' : 'installed'} plugin guarana-telemetry -> ${target}`);
+  console.log(`${existed ? 'updated' : 'installed'} plugin guarana-telemetry -> ${target}`);
 }
 
 function pluginUninstall(target) {

@@ -37,6 +37,7 @@ export function summarize(events) {
     if (!s) {
       s = {
         sessionID: sid,
+        project: ev.project || null,
         start: null,
         end: null,
         durationMs: null,
@@ -48,6 +49,7 @@ export function summarize(events) {
       sessions.set(sid, s);
     }
     s.eventCount += 1;
+    if (s.project == null && ev.project) s.project = ev.project;
     if (typeof ev.ts === 'number') {
       if (s.start === null || ev.ts < s.start) s.start = ev.ts;
       if (s.end === null || ev.ts > s.end) s.end = ev.ts;

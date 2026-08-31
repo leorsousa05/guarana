@@ -447,6 +447,47 @@ table.ledger {
   background: #efe9d8;
 }
 
+/* ---------- runs filter & paging ---------- */
+
+.runs-filter {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin: 0 0 0.6rem;
+  font-family: var(--display);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.runs-filter select {
+  font-family: var(--display);
+  font-size: 0.78rem;
+  text-transform: none;
+  letter-spacing: 0;
+  border: 1px solid var(--ink);
+  background: transparent;
+  color: var(--ink);
+  padding: 0.1rem 0.4rem;
+}
+
+.runs-more {
+  margin: 0.5rem 0 0;
+  border: 1px solid var(--ink);
+  background: transparent;
+  color: var(--ink);
+  padding: 0.15rem 0.6rem;
+  font-family: var(--display);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.runs-more:hover {
+  background: #efe9d8;
+}
+
 /* ---------- ledger pages ---------- */
 
 .ledger-pages {

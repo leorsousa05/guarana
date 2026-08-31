@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { usePoll } from './hooks/usePoll.js';
+import { useLiveTick } from './hooks/useLiveTick.js';
 import { Header } from './components/Header.jsx';
 import { SectionNav } from './components/SectionNav.jsx';
 import { EmptyState, ErrorBanner } from './components/common.jsx';
@@ -9,9 +10,10 @@ import { Runs } from './components/Runs.jsx';
 import { Specs } from './components/Specs.jsx';
 
 export default function App() {
-  const summary = usePoll('/api/telemetry/summary');
-  const state = usePoll('/api/specs/state');
-  const tracker = usePoll('/api/specs/tracker');
+  const liveTick = useLiveTick('/api/telemetry/stream');
+  const summary = usePoll('/api/telemetry/summary', 5000, liveTick);
+  const state = usePoll('/api/specs/state', 5000, liveTick);
+  const tracker = usePoll('/api/specs/tracker', 5000, liveTick);
   const [mergedEvents, setMergedEvents] = useState([]);
 
   // Fetch events for the ~5 most recent sessions and merge by ts.
@@ -41,7 +43,7 @@ export default function App() {
       cancelled = true;
       clearInterval(id);
     };
-  }, [recentIDs]);
+  }, [recentIDs, liveTick]);
 
   const lastEventTs = mergedEvents.length ? mergedEvents[mergedEvents.length - 1].ts : null;
   const hasTelemetry = summary.data && summary.data.runs.length > 0;
@@ -59,7 +61,7 @@ export default function App() {
           <Runs summary={summary.data} mergedEvents={mergedEvents} />
         </>
       )}
-      <Specs tracker={tracker.data} state={state.data} />
+      <Specs tracker={tracker.data} state={state.data} tick={liveTick} />
     </main>
   );
 }

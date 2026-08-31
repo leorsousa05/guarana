@@ -20,7 +20,7 @@ A Node.js CLI named `guarana` that installs/uninstalls/lists/updates the guarana
   - Default (global): `~/.config/opencode/plugins/guarana-telemetry.js`
   - `--project`: `./.opencode/plugins/guarana-telemetry.js`
 - `guarana plugin uninstall [--project]` — remove it.
-- Same guard semantics: refuse to overwrite a file that exists and was not installed by guarana (compare content hash against bundled copy; if identical or absent → proceed; else exit 1 with message).
+- Same guard semantics: refuse to overwrite a file that exists and was not installed by guarana (guarana detection: byte-identical to the bundled copy OR carries the `// guarana telemetry plugin` marker header — older guarana versions are overwritten; marker-less files → exit 1 with message).
 - `guarana list` also reports plugin presence at the target.
 
 ### Acceptance (addendum)

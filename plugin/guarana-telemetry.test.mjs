@@ -5,10 +5,11 @@ import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
 
-describe('GuaranaTelemetry recordTokens', () => {
+describe('GuaranaTelemetry', () => {
   let tmpDir;
   let eventsFile;
   let api;
+  const projectName = () => path.basename(tmpDir);
 
   beforeEach(async () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-plugin-'));
@@ -21,48 +22,102 @@ describe('GuaranaTelemetry recordTokens', () => {
   });
 
   function readEvents() {
-    return fs
-      .readFileSync(eventsFile, 'utf8')
-      .trim()
-      .split('\n')
-      .filter(Boolean)
-      .map((l) => JSON.parse(l));
+    try {
+      return fs
+        .readFileSync(eventsFile, 'utf8')
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((l) => JSON.parse(l));
+    } catch {
+      return [];
+    }
   }
 
-  it('writes numeric token totals directly', async () => {
-    await api['message.part.updated']({ properties: { part: { tokens: 42, sessionID: 's1' } } });
-    const events = readEvents();
-    assert.equal(events.length, 1);
-    assert.equal(events[0].type, 'tokens');
-    assert.equal(events[0].tokens, 42);
-  });
+  describe('recordTokens via message.part.updated', () => {
+    it('writes numeric token totals directly, tagged with the project', async () => {
+      await api['message.part.updated']({ properties: { part: { tokens: 42, sessionID: 's1' } } });
+      const events = readEvents();
+      assert.equal(events.length, 1);
+      assert.equal(events[0].type, 'tokens');
+      assert.equal(events[0].tokens, 42);
+      assert.equal(events[0].project, projectName());
+    });
 
-  it('sums object token fields', async () => {
-    await api['message.part.updated']({
-      properties: {
-        part: {
-          tokens: { input: 10, output: 20, reasoning: 5, cache: 3 },
-          sessionID: 's2',
+    it('sums object token fields', async () => {
+      await api['message.part.updated']({
+        properties: {
+          part: {
+            tokens: { input: 10, output: 20, reasoning: 5, cache: 3 },
+            sessionID: 's2',
+          },
         },
-      },
+      });
+      const ev = readEvents()[0];
+      assert.equal(ev.tokens, 38);
     });
-    const ev = readEvents()[0];
-    assert.equal(ev.tokens, 38);
+
+    it('uses total field when present', async () => {
+      await api['message.part.updated']({
+        properties: { part: { tokens: { total: 99, input: 1 }, sessionID: 's3' } },
+      });
+      const ev = readEvents()[0];
+      assert.equal(ev.tokens, 99);
+    });
+
+    it('writes no event when there is no usable total', async () => {
+      await api['message.part.updated']({
+        properties: { part: { tokens: { input: 0, output: 0 }, sessionID: 's4' } },
+      });
+      assert.equal(readEvents().length, 0);
+    });
   });
 
-  it('uses total field when present', async () => {
-    await api['message.part.updated']({
-      properties: { part: { tokens: { total: 99, input: 1 }, sessionID: 's3' } },
+  describe('recordTokens via message.updated (assistant messages)', () => {
+    it('records tokens from properties.info.tokens', async () => {
+      await api.event({
+        event: {
+          type: 'message.updated',
+          properties: {
+            info: {
+              sessionID: 's5',
+              tokens: { input: 100, output: 200, reasoning: 0, cache: 50 },
+              cost: 0.01,
+              providerID: 'anthropic',
+              modelID: 'claude',
+            },
+          },
+        },
+      });
+      const events = readEvents();
+      assert.equal(events.length, 1);
+      assert.equal(events[0].tokens, 350);
+      assert.equal(events[0].sessionID, 's5');
+      assert.equal(events[0].cost, 0.01);
+      assert.equal(events[0].project, projectName());
     });
-    const ev = readEvents()[0];
-    assert.equal(ev.tokens, 99);
+
+    it('ignores message.updated without tokens (e.g. user messages)', async () => {
+      await api.event({
+        event: { type: 'message.updated', properties: { info: { sessionID: 's6' } } },
+      });
+      assert.equal(readEvents().length, 0);
+    });
   });
 
-  it('does not write tokens when total is zero', async () => {
-    await api['message.part.updated']({
-      properties: { part: { tokens: { input: 0, output: 0 }, sessionID: 's4' } },
+  describe('project tagging', () => {
+    it('tags tool events with the project basename', async () => {
+      await api['tool.execute.after']({ tool: 'bash', sessionID: 's7' }, {});
+      const ev = readEvents()[0];
+      assert.equal(ev.project, projectName());
     });
-    const ev = readEvents()[0];
-    assert.equal('tokens' in ev, false);
+
+    it('tags session events with the project basename', async () => {
+      await api.event({
+        event: { type: 'session.idle', properties: { info: { id: 's8' } } },
+      });
+      const ev = readEvents()[0];
+      assert.equal(ev.project, projectName());
+    });
   });
 });

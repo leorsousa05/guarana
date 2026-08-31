@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-export function usePoll(url, intervalMs = 5000) {
+export function usePoll(url, intervalMs = 5000, tick = 0) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [nonce, setNonce] = useState(0);
@@ -22,6 +22,6 @@ export function usePoll(url, intervalMs = 5000) {
       cancelled = true;
       clearInterval(id);
     };
-  }, [url, intervalMs, nonce]);
+  }, [url, intervalMs, nonce, tick]);
   return { data, error, refetch: () => setNonce((n) => n + 1) };
 }

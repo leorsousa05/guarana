@@ -12,14 +12,34 @@ const SESSION_STATUSES = {
   "session.compacted": "compacted",
 };
 
+// Normalize a token payload (number, {total}, or {input,output,reasoning,cache})
+// into a single numeric total. Returns null when nothing usable is present.
+function tokenTotal(tokens) {
+  if (typeof tokens === "number") return tokens;
+  if (tokens && typeof tokens === "object") {
+    if (typeof tokens.total === "number") return tokens.total;
+    let total = 0;
+    for (const k of ["input", "output", "reasoning", "cache"]) {
+      if (typeof tokens[k] === "number") total += tokens[k];
+    }
+    if (total > 0) return total;
+  }
+  return null;
+}
+
 export const GuaranaTelemetry = async ({ directory }) => {
   const telemetryDir = path.join(directory, ".specs", "state", "telemetry");
   const eventsFile = path.join(telemetryDir, "events.jsonl");
+  const project = path.basename(directory);
 
   const append = (obj) => {
     try {
       fs.mkdirSync(telemetryDir, { recursive: true });
-      fs.appendFileSync(eventsFile, JSON.stringify(obj) + "\n", "utf8");
+      fs.appendFileSync(
+        eventsFile,
+        JSON.stringify({ project, ...obj }) + "\n",
+        "utf8"
+      );
     } catch (err) {
       // best-effort error record; never rethrow
       try {
@@ -58,33 +78,22 @@ export const GuaranaTelemetry = async ({ directory }) => {
     }
   };
 
+  // Tokens arrive on assistant messages (message.updated -> properties.info)
+  // and on parts (message.part.updated -> properties.part). Normalize both.
   const recordTokens = (event) => {
     try {
       const props = (event && event.properties) || event || {};
-      const part = props.part || props;
+      const source = props.info || props.part || props;
+      const total = tokenTotal(source.tokens);
+      if (total == null) return; // nothing worth recording
       const ev = { ts: Date.now(), type: "tokens", sessionID: "unknown" };
       const sid =
-        part.sessionID || props.sessionID || (event && event.sessionID);
+        source.sessionID || props.sessionID || (event && event.sessionID);
       if (sid) ev.sessionID = String(sid);
-      // record only fields that actually exist; dashboard aggregates a numeric total
-      if (part.tokens != null) {
-        if (typeof part.tokens === "number") {
-          ev.tokens = part.tokens;
-        } else if (typeof part.tokens === "object") {
-          if (typeof part.tokens.total === "number") {
-            ev.tokens = part.tokens.total;
-          } else {
-            let total = 0;
-            for (const k of ["input", "output", "reasoning", "cache"]) {
-              if (typeof part.tokens[k] === "number") total += part.tokens[k];
-            }
-            if (total > 0) ev.tokens = total;
-          }
-        }
-      }
-      if (part.cost != null) ev.cost = part.cost;
-      if (part.providerID != null) ev.providerID = part.providerID;
-      if (part.modelID != null) ev.modelID = part.modelID;
+      ev.tokens = total;
+      if (source.cost != null) ev.cost = source.cost;
+      if (source.providerID != null) ev.providerID = source.providerID;
+      if (source.modelID != null) ev.modelID = source.modelID;
       append(ev);
     } catch (err) {
       append({ ts: Date.now(), type: "telemetry-error", error: String(err) });
@@ -113,6 +122,8 @@ export const GuaranaTelemetry = async ({ directory }) => {
           sessionID: props.sessionID || event.sessionID || "unknown",
           count: todos.length,
         });
+      } else if (type === "message.updated" || type === "message.part.updated") {
+        recordTokens(event);
       }
     } catch (err) {
       append({ ts: Date.now(), type: "telemetry-error", error: String(err) });
