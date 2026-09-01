@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-08-31 (memory hardening/enhancement batch applied — telemetry ok-flag, atomic writes, provider allowlist, unicode tokenizer, maxNodes, CLI tests)
+Last updated: 2026-08-31 (dashboard & CLI enhancements — plugin status, resume card, health gauges, decision lineage)
 
 ## Per-skill status
 | Skill | Status |
@@ -17,35 +17,13 @@ Last updated: 2026-08-31 (memory hardening/enhancement batch applied — telemet
 | guarana memory | **FINAL GATE PASSED** + hardening batch applied |
 
 ## Current step
-**Memory hardening/enhancement (2026-08-31).** After the final gate closed, applied a robustness/security/usability batch (details in `.specs/changes/2026-08-31-memory-hardening.md`): telemetry now flags `ok:false` on tool errors (fixes the masking that hid the deploy bug); atomic JSONL writes; embedding-provider allowlist (no arbitrary `import()`); unicode/multilingual tokenizer with diacritic folding; `maxNodes` growth warning; full CLI command test coverage; at-rest plaintext caveat documented. `npm test` 112/112, `check-cli` PASS, engine re-deployed. Version 0.6.2.
+**Dashboard & CLI enhancements (2026-08-31).** Added `guarana plugin status` (install/engine/vault health, stale + foreign detection); dashboard resume card (open goal + copyable resume prompt wired to memory_get_context_for_task); data-backed health gauges (error rate, tokens vs ADR-005 ref, runs); memory-graph decision lineage (supersedes diff). `buildLineage` extracted to a pure module + 5 tests. Details in `.specs/changes/2026-08-31-dashboard-cli-enhancements.md`. `npm test` 120/120, `check-cli` PASS, frontend rebuilt, engine/plugins redeployed. Version 0.6.3.
 
-**Pending:** commit the batch (ADR-007, uncommitted); human review.
+**Pending:** commit (ADR-007); then optionally push `main` (ahead of origin).
 
 ## Checkpoint
-- Goal: none (feature closed). Commit the hardening batch + engine upgrade if desired.
+- Goal: none (batch closed). Commit the dashboard/CLI enhancement batch + push `main` if desired.
 - Pending writes: none (change ledger + state updated).
-- Budget: ADR-005 defaults.
-
-## Per-skill status
-| Skill | Status |
-|---|---|
-| guarana:plan | SHIPPED |
-| guarana:build | SHIPPED |
-| guarana:code | SHIPPED |
-| guarana:verify | SHIPPED |
-| guarana:remember | SHIPPED |
-| guarana:debug | SHIPPED (optional, trigger-only) |
-| guarana:measure | SHIPPED (optional, trigger-only) |
-| guarana CLI | SHIPPED |
-| guarana dashboard | VALIDATED |
-| guarana memory | SPECIFIED |
-
-## Current step
-**Memory feature specified.** Route to build for Slice 1 (engine + CLI): `memory/` graph engine, TF-IDF search, security filters, `guarana memory init/status/search/prune/export/import`, bundle sync wiring, tests. Acceptance: memory.md items 1–7.
-
-## Checkpoint
-- Goal: Build memory Slice 1 — graph engine + vault storage + search + CLI commands, per `.specs/features/memory/memory.md` acceptance 1–7.
-- Pending writes: none.
 - Budget: ADR-005 defaults.
 
 ## Proofs that exist

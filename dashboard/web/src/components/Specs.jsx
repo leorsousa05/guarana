@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { usePoll } from '../hooks/usePoll.js';
 import { Stamp } from './common.jsx';
-import { Markdown, MdLink } from '../lib/markdown.jsx';
+import { Markdown, MdLink, isSpecPath } from '../lib/markdown.jsx';
 import { Documents, buildGroups } from './Documents.jsx';
 
 function LedgerPage({ title, text }) {
@@ -13,8 +13,7 @@ function LedgerPage({ title, text }) {
   );
 }
 
-const isDocPath = (rel) =>
-  /^(changes|decisions|features|archive)\//.test(rel) || !/\//.test(rel);
+const isDocPath = (rel) => isSpecPath(rel);
 
 export function Specs({ tracker, state, tick = 0 }) {
   const [view, setView] = useState('overview');
@@ -131,6 +130,11 @@ export function Specs({ tracker, state, tick = 0 }) {
       ) : (
         <>
           {tracker ? (
+            tracker.schema === 'unknown' ? (
+              <div className="ledger-note" role="note">
+                {tracker.message || 'This project does not follow the Guarana spec schema; the tracker cannot be rendered here.'}
+              </div>
+            ) : (
             <>
               <div className="table-scroll">
                 <table className="ledger">
@@ -169,6 +173,7 @@ export function Specs({ tracker, state, tick = 0 }) {
                 ) : null
               )}
             </>
+            )
           ) : (
             <p className="loading">loading tracker…</p>
           )}

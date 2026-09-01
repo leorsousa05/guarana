@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { fmtTs } from '../lib/format.js';
+import { buildLineage } from '../lib/lineage.js';
 
 const TYPE_CLASS = (t) => `mem-type mem-type--${t}`;
 
@@ -216,6 +217,32 @@ export function MemoryGraph({ nodes, edges, selected, onSelect }) {
                     <strong>rejected:</strong> {n.rejectedAlternatives.join(' · ')}
                   </p>
                 )}
+                {(() => {
+                  const { older, newer } = buildLineage(selected, edges, nodesById);
+                  if (older.length === 0 && newer.length === 0) return null;
+                  const row = (node, tag) => (
+                    <li key={node.id} className="mem-lineage-row">
+                      <span className="mem-lineage-tag">{tag}</span>
+                      <button
+                        type="button"
+                        className="mem-detail-neighbor"
+                        onClick={() => onSelect(node.id)}
+                      >
+                        [{node.type}] {node.intent || node.id}
+                      </button>
+                    </li>
+                  );
+                  return (
+                    <>
+                      <h5 className="mem-detail-sub">decision lineage (supersedes diff)</h5>
+                      <ul className="mem-detail-links">
+                        {older.map((node) => row(node, 'replaced'))}
+                        {row(n, 'this')}
+                        {newer.map((node) => row(node, 'replaced by'))}
+                      </ul>
+                    </>
+                  );
+                })()}
                 <h5 className="mem-detail-sub">why it&rsquo;s connected</h5>
                 {neighbors.list.length === 0 && <p className="loading">no connections</p>}
                 <ul className="mem-detail-links">

@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { pathToFileURL } = require('url');
 const {
   PLUGIN_BUNDLE, PLUGIN_NAME,
   MEMORY_PLUGIN_BUNDLE, MEMORY_PLUGIN_NAME,
@@ -62,11 +63,61 @@ function pluginUninstall(useProject) {
   }
 }
 
-function run(args, { useProject }) {
+function filesEqual(a, b) {
+  try {
+    return fs.readFileSync(a).equals(fs.readFileSync(b));
+  } catch {
+    return false;
+  }
+}
+
+// Async engine health: load the deployed engine's tools and confirm the four
+// custom-tool handlers are present. Returns a status string (never throws).
+async function engineHealthy(engineTarget) {
+  try {
+    if (!fs.existsSync(path.join(engineTarget, 'tools.js'))) return 'not deployed';
+    const tools = await import(pathToFileURL(path.join(engineTarget, 'tools.js')).href);
+    const handlers = [
+      'memorySearch', 'memorySaveDecision', 'memoryGetContextForTask', 'memoryReviewDraft',
+    ];
+    const missing = handlers.filter((h) => typeof tools[h] !== 'function');
+    return missing.length === 0 ? 'ok' : `missing handlers: ${missing.join(', ')}`;
+  } catch (err) {
+    return `load error: ${err && err.message ? err.message : err}`;
+  }
+}
+
+async function pluginStatus(useProject) {
+  console.log('guarana plugin status');
+  console.log(`target: ${useProject ? 'project (.opencode/)' : 'global (~/.config/opencode/)'}`);
+  for (const { name, bundle, marker } of PLUGINS) {
+    const target = pluginTarget(useProject, name);
+    const installed = fs.existsSync(target);
+    const upToDate = installed && filesEqual(target, bundle);
+    console.log(`- ${name}: ${installed ? (upToDate ? 'ok (up to date)' : 'stale (re-run: guarana plugin install)') : 'not installed'}`);
+    if (installed && !pluginIsOurs(target, bundle, marker)) {
+      console.log(`  ! foreign file (not installed by guarana) — manual review required`);
+    }
+  }
+  const engineTarget = memoryEngineTarget(useProject);
+  const hasEngine = fs.existsSync(path.join(engineTarget, 'tools.js')) &&
+    fs.existsSync(path.join(engineTarget, 'vault.js')) &&
+    fs.existsSync(path.join(engineTarget, 'graph.js'));
+  console.log(`- memory engine (${engineTarget}): ${hasEngine ? 'deployed' : 'not deployed (re-run: guarana plugin install)'}`);
+  const vaultDir = path.join(process.cwd(), '.guarana', 'memory');
+  const vaultInit = fs.existsSync(path.join(vaultDir, 'nodes.jsonl'));
+  console.log(`- vault (${vaultDir}): ${vaultInit ? 'initialized' : 'not initialized (run: guarana memory init)'}`);
+  if (hasEngine) {
+    console.log(`- engine health: ${await engineHealthy(engineTarget)}`);
+  }
+}
+
+async function run(args, { useProject }) {
   const sub = args[0];
   switch (sub) {
     case 'install': pluginInstall(useProject); break;
     case 'uninstall': pluginUninstall(useProject); break;
+    case 'status': await pluginStatus(useProject); break;
     default:
       console.error(`unknown plugin command: ${sub === undefined ? '(missing)' : sub}`);
       process.stdout.write(require('../help.js').HELP);

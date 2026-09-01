@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { EmptyState } from './common.jsx';
-import { Markdown, MdLink } from '../lib/markdown.jsx';
+import { Markdown, MdLink, isSpecPath } from '../lib/markdown.jsx';
 
-const isDocPath = (rel) =>
-  /^(changes|decisions|features|archive)\//.test(rel) || !/\//.test(rel);
+// Any local `.specs` markdown path is servable by /api/specs/file, regardless
+// of which directory it lives in. External/absolute URLs are excluded by shape.
+const isDocPath = (rel) => isSpecPath(rel);
 
 const fallbackTitle = (rel) => rel.split('/').pop().replace(/\.md$/i, '');
 
@@ -17,19 +18,36 @@ export function buildGroups(tree) {
   const decisions = list
     .filter((p) => /^decisions\/ADR-\d+[^/]*\.md$/.test(p))
     .sort((a, b) => adrNum(a) - adrNum(b));
-  const changes = list.filter((p) => /^changes\/[^/]+\.md$/.test(p)).sort();
-  const features = list
-    .filter((p) => /^features\/[^/]+\.md$/.test(p) || /^features\/[^/]+\/[^/]+\.md$/.test(p))
-    .sort();
-  const archive = list.filter((p) => /^archive\/[^/]+\.md$/.test(p)).sort();
-  const foundations = list.filter((p) => /^[^/]+\.md$/.test(p)).sort();
-  return [
+  const known = [
     { key: 'decisions', label: 'Decisions', items: decisions },
-    { key: 'changes', label: 'Changes', items: changes },
-    { key: 'features', label: 'Features', items: features },
-    { key: 'archive', label: 'Archive', items: archive },
-    { key: 'foundations', label: 'Foundations', items: foundations },
+    { key: 'changes', label: 'Changes', items: list.filter((p) => /^changes\/[^/]+\.md$/.test(p)) },
+    { key: 'features', label: 'Features', items: list.filter((p) => /^features\/[^/]+\.md$/.test(p) || /^features\/[^/]+\/[^/]+\.md$/.test(p)) },
+    { key: 'archive', label: 'Archive', items: list.filter((p) => /^archive\/[^/]+\.md$/.test(p)) },
+    { key: 'foundations', label: 'Foundations', items: list.filter((p) => /^[^/]+\.md$/.test(p)) },
   ];
+  for (const g of known) g.items.sort();
+
+  // Group ANY remaining deep path by its top-level directory, so foreign
+  // `.specs` layouts (e.g. decisions/*, memory/, shared/, state/) still render
+  // instead of silently dropping every document.
+  const knownPaths = new Set(known.flatMap((g) => g.items));
+  const grouped = new Map();
+  for (const p of list) {
+    if (knownPaths.has(p)) continue;
+    const top = p.split('/')[0];
+    const items = grouped.get(top) || [];
+    items.push(p);
+    grouped.set(top, items);
+  }
+  const extra = Array.from(grouped.entries())
+    .map(([dir, items]) => ({
+      key: `dir:${dir}`,
+      label: dir.charAt(0).toUpperCase() + dir.slice(1),
+      items: items.sort(),
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+
+  return [...known, ...extra];
 }
 
 export function ReadingPane({ path, onOpenFile, canOpen }) {

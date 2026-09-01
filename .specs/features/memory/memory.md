@@ -1,6 +1,6 @@
 # Feature spec: guarana persistent memory
 
-**Status:** SPECIFIED → VALIDATED (Slices 1–5) · Slice 6 (workflow integration) SPECIFIED
+**Status:** VALIDATED — Slices 1–6 (6/6) · FINAL GATE PASSED (2026-08-31) · hardening batch applied
 **Date:** 2026-08-30
 
 ## Goal
