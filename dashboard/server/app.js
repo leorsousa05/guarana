@@ -5,6 +5,7 @@ import { createTelemetryRouter } from './routes/telemetry.js';
 import { createSpecsRouter } from './routes/specs.js';
 import { createDecisionsRouter } from './routes/decisions.js';
 import { createMemoryRouter } from './routes/memory.js';
+import { createWorkflowRouter } from './routes/workflow.js';
 
 export function createApp({ root, distDir }) {
   const app = express();
@@ -14,6 +15,7 @@ export function createApp({ root, distDir }) {
   app.use('/api/specs', createSpecsRouter({ root }));
   app.use('/api/decisions', createDecisionsRouter({ root }));
   app.use('/api/memory', createMemoryRouter({ root }));
+  app.use('/api/workflow', createWorkflowRouter({ root }));
 
   app.use(express.static(distDir));
 

@@ -9,14 +9,43 @@ import { Ticker } from './components/Ticker.jsx';
 import { Runs } from './components/Runs.jsx';
 import { Specs } from './components/Specs.jsx';
 import { Memory } from './components/Memory.jsx';
+import { Workflow } from './components/Workflow.jsx';
+import { Overview } from './components/Overview.jsx';
+
+const VIEWS = ['overview', 'now', 'runs', 'specs', 'workflow', 'memory'];
+
+// Read the active view from the URL hash (#/runs -> 'runs'), defaulting to
+// 'now'. Keeps the selected section deep-linkable and shareable.
+export function viewFromHash() {
+  const m = window.location.hash.match(/^#\/?([a-z-]+)/);
+  return m && VIEWS.includes(m[1]) ? m[1] : 'overview';
+}
 
 export default function App() {
   const liveTick = useLiveTick('/api/telemetry/stream');
   const summary = usePoll('/api/telemetry/summary', 5000, liveTick);
   const state = usePoll('/api/specs/state', 5000, liveTick);
   const tracker = usePoll('/api/specs/tracker', 5000, liveTick);
-  const [active, setActive] = useState('now');
+  const workflow = usePoll('/api/workflow/current', 5000, liveTick);
+  const [active, setActive] = useState(viewFromHash);
   const [mergedEvents, setMergedEvents] = useState([]);
+
+  // Keep the hash in sync with the active view (no re-navigation on mount).
+  useEffect(() => {
+    const onHash = () => setActive(viewFromHash());
+    window.addEventListener('hashchange', onHash);
+    if (window.location.hash !== `#/${active}`) {
+      window.history.replaceState(null, '', `#/${active}`);
+    }
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+
+  const selectView = (id) => {
+    setActive(id);
+    window.location.hash = `#/${id}`;
+    const main = document.getElementById('main-content');
+    if (main) main.focus();
+  };
 
   // Fetch events for the ~5 most recent sessions and merge by ts.
   const recentIDs = summary.data ? summary.data.runs.slice(0, 5).map((r) => r.sessionID).join(',') : '';
@@ -51,13 +80,17 @@ export default function App() {
   const hasTelemetry = summary.data && summary.data.runs.length > 0;
 
   return (
-    <main>
+    <main id="main-content" tabIndex={-1} className="app-main">
+      <a className="skip-link" href="#main-content">Skip to content</a>
       <Header lastEventTs={lastEventTs} tickerTick={mergedEvents.length} />
       <div className="app-shell">
-        <Sidebar active={active} onSelect={setActive} />
+        <Sidebar active={active} onSelect={selectView} />
         <div className="app-content">
           {summary.error && <ErrorBanner text={summary.error} />}
           {!summary.data && !summary.error && <p className="loading">loading…</p>}
+          {active === 'overview' && (
+            <Overview summary={summary.data} state={state.data} tracker={tracker.data} workflow={workflow.data} />
+          )}
           {active === 'now' && summary.data && (
             <>
               <NowPanel summary={summary.data} mergedEvents={mergedEvents} state={state.data} />
@@ -68,6 +101,7 @@ export default function App() {
             <Runs summary={summary.data} mergedEvents={mergedEvents} />
           )}
           {active === 'specs' && <Specs tracker={tracker.data} state={state.data} tick={liveTick} />}
+          {active === 'workflow' && <Workflow data={workflow.data} />}
           {active === 'memory' && <Memory />}
         </div>
       </div>

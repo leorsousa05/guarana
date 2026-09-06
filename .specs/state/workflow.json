@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "state": "planning",
+  "skill": "plan",
+  "activeTask": null,
+  "goal": null,
+  "condition": null,
+  "updatedAt": 1788712490833,
+  "history": [
+    {
+      "ts": 1788711769257,
+      "event": "new_task",
+      "from": "idle",
+      "to": "planning",
+      "note": "new task detected"
+    },
+    {
+      "ts": 1788712098824,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1788712191437,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1788712490833,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    }
+  ]
+}

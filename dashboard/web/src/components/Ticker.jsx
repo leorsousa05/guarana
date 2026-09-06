@@ -26,10 +26,10 @@ export function Ticker({ events }) {
     </span>
   ));
   return (
-    <div className="ticker" aria-label="Live telemetry ticker">
+    <div className="ticker" role="region" aria-label="Live telemetry ticker">
       <div className="ticker-tape">
         {tape}
-        {tape}
+        <span aria-hidden="true">{tape}</span>
       </div>
     </div>
   );

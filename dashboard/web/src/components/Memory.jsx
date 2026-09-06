@@ -61,6 +61,10 @@ export function Memory() {
   };
 
   const review = async (id, action) => {
+    if (action === 'discard') {
+      const ok = window.confirm('Discard this memory draft permanently? This cannot be undone.');
+      if (!ok) return;
+    }
     setBusyId(id);
     setErr(null);
     try {
@@ -123,7 +127,7 @@ export function Memory() {
       )}
 
       {tab === 'search' && (
-        <div role="tabpanel" aria-label="Search">
+        <div role="tabpanel" aria-label="Search" aria-live="polite">
           <form className="mem-search" onSubmit={runSearch}>
             <input
               type="search"
@@ -140,8 +144,8 @@ export function Memory() {
                 </option>
               ))}
             </select>
-            <button type="submit" disabled={searching}>
-              {searching ? '…' : 'search'}
+            <button type="submit" disabled={searching} aria-busy={searching}>
+              {searching ? 'Searching…' : 'Search'}
             </button>
           </form>
           {results && results.error && <ErrorBanner text={results.error} />}

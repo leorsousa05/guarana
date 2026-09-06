@@ -4,14 +4,17 @@ const { pathToFileURL } = require('url');
 const {
   PLUGIN_BUNDLE, PLUGIN_NAME,
   MEMORY_PLUGIN_BUNDLE, MEMORY_PLUGIN_NAME,
+  ORCHESTRATOR_PLUGIN_BUNDLE, ORCHESTRATOR_PLUGIN_NAME,
   MEMORY_ENGINE_SOURCE, MEMORY_ENGINE_NAME,
+  ORCHESTRATOR_ENGINE_SOURCE, ORCHESTRATOR_ENGINE_NAME,
 } = require('../constants.js');
-const { pluginIsOurs, PLUGIN_MARKER, MEMORY_PLUGIN_MARKER } = require('../lib/guard.js');
-const { pluginTarget, memoryEngineTarget } = require('../lib/paths.js');
+const { pluginIsOurs, PLUGIN_MARKER, MEMORY_PLUGIN_MARKER, ORCHESTRATOR_PLUGIN_MARKER } = require('../lib/guard.js');
+const { pluginTarget, memoryEngineTarget, orchestratorEngineTarget } = require('../lib/paths.js');
 
 const PLUGINS = [
   { name: PLUGIN_NAME, bundle: PLUGIN_BUNDLE, marker: PLUGIN_MARKER },
   { name: MEMORY_PLUGIN_NAME, bundle: MEMORY_PLUGIN_BUNDLE, marker: MEMORY_PLUGIN_MARKER },
+  { name: ORCHESTRATOR_PLUGIN_NAME, bundle: ORCHESTRATOR_PLUGIN_BUNDLE, marker: ORCHESTRATOR_PLUGIN_MARKER },
 ];
 
 function copyDir(src, dest) {
@@ -40,6 +43,9 @@ function pluginInstall(useProject) {
   const engineTarget = memoryEngineTarget(useProject);
   copyDir(MEMORY_ENGINE_SOURCE, engineTarget);
   console.log(`${fs.existsSync(path.join(engineTarget, 'capture.js')) ? 'updated' : 'installed'} memory engine -> ${engineTarget}`);
+  const orchTarget = orchestratorEngineTarget(useProject);
+  copyDir(ORCHESTRATOR_ENGINE_SOURCE, orchTarget);
+  console.log(`${fs.existsSync(path.join(orchTarget, 'state.js')) ? 'updated' : 'installed'} orchestrator engine -> ${orchTarget}`);
 }
 
 function pluginUninstall(useProject) {
@@ -60,6 +66,11 @@ function pluginUninstall(useProject) {
   if (fs.existsSync(engineTarget)) {
     fs.rmSync(engineTarget, { recursive: true, force: true });
     console.log(`uninstalled memory engine from ${engineTarget}`);
+  }
+  const orchTarget = orchestratorEngineTarget(useProject);
+  if (fs.existsSync(orchTarget)) {
+    fs.rmSync(orchTarget, { recursive: true, force: true });
+    console.log(`uninstalled orchestrator engine from ${orchTarget}`);
   }
 }
 
@@ -110,6 +121,11 @@ async function pluginStatus(useProject) {
   if (hasEngine) {
     console.log(`- engine health: ${await engineHealthy(engineTarget)}`);
   }
+  const orchTarget = orchestratorEngineTarget(useProject);
+  const hasOrch = fs.existsSync(path.join(orchTarget, 'state.js')) &&
+    fs.existsSync(path.join(orchTarget, 'decide.js')) &&
+    fs.existsSync(path.join(orchTarget, 'prompt.js'));
+  console.log(`- orchestrator engine (${orchTarget}): ${hasOrch ? 'deployed' : 'not deployed (re-run: guarana plugin install)'}`);
 }
 
 async function run(args, { useProject }) {

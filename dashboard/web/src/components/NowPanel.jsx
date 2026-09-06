@@ -45,7 +45,7 @@ function CopyButton({ text }) {
   };
   return (
     <button type="button" className="resume-copy" onClick={copy}>
-      {copied ? 'copied ✓' : 'copy resume prompt'}
+      <span aria-live="polite">{copied ? 'copied ✓' : 'copy resume prompt'}</span>
     </button>
   );
 }

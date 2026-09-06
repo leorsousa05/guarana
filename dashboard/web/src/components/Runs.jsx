@@ -81,6 +81,7 @@ export function Runs({ summary, mergedEvents }) {
               <tr
                 key={r.sessionID}
                 tabIndex={0}
+                aria-selected={selected === r.sessionID}
                 onClick={(e) => {
                   setTrigger(e.currentTarget);
                   setSelected(r.sessionID);

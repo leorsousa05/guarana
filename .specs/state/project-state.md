@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-08-31 (dashboard & CLI enhancements — plugin status, resume card, health gauges, decision lineage)
+Last updated: 2026-08-31 (automatic orchestrator — always-on engineering loop)
 
 ## Per-skill status
 | Skill | Status |
@@ -15,14 +15,15 @@ Last updated: 2026-08-31 (dashboard & CLI enhancements — plugin status, resume
 | guarana CLI | SHIPPED |
 | guarana dashboard | VALIDATED |
 | guarana memory | **FINAL GATE PASSED** + hardening batch applied |
+| guarana orchestrator | **SPECIFIED → IMPLEMENTED → VALIDATED** |
 
 ## Current step
-**Dashboard & CLI enhancements (2026-08-31).** Added `guarana plugin status` (install/engine/vault health, stale + foreign detection); dashboard resume card (open goal + copyable resume prompt wired to memory_get_context_for_task); data-backed health gauges (error rate, tokens vs ADR-005 ref, runs); memory-graph decision lineage (supersedes diff). `buildLineage` extracted to a pure module + 5 tests. Details in `.specs/changes/2026-08-31-dashboard-cli-enhancements.md`. `npm test` 120/120, `check-cli` PASS, frontend rebuilt, engine/plugins redeployed. Version 0.6.3.
+**Automatic orchestrator (2026-08-31).** Added an always-on orchestration layer that turns the manual skill workflow into an automatic loop. Host-independent core `orchestrator/` (state machine `idle/planning/building/coding/verifying/debugging/completed`, intent→skill decision, progressive-disclosure prompt builders) + thin opencode plugin `plugin/guarana-orchestrator.js` (chat.message, system.transform, tool.execute.after, workflow_get/workflow_tick tools). State persists to `.specs/state/workflow.json` (disk is source of truth; resumed across turns). Verify-fail auto-routes to debugging→fix→re-verify; explicit `guarana:*` still forces a step. Dashboard Workflow panel + `/api/workflow/current`. Details in `.specs/changes/2026-08-31-orchestrator.md`. `npm test` 156/156, `check-cli` PASS, frontend rebuilt, orchestrator plugin+engine redeployed. Version 0.6.4.
 
 **Pending:** commit (ADR-007); then optionally push `main` (ahead of origin).
 
 ## Checkpoint
-- Goal: none (batch closed). Commit the dashboard/CLI enhancement batch + push `main` if desired.
+- Goal: none (batch closed). Commit the orchestrator batch + push `main` if desired.
 - Pending writes: none (change ledger + state updated).
 - Budget: ADR-005 defaults.
 

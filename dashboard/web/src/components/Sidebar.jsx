@@ -1,7 +1,9 @@
 const SECTIONS = [
+  ['overview', 'Overview'],
   ['now', 'Now'],
   ['runs', 'Runs'],
   ['specs', 'Specs'],
+  ['workflow', 'Workflow'],
   ['memory', 'Memory'],
 ];
 

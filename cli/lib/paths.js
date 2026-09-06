@@ -19,4 +19,11 @@ function memoryEngineTarget(useProject) {
   return path.join(pluginsParent, 'memory');
 }
 
-module.exports = { targetDir, pluginTarget, memoryEngineTarget };
+// Orchestrator core engine, deployed next to the plugin at the same relative
+// path the plugin resolves (pluginDir/../orchestrator).
+function orchestratorEngineTarget(useProject) {
+  const pluginsParent = path.dirname(path.dirname(pluginTarget(useProject)));
+  return path.join(pluginsParent, 'orchestrator');
+}
+
+module.exports = { targetDir, pluginTarget, memoryEngineTarget, orchestratorEngineTarget };
