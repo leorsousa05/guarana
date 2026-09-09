@@ -1,7 +1,8 @@
 // guarana memory plugin (Component B)
 // Captures tool calls / file edits as draft atoms in the project vault
 // (.guarana/memory/nodes.jsonl), delegating to the memory/ engine.
-// Constraints: no external deps, never throws, lazy (never auto-creates a vault).
+// Constraints: no external deps, never throws, and initializes the project
+// vault automatically so memory works without a separate setup command.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -119,9 +120,7 @@ export const GuaranaMemory = async ({ directory }) => {
       const e = await engine();
       if (!e) return;
       const vaultDir = e.vault.projectVaultDir(directory);
-      // Lazy: vault must exist (guarana memory init is the explicit opt-in).
-      if (!fs.existsSync(e.vault.paths(vaultDir).nodes))
-        return skip("vault-not-initialized", meta.sessionID);
+      if (!fs.existsSync(e.vault.paths(vaultDir).nodes)) e.vault.initVault(directory);
       let cfg = null;
       try {
         cfg = e.vault.loadConfig(vaultDir); // malformed config -> defaults
@@ -204,9 +203,7 @@ export const GuaranaMemory = async ({ directory }) => {
     try {
       const e = await engine();
       if (!e || !e.tools) return JSON.stringify({ error: "memory engine not available" });
-      const vaultDir = e.vault.projectVaultDir(directory);
-      if (!fs.existsSync(e.vault.paths(vaultDir).nodes))
-        return JSON.stringify({ error: "memory vault not initialized (run: guarana memory init)" });
+      const vaultDir = e.vault.initVault(directory);
       const result = await e.tools[handlerName](vaultDir, args || {});
       return JSON.stringify(result);
     } catch (err) {
@@ -358,7 +355,15 @@ export const GuaranaMemory = async ({ directory }) => {
       }
     },
 
-    "session.created": async (event) => recordLifecycle("created", event),
+    "session.created": async (event) => {
+      recordLifecycle("created", event);
+      try {
+        const e = await engine();
+        if (e) e.vault.initVault(directory);
+      } catch (err) {
+        recordError(err);
+      }
+    },
     "session.idle": async (event) => recordLifecycle("idle", event),
   };
 };

@@ -14,5 +14,9 @@ The model forgets between runs; only files survive (hard truth 3). Anything that
 ## Restoration round-trip
 Every run: read README.md → project-state.md → decisions/* → current feature spec. That round-trip IS the memory mechanism — across sessions, across models.
 
+The orchestrator automatically creates missing spec scaffolding, initializes the
+project vault, and injects relevant confirmed vault context for the active task.
+The disk tree remains the source of truth; drafts are never injected.
+
 ## Silent context truncation
 Contexts truncate without notice. Defenses: checkpoint open facts at stage boundaries; on restore, verify the checkpoint matches; on mismatch, re-read from disk — never reconstruct from recall. Markdown over vector DB (ADR-004): inspectable, diffable, append-only, zero infrastructure.

@@ -1,6 +1,6 @@
 {
   "name": "guarana",
-  "version": "0.6.5",
+  "version": "0.7.0",
   "description": "Install/uninstall/list/update the guarana skill suite for OpenCode",
   "bin": {
     "guarana": "bin/guarana.js"

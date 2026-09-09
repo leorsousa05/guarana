@@ -22,3 +22,9 @@ Open problems and material failures from the build. Entry format: title / sympto
 - **Reproduction trigger:** A run that starts from a tracker that looks "all done" — temptation to treat steps 2–4 as skippable.
 - **Mitigation:** Restore order is "always, in this exact order" — no short-circuit even when the tracker says DONE. Detected via human audit question; state and checkpoint backfilled same day.
 - **Status:** Fixed (state backfilled 2026-08-21); watch for recurrence on "green board" sessions.
+
+## 2026-09-09 — verifier treated successful diff prose as a failed tool result
+- **Symptom:** While the workflow was in `verifying`, a successful `git diff` was classified as a failed tool result because changed documentation contained ordinary words such as "failed" and "failure".
+- **Reproduction trigger:** Run a successful text-producing command during verification whose output contains failure vocabulary in prose.
+- **Mitigation:** Match error-shaped output lines (`Error:`, `not ok`, `FAIL`, `failed` at line start, process exit errors, or JSON error fields) instead of arbitrary occurrences inside prose.
+- **Status:** Fixed in `orchestrator/decide.js`; regression coverage added to `orchestrator/workflow.test.js`.

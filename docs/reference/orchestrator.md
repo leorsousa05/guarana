@@ -1,7 +1,9 @@
 # Automatic Orchestration (always-on loop)
 
 Since 2026-08-31 Guarana runs an automatic engineering loop. You no longer need
-to invoke a skill to start work.
+to invoke a skill to start work. On a new task it also bootstraps missing
+`.specs/` files and the project memory vault, then supplies relevant confirmed
+memory to the active skill.
 
 ## What changed
 
@@ -15,6 +17,9 @@ to invoke a skill to start work.
   … force that exact step from any state — an escape hatch that always wins.
 - **Disk is the source of truth.** Workflow state lives at
   `.specs/state/workflow.json` and is resumed across turns/sessions.
+- **Specs and memory are automatic.** Missing `.specs/` scaffolding and a
+  task-specific feature spec are created idempotently; confirmed memory is
+  retrieved on task start/resume and completed runs are recorded.
 
 ## State machine
 
@@ -41,9 +46,9 @@ rejected — the machine cannot wedge.
 ## How the loop runs
 
 1. `chat.message` → restore persisted workflow → `decide` → apply transition → persist.
-2. `experimental.chat.system.transform` injects a small always-on block **plus the
-   active skill's full SKILL.md body** (ponytail-style). The model follows the
-   injected skill directly — no `skill` tool call needed.
+2. `experimental.chat.system.transform` injects a small always-on block, relevant
+   confirmed memory, and the active skill's full SKILL.md body (ponytail-style).
+   The model follows the injected skill directly — no `skill` tool call needed.
 3. The model advances deterministically with `workflow_tick(action)` (e.g.
    `code_complete`, `verify_pass`, `verify_fail`).
 4. `tool.execute.after` provides the automatic verify-fail nudge.

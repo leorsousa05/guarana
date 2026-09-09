@@ -4,12 +4,12 @@
 **Date:** 2026-08-30
 
 ## Goal
-Give the OpenCode agent long-term, project-local memory: a graph of decisions, bugs, solutions and refactors captured at tool-call granularity, queryable only through explicit tool calls — never auto-injected into context. The agent can resume interrupted work weeks later by asking the graph *why* the code looks the way it does.
+Give the OpenCode agent long-term, project-local memory: a graph of decisions, bugs, solutions and refactors captured at tool-call granularity. Relevant confirmed context is automatically supplied for active tasks, while the full graph remains available through explicit tool calls. The agent can resume interrupted work weeks later with the graph's rationale for *why* the code looks the way it does.
 
 ## Design principles (contract from brief)
 1. **Tool-call granularity atoms.** Each captured tool interaction produces a memory atom: `intent`, `input`, `output` (summarized), `decision` (derived), `ts`, `projectHash` (context hash of the project).
 2. **Graph, not stack.** Nodes: `decision | bug | solution | refactor | atom | supernode`. Edges: `caused-by | depends-on | supersedes | summarizes`. Enables partial-context retrieval and semantic navigation.
-3. **Explicit retrieval only.** No automatic injection into system prompt or context. The agent calls `memory_search`, `memory_save_decision`, `memory_get_context_for_task`, `memory_review_draft` when it judges necessary (ADR-008).
+3. **Automatic bounded retrieval.** The orchestrator injects only relevant confirmed context, capped at ten nodes. The agent calls `memory_search`, `memory_save_decision`, `memory_get_context_for_task`, and `memory_review_draft` for deeper retrieval or review.
 4. **Draft quarantine.** Auto-captured memories are `status: draft`. They become `confirmed` — and thus retrievable — only after explicit review (human via CLI, or a reviewer agent via tool). Drafts are auditable (`memory status`, `memory review --list`) but never returned by search.
 5. **OpenCode-native capture.** Plugin hooks: `session.created`, `tool.execute.before`, `tool.execute.after`, `file.edited`, `session.idle`. No adapters for other platforms.
 6. **Two vaults** (ADR-010): project `.guarana/memory/` (gitignored, shareable via export/import) and user `~/.config/guarana/memory/` (private). JSONL serialization only.
@@ -27,13 +27,13 @@ Give the OpenCode agent long-term, project-local memory: a graph of decisions, b
   - `vault.js` — vault paths, config load, init, export/import.
   - `security.js` — sanitization: reject/sanitize credentials, API keys, `.env` content.
 - **`cli/commands/memory.js`** — subcommands `init | status | search | review | prune | export | import`, delegating to `memory/` (dynamic import from CJS). Registered in `cli/main.js`, documented in `cli/help.js`.
-- **`plugin/guarana-memory.js`** — OpenCode plugin (ESM, zero deps, marker header `// guarana memory plugin`, never throws): capture hooks + 4 custom tools, all delegating to `memory/`.
+- **`plugin/guarana-memory.js`** — OpenCode plugin (ESM, zero deps, marker header `// guarana memory plugin`, never throws): automatic vault initialization, capture hooks, and 4 custom tools, all delegating to `memory/`.
 - **Telemetry**: memory operations append to `<project>/.specs/state/telemetry/events.jsonl` (existing pipeline); no parallel logging.
 - **Bundle**: `memory/` and `plugin/guarana-memory.js` added to the mappings in `scripts/sync-cli-bundle.mjs` and `scripts/check-cli-bundle.mjs`.
 
 ## Security constraints (hard)
 - Capture filters must drop or redact: contents of `.env*` files, strings matching common secret shapes (API keys, tokens, private keys), and any tool input/output flagged sensitive. Filtered events are recorded as `type: memory-filtered` telemetry, never stored.
-- No memory is ever auto-injected; retrieval is pull-only.
+- Only confirmed memory is automatically injected; drafts are always excluded.
 
 ## Slices (each = one build→verify cycle)
 | # | Slice | Contents |
@@ -88,15 +88,12 @@ Give the OpenCode agent long-term, project-local memory: a graph of decisions, b
 17. Server route/lib unit tests green; security: graph/search responses never include draft content beyond the drafts endpoint; no vault or engine error crashes the route (404/empty, not 500).
 18. `npm run check-cli` passes (bundle includes dashboard + memory engine + server).
 
-**Slice 6 (addendum 2026-08-31): workflow integration — teach the skills when to use memory**
-Close the gap: the memory tools exist but no skill instructs when to call them (pull-only by design, but "explicit" must be *taught*, not left to chance). Three changes:
-- **guarana:plan** — on state restore, consider `memory_get_context_for_task` when resuming/interrupting work; after closing a run, consider `memory_save_decision`.
-- **guarana:remember** — document the memory vault as an additional resume layer (query `memory_get_context_for_task` on context loss, alongside the `.specs/` disk restore).
-- **New skill `guarana:memory`** — a dedicated skill body: when to call each of the 4 tools, the draft→confirmed lifecycle, and the guidance that retrieval is always explicit (never auto-injected). Registered in the suite index + routed from plan.
+**Slice 6 (addendum 2026-08-31): workflow integration — automatic memory context**
+Close the gap: the orchestrator initializes the vault, retrieves relevant context, and records completed runs automatically. The skills document the automatic behavior and the tools remain available for deeper operations.
 
 **Slice 6 acceptance:**
-19. `guarana:plan` SKILL.md instructs explicit `memory_get_context_for_task` on resume and `memory_save_decision` on run close — without auto-injecting vault content.
-20. `guarana:remember` SKILL.md documents the vault as a resume layer; new `skills/memory/SKILL.md` exists, covers the 4 tools + draft lifecycle; suite index lists it; plan routing table routes to it.
-21. `npm run check-cli` passes (skills synced to bundle); no `.specs/` content or vault content is hardcoded into skill bodies (no project-specific facts).
+19. The orchestrator initializes the vault, injects relevant confirmed context on task start/resume, and records verified completion decisions.
+20. `guarana:plan` and `guarana:remember` document automatic memory behavior; `skills/memory/SKILL.md` covers the 4 tools + draft lifecycle; the suite index lists it.
+21. `npm run check-cli` passes (skills and engines synced to bundle); no project-specific facts are hardcoded into skill bodies.
 
 **Final gate (human):** the end-to-end resume scenario — interrupt work, wipe session, resume via explicit tool calls, recover decision rationale, rejected alternatives, and prior bugs.

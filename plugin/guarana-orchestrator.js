@@ -1,9 +1,9 @@
 // guarana orchestrator plugin (Component C)
 // Thin opencode adapter over the host-independent orchestrator core
 // (orchestrator/state.js + decide.js + prompt.js). Decides which guarana skill
-// should fire each turn, advances the persisted state machine, and injects a
-// small always-on orchestration prompt (progressive disclosure: full skill
-// bodies stay in the skill tool). Never throws. No external deps.
+// should fire each turn, advances the persisted state machine, bootstraps the
+// project record, retrieves relevant memory, and injects a small always-on
+// orchestration prompt. Never throws. No external deps.
 //
 // Markers: '// guarana orchestrator plugin'.
 
@@ -23,13 +23,30 @@ async function loadCore() {
   ];
   for (const dir of candidates) {
     if (fs.existsSync(path.join(dir, 'state.js'))) {
-      const [state, decide, prompt] = await Promise.all([
+      const [state, decide, prompt, specs] = await Promise.all([
         import(pathToFileURL(path.join(dir, 'state.js')).href),
         import(pathToFileURL(path.join(dir, 'decide.js')).href),
         import(pathToFileURL(path.join(dir, 'prompt.js')).href),
+        import(pathToFileURL(path.join(dir, 'specs.js')).href),
       ]);
-      return { state, decide, prompt };
+      return { state, decide, prompt, specs };
     }
+  }
+  return null;
+}
+
+async function loadMemoryEngine() {
+  const candidates = [
+    path.join(pluginDir, '..', 'memory'),
+    path.join(pluginDir, '..', '..', 'memory'),
+  ];
+  for (const dir of candidates) {
+    if (!fs.existsSync(path.join(dir, 'vault.js')) || !fs.existsSync(path.join(dir, 'tools.js'))) continue;
+    const [vault, tools] = await Promise.all([
+      import(pathToFileURL(path.join(dir, 'vault.js')).href),
+      import(pathToFileURL(path.join(dir, 'tools.js')).href),
+    ]);
+    return { vault, tools };
   }
   return null;
 }
@@ -100,6 +117,45 @@ export const GuaranaOrchestrator = async ({ directory }) => {
   // Latest workflow, recomputed on chat.message / workflow_tick, used to build
   // the injection on the next system transform.
   let latest = null;
+  let memoryContext = null;
+  let memoryPromise = null;
+
+  const loadContext = async (task) => {
+    if (!task) return null;
+    if (!memoryPromise) {
+      memoryPromise = loadMemoryEngine().catch((err) => {
+        append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
+        return null;
+      });
+    }
+    const e = await memoryPromise;
+    if (!e) return null;
+    try {
+      const vaultDir = e.vault.initVault(directory);
+      return await e.tools.memoryGetContextForTask(vaultDir, { task, limit: 10 });
+    } catch (err) {
+      append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
+      return null;
+    }
+  };
+
+  const saveCompletionMemory = async (workflow) => {
+    if (!workflow.goal) return;
+    if (!memoryPromise) memoryPromise = loadMemoryEngine().catch(() => null);
+    const e = await memoryPromise;
+    if (!e) return;
+    try {
+      const vaultDir = e.vault.initVault(directory);
+      await e.tools.memorySaveDecision(vaultDir, {
+        intent: `completed task: ${workflow.goal}`,
+        decision: 'Task reached verification and was accepted by the automatic guarana workflow.',
+        tags: ['guarana', 'completed'],
+        author: 'guarana',
+      });
+    } catch (err) {
+      append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
+    }
+  };
 
   const syncDecision = async (userText, lastResult) => {
     const c = await core();
@@ -111,12 +167,21 @@ export const GuaranaOrchestrator = async ({ directory }) => {
       if (d.event) {
         const applied = c.state.apply(wf, d.event, {
           skill: d.skill,
-          activeTask: d.goal && d.event === 'new_task' ? d.note : wf.activeTask,
+          goal: d.goal != null ? d.goal : wf.goal,
+          activeTask: d.goal != null ? d.goal : wf.activeTask,
           note: d.note,
         });
         if (applied) {
           next = applied;
+          if (d.event === 'new_task' && d.goal) {
+            try {
+              c.specs.ensureSpecs(directory, d.goal);
+            } catch (err) {
+              append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
+            }
+          }
           c.state.save(directory, next);
+          if (next.state === 'completed') await saveCompletionMemory(next);
           append({
             ts: Date.now(),
             type: 'workflow',
@@ -128,6 +193,8 @@ export const GuaranaOrchestrator = async ({ directory }) => {
           });
         }
       }
+      const contextTask = next.goal || next.activeTask || (next.state !== 'idle' && next.state !== 'completed' ? userText.trim() : '');
+      memoryContext = await loadContext(contextTask);
       latest = next;
     } catch (err) {
       append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
@@ -204,6 +271,16 @@ export const GuaranaOrchestrator = async ({ directory }) => {
           return { ok: false, error: `illegal transition ${action} from ${wf.state}`, state: wf.state };
         }
         c.state.save(directory, applied);
+        if (action === 'new_task' && args.goal) {
+          try {
+            c.specs.ensureSpecs(directory, args.goal);
+          } catch (err) {
+            append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
+          }
+        }
+        if (applied.state === 'completed') await saveCompletionMemory(applied);
+        latest = applied;
+        memoryContext = await loadContext(applied.goal || applied.activeTask || '');
         append({
           ts: Date.now(),
           type: 'workflow',
@@ -225,7 +302,7 @@ export const GuaranaOrchestrator = async ({ directory }) => {
     // next skill/transition, persist, and stage the directive for injection.
     'chat.message': async (input, output) => {
       try {
-        const text = userText(output && output.parts);
+        const text = userText((output && output.parts) || (input && input.parts));
         await syncDecision(text, null);
       } catch (err) {
         append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
@@ -238,7 +315,7 @@ export const GuaranaOrchestrator = async ({ directory }) => {
         const c = await core();
         if (!c) return;
         const wf = latest ? latest : c.state.load(directory);
-        const injection = c.prompt.buildInjection(wf);
+        const injection = c.prompt.buildInjection(wf, { memoryContext, directory });
         if (!Array.isArray(output.system)) output.system = [];
         if (output.system.length > 0) {
           output.system[output.system.length - 1] += '\n\n' + injection;

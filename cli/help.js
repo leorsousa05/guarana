@@ -7,8 +7,8 @@ Usage:
   guarana uninstall [--project]   Remove the installed suite
   guarana list [--project]        Show installed skills, version, and plugin presence
   guarana update [--project]      Re-install from the CLI's bundled skills
-  guarana plugin install [--project]    Install the telemetry and memory plugins (+ memory engine)
-  guarana plugin uninstall [--project]  Remove the telemetry and memory plugins (+ memory engine)
+  guarana plugin install [--project]    Install the telemetry, memory, and orchestrator plugins (+ engines)
+  guarana plugin uninstall [--project]  Remove the telemetry, memory, and orchestrator plugins (+ engines)
   guarana plugin status [--project]     Check plugin/engine/vault install health
   guarana web [--port N] [--no-open]  Start the guarana dashboard and open it in the browser
   guarana memory <sub>            Manage the project memory vault (.guarana/memory/)
@@ -29,8 +29,8 @@ Targets:
   --project    ./skills/guarana/ (current working directory)
 
 Plugin targets:
-  default      ~/.config/opencode/plugins/{guarana-telemetry.js,guarana-memory.js}
-  --project    ./.opencode/plugins/{guarana-telemetry.js,guarana-memory.js} (current working directory)
+  default      ~/.config/opencode/plugins/{guarana-telemetry.js,guarana-memory.js,guarana-orchestrator.js}
+  --project    ./.opencode/plugins/{guarana-telemetry.js,guarana-memory.js,guarana-orchestrator.js} (current working directory)
 `;
 
 module.exports = { HELP };

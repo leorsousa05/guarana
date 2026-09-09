@@ -7,6 +7,7 @@
 // active skill is injected at a time; the rest stay out of context.
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { STATE_SKILL, skillForState } from './state.js';
@@ -20,13 +21,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // A plugin-deployed layout may point at the project skills (../skills/guarana)
 // or the globally installed skills (~/.agents/skills/guarana). All covered by
 // an explicit candidate list so injection never depends on cwd.
-function skillDirs() {
+function skillDirs(projectDir) {
   const candidates = [
+    projectDir ? path.join(projectDir, 'skills', 'guarana') : null,
     path.join(__dirname, '..', 'skills', 'guarana'),
     path.join(__dirname, '..', '..', 'skills', 'guarana'),
     path.join(__dirname, '..', '..', '..', 'skills', 'guarana'),
+    path.join(os.homedir(), '.agents', 'skills', 'guarana'),
   ];
   return candidates.filter((dir) => {
+    if (!dir) return false;
     try {
       return fs.statSync(dir).isDirectory();
     } catch {
@@ -37,10 +41,10 @@ function skillDirs() {
 
 // Resolve the SKILL.md body for a skill name (e.g. 'plan' -> SKILL.md contents).
 // Returns the file text, or '' when no body can be found.
-export function resolveSkillBody(skill) {
+export function resolveSkillBody(skill, projectDir) {
   if (!skill) return '';
   const rel = path.join('skills', `${skill}`, 'SKILL.md');
-  for (const dir of skillDirs()) {
+  for (const dir of skillDirs(projectDir)) {
     const file = path.join(dir, rel);
     try {
       return fs.readFileSync(file, 'utf8');
@@ -99,16 +103,19 @@ export function completionAction(state) {
 
 // The injected context for the current state: orchestration block + the active
 // skill's full SKILL.md body + a closing line naming the completion action.
-export function buildInjection(workflow) {
+export function buildInjection(workflow, { memoryContext, directory } = {}) {
   const skill = skillForState(workflow.state);
   const block = buildSystemBlock(workflow);
-  if (!skill) return block;
-  const body = resolveSkillBody(skill);
+  const memory = memoryContext && memoryContext.count > 0
+    ? `\n\n<!-- guarana memory (automatic context) -->\n${JSON.stringify(memoryContext)}\n<!-- end guarana memory -->`
+    : '';
+  if (!skill) return block + memory;
+  const body = resolveSkillBody(skill, directory);
   const action = completionAction(workflow.state);
   const close = action
     ? `\n\nWorkflow: when this step completes, call \`workflow_tick\` with action \`${action}\`.`
     : '';
-  return [block, body ? `\n\n<!-- guarana:${skill} (injected) -->\n${body}${close}` : '']
+  return [block + memory, body ? `\n\n<!-- guarana:${skill} (injected) -->\n${body}${close}` : '']
     .filter(Boolean)
     .join('\n');
 }

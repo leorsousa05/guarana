@@ -10,6 +10,7 @@ function run(args, { useProject }) {
   assertGuard(target, 'uninstall');
   fs.rmSync(target, { recursive: true, force: true });
   console.log(`uninstalled guarana from ${target}`);
+  require('./plugin.js').uninstall(useProject);
 }
 
 module.exports = { run };

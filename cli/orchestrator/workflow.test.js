@@ -9,6 +9,7 @@ import {
 } from './state.js';
 import { decide, resultFailed } from './decide.js';
 import { buildSystemBlock, buildInjection, resolveSkillBody, completionAction } from './prompt.js';
+import { ensureSpecs, taskSlug } from './specs.js';
 
 function tmp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-orch-'));
@@ -127,6 +128,27 @@ test('decide: new task from idle routes to planning', () => {
   assert.equal(d.state, 'planning');
   assert.equal(d.skill, 'plan');
   assert.equal(d.event, 'new_task');
+  assert.equal(d.goal, 'Implement OAuth authentication');
+});
+
+test('decide: problem report from idle routes to planning', () => {
+  const d = decide({
+    userText: 'Guarana never uses memory without an explicit command',
+    workflow: createWorkflow(),
+  });
+  assert.equal(d.event, 'new_task');
+  assert.equal(d.skill, 'plan');
+});
+
+test('automatic specs bootstrap is idempotent and task-specific', () => {
+  const dir = tmp();
+  const first = ensureSpecs(dir, 'Implement OAuth authentication', 0);
+  const second = ensureSpecs(dir, 'Implement OAuth authentication', 1);
+  assert.equal(taskSlug('Implement OAuth authentication'), 'implement-oauth-authentication');
+  assert.equal(first.created.length, 3);
+  assert.equal(second.created.length, 0);
+  assert.ok(fs.existsSync(first.featureFile));
+  assert.match(fs.readFileSync(first.featureFile, 'utf8'), /Implement OAuth authentication/);
 });
 
 test('decide: explicit guarana:code forces coding', () => {
@@ -170,6 +192,10 @@ test('decide: previous tool result failure auto-routes verifying -> debugging', 
 test('resultFailed detects errors', () => {
   assert.ok(resultFailed({ error: 'boom' }));
   assert.ok(resultFailed('Error: exit code 1'));
+  assert.ok(resultFailed('not ok 1 - rejects invalid input'));
+  assert.ok(resultFailed('{"error":"boom"}'));
+  assert.ok(!resultFailed('+ Failed checks lead to debugging'));
+  assert.ok(!resultFailed('The report explains why a test failed.'));
   assert.ok(!resultFailed({ output: 'all good' }));
   assert.ok(!resultFailed(null));
 });
@@ -209,6 +235,15 @@ test('injection includes the active skill full body (ponytail mechanism)', () =>
   assert.match(inj, /guarana:plan \(injected\)/);
   assert.match(inj, /# guarana:plan/);
   assert.match(inj, /plan_complete/);
+});
+
+test('injection includes automatic memory context when supplied', () => {
+  const w = apply(createWorkflow(), 'new_task', { goal: 'OAuth' });
+  const inj = buildInjection(w, {
+    memoryContext: { count: 1, decisions: [{ summary: 'Use PKCE' }] },
+  });
+  assert.match(inj, /guarana memory \(automatic context\)/);
+  assert.match(inj, /Use PKCE/);
 });
 
 test('injection for completed state has no skill body', () => {

@@ -147,7 +147,7 @@ describe('GuaranaMemory', () => {
 
   // Criterion 10: never throws on missing vault, malformed config, read-only FS
   describe('robustness (criterion 10)', () => {
-    it('missing vault: skips silently, does not create it, logs memory-skipped once', async () => {
+    it('missing vault: initializes automatically and captures the first atom', async () => {
       await simulateToolCall(
         { input: { tool: 'bash', sessionID: 's4' }, output: { args: { command: 'ls' } } },
         { output: 'ok' }
@@ -156,10 +156,9 @@ describe('GuaranaMemory', () => {
         { input: { tool: 'bash', sessionID: 's4', callID: 'c2' }, output: { args: { command: 'pwd' } } },
         { output: 'ok' }
       );
-      assert.ok(!fs.existsSync(vaultDir()));
-      const skipped = readEvents().filter((e) => e.type === 'memory-skipped');
-      assert.equal(skipped.length, 1);
-      assert.equal(skipped[0].reason, 'vault-not-initialized');
+      assert.ok(fs.existsSync(vaultDir()));
+      assert.equal(readNodes().length, 2);
+      assert.ok(readEvents().some((e) => e.type === 'memory-captured'));
     });
 
     it('malformed config.json: falls back to defaults, captures normally', async () => {

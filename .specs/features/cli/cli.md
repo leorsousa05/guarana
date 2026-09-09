@@ -7,28 +7,28 @@
 A Node.js CLI named `guarana` that installs/uninstalls/lists/updates the guarana skill suite for OpenCode.
 
 ## Commands
-- `guarana install [--project]` — install the skill suite.
+- `guarana install [--project]` — install the skill suite and the automatic telemetry, memory, and orchestrator plugins with their engines.
   - Default (global): copy `skills/guarana/` → `~/.agents/skills/guarana/`.
   - `--project`: copy into `./skills/guarana/` of the current working directory.
-- `guarana uninstall [--project]` — remove the installed suite from the target.
+- `guarana uninstall [--project]` — remove the installed suite and its automatic plugins/engines from the target.
 - `guarana list [--project]` — show installed skills and version at the target.
 - `guarana update [--project]` — re-install from the CLI's bundled skills (overwrites target).
 - `guarana --version`, `guarana --help`.
 
 ## Addendum 2026-08-21: plugin command
-- `guarana plugin install [--project]` — install both plugins (`plugin/guarana-telemetry.js` and `plugin/guarana-memory.js`, bundled in the CLI package; per-plugin target names, same dirs):
+- `guarana plugin install [--project]` — install all three plugins (`plugin/guarana-telemetry.js`, `plugin/guarana-memory.js`, and `plugin/guarana-orchestrator.js`) plus the memory/orchestrator engines, bundled in the CLI package; per-plugin target names, same dirs:
   - Default (global): `~/.config/opencode/plugins/guarana-telemetry.js`
   - `--project`: `./.opencode/plugins/guarana-telemetry.js`
-- `guarana plugin uninstall [--project]` — remove it.
+- `guarana plugin uninstall [--project]` — remove the plugins and engines.
 - Same guard semantics: refuse to overwrite a file that exists and was not installed by guarana (guarana detection: byte-identical to the bundled copy OR carries the `// guarana telemetry plugin` marker header — older guarana versions are overwritten; marker-less files → exit 1 with message).
 - `guarana list` also reports plugin presence at the target.
 
 ### Acceptance (addendum)
-7. `guarana plugin install` → file at `~/.config/opencode/plugins/guarana-telemetry.js`, byte-identical to bundle.
+7. `guarana plugin install` → all three plugin files at `~/.config/opencode/plugins/`, byte-identical to bundle, with both engines deployed beside the plugin directory.
 8. `guarana plugin install --project` in temp dir → `./.opencode/plugins/guarana-telemetry.js`.
 9. Pre-existing foreign file at target → refused, exit 1, file untouched.
 10. `guarana plugin uninstall` removes only guarana-installed plugin.
-11. `guarana list` shows plugin installed/not-installed.
+11. `guarana list` shows all three plugins installed/not-installed.
 12. `--help` documents the plugin command.
 
 ## Addendum 2026-08-21b: `web` command
@@ -43,6 +43,10 @@ A Node.js CLI named `guarana` that installs/uninstalls/lists/updates the guarana
 14. `--help` documents `web`.
 15. Ctrl+C / SIGTERM to the CLI stops the child server (port freed).
 16. Missing-deps path: with node_modules absent, command runs `npm install --omit=dev` (verifiable by output/message; may be checked with a stubbed npm on PATH to avoid network in tests).
+
+### Acceptance (automatic activation)
+17. `guarana install` installs the orchestrator and memory plugins without a second plugin command.
+18. A natural task in a fresh project creates `.specs/` and `.guarana/memory/` and enters `planning`.
 
 ## Constraints
 - Node.js, stdlib only (`fs`, `path`, `os`). No runtime dependencies.

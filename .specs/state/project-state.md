@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-08-31 (automatic orchestrator — always-on engineering loop)
+Last updated: 2026-09-09 (automatic workflow/spec/memory bootstrap)
 
 ## Per-skill status
 | Skill | Status |
@@ -18,9 +18,9 @@ Last updated: 2026-08-31 (automatic orchestrator — always-on engineering loop)
 | guarana orchestrator | **SPECIFIED → IMPLEMENTED → VALIDATED** |
 
 ## Current step
-**Automatic orchestrator (2026-08-31).** Added an always-on orchestration layer that turns the manual skill workflow into an automatic loop. Host-independent core `orchestrator/` (state machine `idle/planning/building/coding/verifying/debugging/completed`, intent→skill decision, progressive-disclosure prompt builders) + thin opencode plugin `plugin/guarana-orchestrator.js` (chat.message, system.transform, tool.execute.after, workflow_get/workflow_tick tools). State persists to `.specs/state/workflow.json` (disk is source of truth; resumed across turns). Verify-fail auto-routes to debugging→fix→re-verify; explicit `guarana:*` still forces a step. Dashboard Workflow panel + `/api/workflow/current`. Details in `.specs/changes/2026-08-31-orchestrator.md`. `npm test` 156/156, `check-cli` PASS, frontend rebuilt, orchestrator plugin+engine redeployed. Version 0.6.4.
+**Automatic workflow/spec/memory bootstrap (2026-09-09).** Natural tasks now activate the installed orchestrator without a separate plugin command, preserve the task goal, create missing `.specs` records and feature specs, initialize the project memory vault, inject bounded confirmed context, and record verified completions. Active skill injection refreshes after `workflow_tick`; installed global plugin smoke test passed. Details in `.specs/changes/2026-09-09-automatic-workflow.md`. `npm test` 166/166, `check-cli` PASS. Version 0.7.0.
 
-**Pending:** commit (ADR-007); then optionally push `main` (ahead of origin).
+**Pending:** commit this validated batch (ADR-007); then optionally push `main` (ahead of origin).
 
 ## Checkpoint
 - Goal: none (batch closed). Commit the orchestrator batch + push `main` if desired.

@@ -186,10 +186,11 @@ describe('GuaranaMemory tools (slice 3)', () => {
   });
 
   describe('plugin boundary robustness', () => {
-    it('tools return a clean error when the vault is missing', async () => {
+    it('tools initialize a missing vault and return an empty result', async () => {
       fs.rmSync(vaultDir(), { recursive: true, force: true });
       const res = await call('memory_search', { query: 'anything' });
-      assert.ok(res.error.includes('not initialized'));
+      assert.deepEqual(res, { results: [], count: 0 });
+      assert.ok(fs.existsSync(path.join(vaultDir(), 'nodes.jsonl')));
     });
   });
 });

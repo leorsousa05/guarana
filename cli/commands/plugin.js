@@ -117,7 +117,7 @@ async function pluginStatus(useProject) {
   console.log(`- memory engine (${engineTarget}): ${hasEngine ? 'deployed' : 'not deployed (re-run: guarana plugin install)'}`);
   const vaultDir = path.join(process.cwd(), '.guarana', 'memory');
   const vaultInit = fs.existsSync(path.join(vaultDir, 'nodes.jsonl'));
-  console.log(`- vault (${vaultDir}): ${vaultInit ? 'initialized' : 'not initialized (run: guarana memory init)'}`);
+  console.log(`- vault (${vaultDir}): ${vaultInit ? 'initialized' : 'not initialized (created automatically on first task)'}`);
   if (hasEngine) {
     console.log(`- engine health: ${await engineHealthy(engineTarget)}`);
   }
@@ -141,4 +141,4 @@ async function run(args, { useProject }) {
   }
 }
 
-module.exports = { run };
+module.exports = { run, install: pluginInstall, uninstall: pluginUninstall };

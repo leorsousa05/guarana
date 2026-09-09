@@ -7,8 +7,9 @@
 import { canTransition, skillForState, stateForSkill } from './state.js';
 
 // New-task / feature-intent signals: phrases that start a fresh planning pass.
-const NEW_TASK_RE = /(?:\b(?:implement|implemente|build|create|add|make|write|fix|refactor|design|design the|develop|criar|adicionar|implementar|construir|corrigir|refatorar)\b)|(?:^|[\s,])(?:bug|feature|task|issue)(?:\b|[\s,])/i;
+const NEW_TASK_RE = /(?:\b(?:implement|implemente|build|create|add|make|write|fix|refactor|design|develop|update|modify|change|remove|delete|improve|investigate|document|enable|disable|configure|review|criar|adicionar|implementar|construir|corrigir|refatorar|atualizar|alterar|investigar|documentar)\b)|(?:^|[\s,])(?:bug|feature|task|issue|problem|problema)(?:\b|[\s,])/i;
 const FEATURE_NOUN_RE = /(?:implement|add|build|create|fix|refactor|write|support|authentication|auth|oauth|login|feature|api|endpoint|component|module|test|function|class|service|handler|route|schema|migration|integration|oAuth)/i;
+const PROBLEM_RE = /\b(?:never|doesn['’]?t|does not|can['’]?t|cannot|missing|without|not working|não|nunca|sem)\b/i;
 
 // Explicit escape-hatch: `guarana:code`, `guarana:plan`, etc. force a step.
 const FORCE_RE = /guarana[:_-]?(\w+)/i;
@@ -23,6 +24,11 @@ const STEP_SIGNALS = {
 };
 
 const FAIL_SIGNALS = /\b(?:fail|failed|failing|broken|red|error|errors|not working|still broken)\b/i;
+const FAILURE_OUTPUT_RE = /(?:^|\n)\s*(?:(?:\w*error)\b|fatal\b|exception\b|failed\b|failure\b|not ok\b|fail(?:ed|ure)?\b|npm err!\b|command failed\b|process exited with code [1-9]\b)|["']error["']\s*:/i;
+
+function outputFailed(value) {
+  return typeof value === 'string' && FAILURE_OUTPUT_RE.test(value);
+}
 
 // Result of a previous tool call -> did it signal failure?
 export function resultFailed(lastResult) {
@@ -31,9 +37,9 @@ export function resultFailed(lastResult) {
     // An explicit error field (any non-empty value) is a failure.
     if (lastResult.error != null && String(lastResult.error) !== '') return true;
     const text = lastResult.output || lastResult.result || '';
-    return Boolean(text && /(?:error|failed|failure|exception|non-zero|exit code \d)/i.test(text));
+    return outputFailed(text);
   }
-  return Boolean(lastResult && /(?:error|failed|failure|exception|non-zero|exit code \d)/i.test(String(lastResult)));
+  return outputFailed(String(lastResult));
 }
 
 // The decision the orchestrator should act on.
@@ -80,6 +86,7 @@ export function decide({ userText, workflow, lastResult }) {
         event: 'new_task',
         state: 'planning',
         skill: 'plan',
+        goal: text,
         note: 'new task detected while a workflow was active — re-plan',
       };
     }
@@ -115,11 +122,12 @@ export function decide({ userText, workflow, lastResult }) {
   }
 
   // 4. Idle/completed -> is this a new task?
-  if (text && (NEW_TASK_RE.test(text) || FEATURE_NOUN_RE.test(text))) {
+  if (text && (NEW_TASK_RE.test(text) || FEATURE_NOUN_RE.test(text) || PROBLEM_RE.test(text))) {
     return {
       event: 'new_task',
       state: 'planning',
       skill: 'plan',
+      goal: text,
       note: 'new task detected',
     };
   }

@@ -1,11 +1,16 @@
 ---
 name: guarana:memory
-description: Use when using or querying the memory vault — recovering prior decisions/bugs, saving a decision, searching confirmed memory, or reviewing auto-captured drafts. Pull-only: never auto-injected.
+description: Use when using or querying the memory vault — recovering prior decisions/bugs, saving a decision, searching confirmed memory, or reviewing auto-captured drafts. The orchestrator supplies bounded confirmed context automatically.
 ---
 
 # guarana:memory
 
-The memory vault is a project-local graph of decisions, bugs, solutions and refactors. Everything is retrieved by explicit tool call — nothing is ever auto-injected into context.
+The orchestrator automatically initializes the project vault, retrieves
+relevant confirmed context for active tasks, and records completed verified
+runs. Use this skill for deeper searches, decision review, or inspecting the
+memory graph; normal work does not require a `guarana:memory` command.
+
+The memory vault is a project-local graph of decisions, bugs, solutions and refactors. The orchestrator automatically supplies bounded confirmed context for the active task; explicit tools provide deeper access.
 
 ## The four tools
 | Tool | When to call |
@@ -18,8 +23,10 @@ The memory vault is a project-local graph of decisions, bugs, solutions and refa
 ## Draft → confirmed lifecycle
 Auto-captured atoms are `status: draft`. Drafts are never returned by search or context retrieval — only confirmed nodes are. Review a draft (`memory_review_draft`) before you rely on it; confirm it to make it retrievable, or discard it if it's noise. Treat unreviewed drafts as untrusted.
 
-## Hard rule: explicit retrieval only
-Retrieval is always pull-only. Never auto-inject vault content into the system prompt or context. Query the tools only when you judge it valuable — never automatically.
+## Automatic retrieval boundary
+Only relevant confirmed nodes are automatically injected, capped at ten nodes.
+Drafts are never injected. Query the tools when you need deeper context or need
+to review and confirm a draft.
 
 ## Gotchas
 - Drafts don't exist to search. If you need it in a search result, confirm it first.

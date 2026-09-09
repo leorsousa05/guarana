@@ -1,11 +1,12 @@
 ---
 name: guarana:plan
-description: Use when starting any task, resuming a session, deciding the next step, or choosing which guarana skill applies. Restores state from disk, classifies intent, and dispatches a worker with a verifiable condition and budget.
+description: Use automatically when a task starts or resumes. Restores state from disk, creates missing specs, uses relevant memory, dispatches a worker with a verifiable condition and budget, and persists the plan.
 ---
 
 # guarana:plan
 
-The meta-skill. The main thread holds this plus the suite index — nothing else.
+The meta-skill. The automatic orchestrator enters this step for every new or
+resumed task; the user does not need to mention `guarana:plan`.
 
 ## 1. Restore state (always, in this exact order)
 1. `.specs/README.md` — master tracker (DONE/NEXT/BLOCKED).
@@ -15,17 +16,17 @@ The meta-skill. The main thread holds this plus the suite index — nothing else
 Never reconstruct state from memory. Disk is truth (ADR-004).
 
 ## Memory
-The memory vault is a pull-only complement to disk, never an auto-injection. On an interrupted/resume task, when you judge it valuable, call `memory_get_context_for_task` to recover prior decision rationale, rejected alternatives, and bugs. When closing/completing a run, consider `memory_save_decision` to persist the key decision. Both are explicit, judgment-based calls — never mandatory.
+The orchestrator initializes the project vault and automatically supplies
+relevant confirmed context on task start and resume. Draft atoms remain
+quarantined. Use the `memory_*` tools for deeper retrieval, review, or explicit
+decisions; a completed verified run is recorded automatically.
 
 ### Cold start (no `.specs/` on disk)
-If restore finds no `.specs/`, that is a signal, not an error:
-1. Do NOT fabricate a current step or restore from memory.
-2. Check for a recoverable legacy spec tree — a `specs/` directory in the working tree, or `.specs/` content recoverable from git HEAD (files deleted or renamed in the working tree):
-   - **(i) Legacy tree recoverable (migration).** Do NOT discard it. Recover the legacy content as the project's initial Core feature spec context, then scaffold the new `.specs/` system of record around it. Treat this as a migration, not a from-scratch cold start.
-   - **(ii) No prior state anywhere (pure cold start).** Bare scaffold + Rule-0 ADRs only.
-3. Scaffold the initial system of record: `.specs/README.md` master tracker (DONE/NEXT/BLOCKED), `.specs/state/project-state.md` (current step, checkpoint with a `- Goal:` line, budgets), and `.specs/decisions/` — created EMPTY. Do NOT copy or pre-seed ADRs from any other project or template (e.g. a guarana baseline); ADRs are generated ONLY from this project's actual Rule-0 answers, numbered organically from 001.
-4. Bootstrap via Rule 0 (ADR-006): ask the human the contract questions (package, runtime, conventions, verifier, budget, acceptance gate); record each answer, deferred or rejected, as an ADR in `.specs/decisions/ADR-*.md`.
-Only after `.specs/` exists on disk does "disk is truth" (ADR-004) apply. Then proceed to routing (section 2).
+The orchestrator creates a minimal `.specs/` system of record and a
+task-specific feature spec before planning. Existing files are never replaced,
+and no project-specific ADR is fabricated. The plan worker fills in the
+acceptance condition and asks only for contract facts that cannot be inferred.
+Only after `.specs/` exists on disk does "disk is truth" (ADR-004) apply.
 
 ## 2. Classify intent → route to exactly ONE skill
 | User intent | Route |

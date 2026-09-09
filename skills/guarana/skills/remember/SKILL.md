@@ -14,7 +14,10 @@ Memory is on disk, not in context (hard truth 3, ADR-004). **Anything that exist
 4. The current feature spec in `.specs/features/` (one directory per feature)
 
 ## Memory vault as an additional resume layer
-The memory vault (`.guarana/memory/`) is a pull-only complement to the disk restore above — it never replaces it. On context loss or session resume, alongside the `.specs/` restore order, you may query `memory_get_context_for_task` to recover prior decision rationale. Retrieval is explicit: query only when you judge it valuable, never auto-injected.
+The memory vault (`.guarana/memory/`) is an automatic complement to the disk
+restore above. The orchestrator initializes it and injects relevant confirmed
+context on task start or session resume; `memory_get_context_for_task` remains
+available for deeper retrieval. Drafts are never returned as context.
 
 ## Write triggers (all four are MUST-write)
 1. **End of task** → update `state/project-state.md` (never mid-task).

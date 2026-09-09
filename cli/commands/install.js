@@ -12,6 +12,9 @@ function run(args, { useProject }) {
   fs.writeFileSync(path.join(target, STAMP), VERSION + '\n');
   console.log(`${existed ? 'updated' : 'installed'} guarana ${VERSION} -> ${target}`);
   console.log(`skills: ${SKILLS.map((s) => 'guarana:' + s).join(', ')}`);
+  // The orchestrator and memory hooks are part of automatic operation, not a
+  // second opt-in installation step.
+  require('./plugin.js').install(useProject);
 }
 
 module.exports = { run };

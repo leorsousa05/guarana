@@ -1,11 +1,11 @@
 {
   "version": 1,
-  "state": "planning",
-  "skill": "plan",
-  "activeTask": null,
-  "goal": null,
-  "condition": null,
-  "updatedAt": 1788712490833,
+  "state": "completed",
+  "skill": null,
+  "activeTask": "Polish the Guarana README and push the validated repository changes.",
+  "goal": "Polish the Guarana README and push the validated repository changes.",
+  "condition": "Failure detection ignores ordinary prose in successful tool output while still routing real error-shaped results; README and complete batch validate and main is pushed.",
+  "updatedAt": 1788976586944,
   "history": [
     {
       "ts": 1788711769257,
@@ -34,6 +34,118 @@
       "from": "planning",
       "to": "planning",
       "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1788974656147,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Root cause traced: orchestrator plugin is not installed by the normal skill install path; memory retrieval and vault/spec initialization are explicitly disabled."
+    },
+    {
+      "ts": 1788974663233,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Beginning implementation run."
+    },
+    {
+      "ts": 1788975597908,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Implementation complete: automatic plugin install, task/spec/memory bootstrap, bounded memory injection, completion recording, and refreshed active-skill injection."
+    },
+    {
+      "ts": 1788975603032,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "tool result signaled failure during verification"
+    },
+    {
+      "ts": 1788975612625,
+      "event": "new_task",
+      "from": "debugging",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1788975840151,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Independent verification completed; implementation evidence is green."
+    },
+    {
+      "ts": 1788975847716,
+      "event": "force",
+      "from": "building",
+      "to": "verifying",
+      "note": "User explicitly requested independent worker-verify."
+    },
+    {
+      "ts": 1788975852220,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "Independent verification passed all six criteria; npm test 166/166, check-cli PASS, temporary-HOME smoke PASS."
+    },
+    {
+      "ts": 1788976143207,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "new task detected"
+    },
+    {
+      "ts": 1788976226561,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Existing validated automatic-workflow batch is ready to be documented and shipped."
+    },
+    {
+      "ts": 1788976239710,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Starting README implementation and release run."
+    },
+    {
+      "ts": 1788976425661,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "README rewrite and CLI skill-list consistency update complete."
+    },
+    {
+      "ts": 1788976431612,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "tool result signaled failure during verification"
+    },
+    {
+      "ts": 1788976496837,
+      "event": "fix_start",
+      "from": "debugging",
+      "to": "coding",
+      "note": "Debug finding: broad resultFailed regex misclassified git diff prose containing 'failed' as a tool failure."
+    },
+    {
+      "ts": 1788976575489,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "False-positive verifier bug fixed and bundle synchronized."
+    },
+    {
+      "ts": 1788976586944,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "natural-language completion signal for verifying"
     }
   ]
 }

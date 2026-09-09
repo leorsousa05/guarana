@@ -5,6 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
 import { load, workflowFile } from '../orchestrator/state.js';
+import { createNode } from '../memory/graph.js';
 
 describe('GuaranaOrchestrator', () => {
   let tmpDir;
@@ -51,10 +52,37 @@ describe('GuaranaOrchestrator', () => {
     const wf = workflow();
     assert.equal(wf.state, 'planning');
     assert.equal(wf.skill, 'plan');
+    assert.equal(wf.goal, 'Implement OAuth authentication');
+    assert.equal(wf.activeTask, 'Implement OAuth authentication');
     assert.equal(wf.history.length, 1);
     const evs = readEvents().filter((e) => e.type === 'workflow');
     assert.equal(evs.length, 1);
     assert.equal(evs[0].event, 'new_task');
+  });
+
+  it('new tasks bootstrap specs and the memory vault automatically', async () => {
+    await chat('Implement OAuth authentication');
+    assert.ok(fs.existsSync(path.join(tmpDir, '.specs', 'README.md')));
+    assert.ok(fs.existsSync(path.join(tmpDir, '.specs', 'state', 'project-state.md')));
+    assert.ok(fs.existsSync(path.join(tmpDir, '.specs', 'decisions')));
+    assert.ok(fs.existsSync(path.join(tmpDir, '.specs', 'features', 'implement-oauth-authentication', 'implement-oauth-authentication.md')));
+    assert.ok(fs.existsSync(path.join(tmpDir, '.guarana', 'memory', 'nodes.jsonl')));
+    assert.ok(fs.existsSync(path.join(tmpDir, '.guarana', 'memory', 'config.json')));
+  });
+
+  it('injects relevant confirmed memory on the next automatic turn', async () => {
+    await chat('Implement OAuth authentication');
+    createNode(path.join(tmpDir, '.guarana', 'memory'), {
+      type: 'decision',
+      status: 'confirmed',
+      intent: 'OAuth authentication uses PKCE',
+      summary: 'Use PKCE for the OAuth flow.',
+    });
+    await chat('continue');
+    const out = { system: [] };
+    await api['experimental.chat.system.transform']({}, out);
+    assert.match(out.system[0], /guarana memory \(automatic context\)/);
+    assert.match(out.system[0], /Use PKCE for the OAuth flow/);
   });
 
   it('explicit guarana:verify forces the verifying state', async () => {
@@ -85,6 +113,25 @@ describe('GuaranaOrchestrator', () => {
     assert.equal(r4.state, 'verifying');
     const r5 = await tick('verify_pass');
     assert.equal(r5.state, 'completed');
+  });
+
+  it('workflow_tick refreshes the active skill injection', async () => {
+    await chat('Implement OAuth authentication');
+    await api.tool.workflow_tick.execute({ action: 'plan_complete' });
+    const out = { system: [] };
+    await api['experimental.chat.system.transform']({}, out);
+    assert.match(out.system[0], /Current state: \*\*building\*\*/);
+    assert.match(out.system[0], /guarana:build \(injected\)/);
+  });
+
+  it('verified completion is recorded as confirmed memory', async () => {
+    await chat('Implement OAuth authentication');
+    for (const action of ['plan_complete', 'run_start', 'code_complete', 'verify_pass']) {
+      await api.tool.workflow_tick.execute({ action });
+    }
+    const raw = fs.readFileSync(path.join(tmpDir, '.guarana', 'memory', 'nodes.jsonl'), 'utf8');
+    assert.match(raw, /completed task: Implement OAuth authentication/);
+    assert.match(raw, /"status":"confirmed"/);
   });
 
   it('workflow_tick rejects an illegal transition without changing state', async () => {
