@@ -1,15 +1,32 @@
-# Guarana
+<p align="center">
+  <img src="./guarana.png" alt="Guarana" width="220">
+</p>
 
-### AI Loop Engineering for OpenCode
+<h1 align="center">Guarana</h1>
+
+<p align="center"><strong>AI Loop Engineering for OpenCode</strong></p>
+
+<p align="center">
+  <a href="https://github.com/leorsousa05/guarana"><img src="https://img.shields.io/github/stars/leorsousa05/guarana?style=for-the-badge&logo=github&logoColor=white&color=f59e0b" alt="GitHub stars"></a>
+  <a href="https://www.npmjs.com/package/guarana"><img src="https://img.shields.io/npm/v/guarana?style=for-the-badge&logo=npm&logoColor=white&color=cb3837" alt="npm version"></a>
+  <img src="https://img.shields.io/badge/core_dependencies-zero-059669?style=for-the-badge" alt="Zero core runtime dependencies">
+  <br>
+  <a href="https://opencode.ai/"><img src="https://img.shields.io/badge/runtime-OpenCode-111827?style=for-the-badge" alt="OpenCode runtime"></a>
+  <a href="https://github.com/leorsousa05/guarana/commits/main"><img src="https://img.shields.io/github/last-commit/leorsousa05/guarana?style=for-the-badge&color=7c3aed" alt="Last commit"></a>
+  <a href="https://github.com/leorsousa05/guarana/blob/main/package.json"><img src="https://img.shields.io/badge/node-18%2B-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node.js 18 or newer"></a>
+</p>
+
+<p align="center">
+  <em>State on disk. Decisions with memory. Verification before done.</em>
+</p>
 
 Guarana turns an OpenCode agent into a disciplined engineering partner. Natural
 task requests automatically move through planning, implementation, verification,
 and memory, while the important state stays inspectable on disk.
 
 <p>
-  <a href="https://github.com/leorsousa05/guarana"><img src="https://img.shields.io/badge/version-0.7.0-7c3aed?style=flat-square" alt="Version 0.7.0"></a>
-  <a href="https://opencode.ai/"><img src="https://img.shields.io/badge/runtime-OpenCode-111827?style=flat-square" alt="OpenCode runtime"></a>
-  <img src="https://img.shields.io/badge/core_dependencies-zero-059669?style=flat-square" alt="Zero core runtime dependencies">
+  <a href="https://github.com/leorsousa05/guarana"><img src="https://img.shields.io/badge/version-0.8.0-7c3aed?style=flat-square" alt="Version 0.8.0"></a>
+  <img src="https://img.shields.io/badge/license-MIT-2563eb?style=flat-square" alt="MIT license">
 </p>
 
 ## The Short Version
@@ -206,9 +223,9 @@ npm run build
 
 ## Status
 
-Guarana `0.7.0` is validated with the full test suite, CLI bundle checks, and
+Guarana `0.8.0` is validated with the full test suite, CLI bundle checks, and
 an installed-plugin smoke test.
 
 ## License
 
-TBD
+MIT

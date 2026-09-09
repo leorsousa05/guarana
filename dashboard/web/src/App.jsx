@@ -93,7 +93,7 @@ export default function App() {
           )}
           {active === 'now' && summary.data && (
             <>
-              <NowPanel summary={summary.data} mergedEvents={mergedEvents} state={state.data} />
+              <NowPanel summary={summary.data} mergedEvents={mergedEvents} state={state.data} workflow={workflow.data} />
               {hasTelemetry && <Ticker events={mergedEvents} />}
             </>
           )}

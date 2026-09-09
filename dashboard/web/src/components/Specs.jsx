@@ -166,11 +166,12 @@ export function Specs({ tracker, state, tick = 0 }) {
                 </table>
               </div>
               {['DONE', 'NEXT', 'BLOCKED'].map((k) =>
-                tracker[k].length ? (
-                  <p key={k} className="flag-line">
-                    <Stamp word={k} /> {tracker[k].join(' · ')}
-                  </p>
-                ) : null
+                tracker[k].map((item, i) => (
+                  <div key={`${k}-${i}`} className="flag-line">
+                    <Stamp word={k} />
+                    <Markdown text={item} />
+                  </div>
+                ))
               )}
             </>
             )

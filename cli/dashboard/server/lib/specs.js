@@ -16,9 +16,28 @@ export function parseTracker(markdown) {
   const rows = [];
   const flags = { DONE: [], NEXT: [], BLOCKED: [], other: [] };
   let guaranaHeader = false;
+  let activeFlag = null;
+  let activeLines = [];
+  const finishFlag = () => {
+    if (!activeFlag) return;
+    flags[activeFlag].push(activeLines.join('\n').trim());
+    activeFlag = null;
+    activeLines = [];
+  };
+
   for (const rawLine of (markdown || '').split('\n')) {
     const line = rawLine.trim();
-    if (line.startsWith('|') && line.endsWith('|')) {
+    const flag = line.match(/^\*\*(DONE|NEXT|BLOCKED):\*\*\s*(.*)$/i);
+    if (flag) {
+      finishFlag();
+      activeFlag = flag[1].toUpperCase();
+      activeLines = [flag[2]];
+    } else if (activeFlag && /^\*\*/.test(line) && /:\*\*/.test(line)) {
+      finishFlag();
+      flags.other.push(line);
+    } else if (activeFlag) {
+      activeLines.push(rawLine);
+    } else if (line.startsWith('|') && line.endsWith('|')) {
       const cells = line.slice(1, -1).split('|').map((c) => c.trim());
       if (cells.length < 2) continue;
       const isSeparator = cells.every((c) => /^:?-{3,}:?$/.test(c));
@@ -36,11 +55,10 @@ export function parseTracker(markdown) {
         change: cells[3] ?? '',
       });
     } else {
-      const m = line.match(/^\*\*(DONE|NEXT|BLOCKED):\*\*\s*(.*)$/i);
-      if (m) flags[m[1].toUpperCase()].push(m[2]);
-      else if (/^\*\*/.test(line) && /:\*\*/.test(line)) flags.other.push(line);
+      if (/^\*\*/.test(line) && /:\*\*/.test(line)) flags.other.push(line);
     }
   }
+  finishFlag();
 
   const isGuarana =
     guaranaHeader ||

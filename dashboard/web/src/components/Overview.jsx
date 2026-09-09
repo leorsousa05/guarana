@@ -2,6 +2,7 @@ import { usePoll } from '../hooks/usePoll.js';
 import { Stamp, EmptyState } from './common.jsx';
 import { parseGoal } from './NowPanel.jsx';
 import { fmtDur } from '../lib/format.js';
+import { Markdown } from '../lib/markdown.jsx';
 
 const STATE_ORDER = ['idle', 'planning', 'building', 'coding', 'verifying', 'debugging', 'completed'];
 const STATE_LABEL = {
@@ -125,21 +126,34 @@ function MemoryCard({ memory }) {
   );
 }
 
-function RoadmapCard({ tracker }) {
+function roadmapItems(tracker, key, workflow) {
+  const items = tracker?.[key] || [];
+  if (key !== 'NEXT' || items.length !== 1 || !workflow?.goal) return items;
+  const compact = (text) => String(text).replace(/\s+/g, ' ').trim();
+  const next = compact(items[0]);
+  const goal = compact(workflow.goal);
+  return next && goal.startsWith(next) ? [workflow.goal] : items;
+}
+
+function RoadmapCard({ tracker, workflow }) {
   if (!tracker) return <p className="loading">loading…</p>;
   return (
     <section className="ov-card ov-card--wide" aria-label="Roadmap">
       <header className="ov-card-head">
         <h3>Roadmap</h3>
       </header>
-      {['BLOCKED', 'NEXT', 'DONE'].map((k) =>
-        tracker[k]?.length ? (
-          <p key={k} className="flag-line">
-            <Stamp word={k} /> {tracker[k].join(' · ')}
-          </p>
-        ) : null
-      )}
-      {!tracker.BLOCKED?.length && !tracker.NEXT?.length && !tracker.DONE?.length && (
+      {['BLOCKED', 'NEXT', 'DONE'].map((k) => {
+        const items = roadmapItems(tracker, k, workflow);
+        return items.length ? (
+          items.map((item, i) => (
+            <div key={`${k}-${i}`} className="flag-line">
+              <Stamp word={k} />
+              <Markdown text={item} />
+            </div>
+          ))
+        ) : null;
+      })}
+      {!['BLOCKED', 'NEXT', 'DONE'].some((k) => roadmapItems(tracker, k, workflow).length) && (
         <p className="ov-empty">No roadmap flags recorded.</p>
       )}
     </section>
@@ -149,19 +163,26 @@ function RoadmapCard({ tracker }) {
 export function Overview({ summary, state, tracker, workflow }) {
   const memory = usePoll('/api/memory/summary', 5000);
   const decisions = usePoll('/api/decisions/pending', 5000);
-  const goal = parseGoal(state?.projectState);
+  const goal = workflow?.goal || workflow?.activeTask || parseGoal(state?.projectState);
 
   return (
     <div className="ov" aria-label="Overview">
-      <p className="ov-lede">
-        {goal ? <><strong>Open goal:</strong> {goal}</> : 'System of record — no active goal recorded.'}
-      </p>
+      <div className="ov-lede">
+        {goal ? (
+          <>
+            <strong>Open goal:</strong>
+            <Markdown text={goal} />
+          </>
+        ) : (
+          'System of record — no active goal recorded.'
+        )}
+      </div>
       <div className="ov-grid-layout">
         <WorkflowCard workflow={workflow} />
         <RunsCard summary={summary} />
         <MemoryCard memory={memory} />
         <DecisionsCard decisions={decisions} />
-        <RoadmapCard tracker={tracker} />
+        <RoadmapCard tracker={tracker} workflow={workflow} />
       </div>
     </div>
   );

@@ -151,6 +151,17 @@ test('automatic specs bootstrap is idempotent and task-specific', () => {
   assert.match(fs.readFileSync(first.featureFile, 'utf8'), /Implement OAuth authentication/);
 });
 
+test('automatic specs bootstrap preserves multiline task Markdown', () => {
+  const dir = tmp();
+  const task = '# Big goal\n\n## Details\n\n- first step';
+  const result = ensureSpecs(dir, task, 0);
+  const read = (file) => fs.readFileSync(path.join(dir, '.specs', file), 'utf8');
+
+  assert.match(read('README.md'), /\*\*NEXT:\*\* # Big goal\n\n## Details/);
+  assert.match(read('state/project-state.md'), /- Goal: # Big goal\n\n## Details/);
+  assert.match(fs.readFileSync(result.featureFile, 'utf8'), /## Goal\n# Big goal\n\n## Details/);
+});
+
 test('decide: explicit guarana:code forces coding', () => {
   const d = decide({ userText: 'guarana:code', workflow: createWorkflow() });
   assert.equal(d.state, 'coding');

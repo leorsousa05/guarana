@@ -1,11 +1,11 @@
 {
   "version": 1,
-  "state": "completed",
-  "skill": null,
-  "activeTask": "Polish the Guarana README and push the validated repository changes.",
-  "goal": "Polish the Guarana README and push the validated repository changes.",
-  "condition": "Failure detection ignores ordinary prose in successful tool output while still routing real error-shaped results; README and complete batch validate and main is pushed.",
-  "updatedAt": 1788976586944,
+  "state": "planning",
+  "skill": "plan",
+  "activeTask": "Verify the latest multiline Markdown persistence/rendering fix without modifying files.",
+  "goal": "Verify the latest multiline Markdown persistence/rendering fix without modifying files.",
+  "condition": "Inspect the requested implementation/tests and run npm test, npm run build, npm run check-cli, git diff --check, and diff -qr dashboard/web/dist cli/dashboard/web/dist; report exact results.",
+  "updatedAt": 1788984991664,
   "history": [
     {
       "ts": 1788711769257,
@@ -146,6 +146,265 @@
       "from": "verifying",
       "to": "completed",
       "note": "natural-language completion signal for verifying"
+    },
+    {
+      "ts": 1788977277875,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "new task detected"
+    },
+    {
+      "ts": 1788977419439,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Found raw text paths in Overview, NowPanel, and Specs; shared Markdown renderer already exists."
+    },
+    {
+      "ts": 1788977431215,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Starting the dashboard rendering fix."
+    },
+    {
+      "ts": 1788977501993,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Overview, NowPanel, and Specs now render goal and roadmap strings with the shared Markdown component; dashboard build and tests pass."
+    },
+    {
+      "ts": 1788977507519,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "tool result signaled failure during verification"
+    },
+    {
+      "ts": 1788977526116,
+      "event": "new_task",
+      "from": "debugging",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1788977570181,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Independent worker-verify; read-only review and validation only."
+    },
+    {
+      "ts": 1788977585263,
+      "event": "force",
+      "from": "building",
+      "to": "verifying",
+      "note": "User explicitly requested independent worker-verify and forbade source or distribution modifications."
+    },
+    {
+      "ts": 1788977588463,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "tool result signaled failure during verification"
+    },
+    {
+      "ts": 1788977769051,
+      "event": "debug_complete",
+      "from": "debugging",
+      "to": "verifying",
+      "note": "No project fix needed: verification evidence is green. The workflow's automatic failure signal was a false positive; known-issues write intentionally skipped because user forbade all file modifications."
+    },
+    {
+      "ts": 1788977773795,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "tool result signaled failure during verification"
+    },
+    {
+      "ts": 1788977797993,
+      "event": "debug_complete",
+      "from": "debugging",
+      "to": "verifying",
+      "note": "Checks completed; no project fix required."
+    },
+    {
+      "ts": 1788977803985,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "Checks completed."
+    },
+    {
+      "ts": 1788978304324,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "new task detected"
+    },
+    {
+      "ts": 1788978542621,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Root cause identified in automatic specs bootstrap whitespace collapsing; implementation and regression tests are ready."
+    },
+    {
+      "ts": 1788978556728,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Run started after root-cause analysis and targeted regression tests."
+    },
+    {
+      "ts": 1788978571607,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Implementation and targeted regression tests are complete; ready for independent verification."
+    },
+    {
+      "ts": 1788978576574,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "tool result signaled failure during verification"
+    },
+    {
+      "ts": 1788978589020,
+      "event": "new_task",
+      "from": "debugging",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1788978617929,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Planning complete; dispatching worker-verify in the fresh context requested by the user."
+    },
+    {
+      "ts": 1788978628157,
+      "event": "force",
+      "from": "building",
+      "to": "verifying",
+      "note": "User explicitly requested a fresh worker-verify context; force verification from the automatic workflow."
+    },
+    {
+      "ts": 1788978633667,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "tool result signaled failure during verification"
+    },
+    {
+      "ts": 1788978678210,
+      "event": "debug_complete",
+      "from": "debugging",
+      "to": "verifying",
+      "note": "Pre-existing workflow failure signal is not a code diagnosis; resume the requested independent verification without editing files."
+    },
+    {
+      "ts": 1788978686011,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "tool result signaled failure during verification"
+    },
+    {
+      "ts": 1788978864255,
+      "event": "debug_complete",
+      "from": "debugging",
+      "to": "verifying",
+      "note": "Verification evidence is green; the prior automatic failure signal was not reproduced by the mandated checks."
+    },
+    {
+      "ts": 1788978875047,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "Independent verification passed: targeted tests 35/35, build PASS, check-cli PASS, diff checks clean."
+    },
+    {
+      "ts": 1788980375793,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "new task detected"
+    },
+    {
+      "ts": 1788980400129,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Dispatched as independent worker-verify; no file edits, commits, or pushes."
+    },
+    {
+      "ts": 1788980410669,
+      "event": "force",
+      "from": "building",
+      "to": "verifying",
+      "note": "User explicitly requested independent worker-verify; force verification state without entering code/build work."
+    },
+    {
+      "ts": 1788980414830,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "tool result signaled failure during verification"
+    },
+    {
+      "ts": 1788980612029,
+      "event": "debug_complete",
+      "from": "debugging",
+      "to": "verifying",
+      "note": "Classified as an existing orchestration false-positive: successful diff prose triggered the known verifier failure-vocabulary detector. No repository fix is needed for this task; existing known-issues entry 2026-09-09 documents the mitigation."
+    },
+    {
+      "ts": 1788980614329,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "tool result signaled failure during verification"
+    },
+    {
+      "ts": 1788980649183,
+      "event": "debug_complete",
+      "from": "debugging",
+      "to": "verifying",
+      "note": "Existing orchestration false-positive only; requested verification evidence is green."
+    },
+    {
+      "ts": 1788980652884,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "Independent verification passed all requested criteria and commands."
+    },
+    {
+      "ts": 1788984155066,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "new task detected"
+    },
+    {
+      "ts": 1788984894599,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1788984991664,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
     }
   ]
 }

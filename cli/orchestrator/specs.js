@@ -5,6 +5,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+function taskContent(task) {
+  return String(task || '').replace(/\r\n?/g, '\n').trim();
+}
+
 function cleanTask(task) {
   return String(task || '').replace(/\s+/g, ' ').trim();
 }
@@ -18,11 +22,11 @@ export function taskSlug(task) {
 }
 
 function markdownTask(task) {
-  return cleanTask(task).replace(/\|/g, '\\|') || 'Unspecified task';
+  return taskContent(task) || 'Unspecified task';
 }
 
 export function ensureSpecs(projectDir, task, now = Date.now()) {
-  const text = cleanTask(task);
+  const text = taskContent(task);
   const specsDir = path.join(projectDir, '.specs');
   const stateDir = path.join(specsDir, 'state');
   const decisionsDir = path.join(specsDir, 'decisions');
@@ -35,7 +39,8 @@ export function ensureSpecs(projectDir, task, now = Date.now()) {
   fs.mkdirSync(decisionsDir, { recursive: true });
   fs.mkdirSync(featureDir, { recursive: true });
 
-  const title = markdownTask(text);
+  const title = cleanTask(text) || 'Unspecified task';
+  const markdown = markdownTask(text);
   const created = [];
   const writeIfMissing = (file, content) => {
     if (fs.existsSync(file)) return;
@@ -50,7 +55,7 @@ export function ensureSpecs(projectDir, task, now = Date.now()) {
       `| Name | Status | Proof | Change |\n|---|---|---|---|\n` +
       `| ${slug} | SPECIFIED | | |\n\n` +
       `**DONE:** none.\n` +
-      `**NEXT:** ${title}\n` +
+      `**NEXT:** ${markdown}\n` +
       `**BLOCKED:** nothing.\n`
   );
   writeIfMissing(
@@ -60,7 +65,7 @@ export function ensureSpecs(projectDir, task, now = Date.now()) {
       `## Current step\n` +
       `Automatic guarana workflow.\n\n` +
       `## Checkpoint\n` +
-      `- Goal: ${title}\n` +
+      `- Goal: ${markdown}\n` +
       `- Pending writes: planning\n`
   );
   writeIfMissing(
@@ -68,7 +73,7 @@ export function ensureSpecs(projectDir, task, now = Date.now()) {
     `# Feature spec: ${title}\n\n` +
       `**Status:** SPECIFIED\n` +
       `**Date:** ${new Date(now).toISOString().slice(0, 10)}\n\n` +
-      `## Goal\n${title}\n\n` +
+      `## Goal\n${markdown}\n\n` +
       `## Acceptance criteria\n` +
       `- The requested behavior is implemented and independently verified.\n\n` +
       `## Definition of done\n` +

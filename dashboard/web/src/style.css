@@ -273,6 +273,18 @@ h1, h2, h3, h4, h5 {
   overflow-wrap: anywhere;
 }
 
+.resume-goal .md,
+.ov-lede .md,
+.flag-line .md {
+  margin-top: 0.45rem;
+}
+
+.resume-goal .md > :first-child,
+.ov-lede .md > :first-child,
+.flag-line .md > :first-child {
+  margin-top: 0;
+}
+
 .health {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -668,6 +680,10 @@ table.ledger {
 }
 
 .flag-line {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 0.55rem;
   margin: 0.4rem 0;
   max-width: 100%;
   overflow-wrap: anywhere;

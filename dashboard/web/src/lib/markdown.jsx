@@ -33,8 +33,33 @@ md.use({
   },
 });
 
+// Older automatic specs stored large tasks as one line. Recover heading
+// boundaries there while leaving correctly formatted Markdown untouched.
+export function normalizeMarkdown(text) {
+  const source = String(text || '').replace(/\r\n?/g, '\n');
+  if (source.includes('\n')) return source;
+
+  const fences = [];
+  let normalized = source.replace(/```[\s\S]*?```/g, (fence) => {
+    const marker = `\u0000${fences.length}\u0000`;
+    fences.push(fence);
+    return marker;
+  });
+  normalized = normalized
+    .replace(/\s+(?=#{1,6}\s)/g, '\n\n')
+    .replace(/\s+(?=(?:[-*]|\d+\.)\s+)/g, '\n')
+    .replace(/\s+---\s+/g, '\n\n---\n\n')
+    .replace(/\\\|/g, '|')
+    .replace(/(^|\n\n)(#{1,6}\s+[^|\n]+?)\s+(?=\| )/g, '$1$2\n\n')
+    .replace(/\|\s+(?=\|)/g, '|\n');
+  return normalized.replace(
+    /\u0000(\d+)\u0000/g,
+    (_, i) => `\n\n${fences[i].replace(/^```\s*/, '```\n').replace(/\s*```$/, '\n```')}\n\n`
+  );
+}
+
 export function Markdown({ text, onOpenFile, canOpen }) {
-  const html = useMemo(() => md.parse(String(text || '')), [text]);
+  const html = useMemo(() => md.parse(normalizeMarkdown(text)), [text]);
   const handleClick =
     onOpenFile && canOpen
       ? (e) => {

@@ -28,3 +28,9 @@ Open problems and material failures from the build. Entry format: title / sympto
 - **Reproduction trigger:** Run a successful text-producing command during verification whose output contains failure vocabulary in prose.
 - **Mitigation:** Match error-shaped output lines (`Error:`, `not ok`, `FAIL`, `failed` at line start, process exit errors, or JSON error fields) instead of arbitrary occurrences inside prose.
 - **Status:** Fixed in `orchestrator/decide.js`; regression coverage added to `orchestrator/workflow.test.js`.
+
+## 2026-09-09 — multiline task Markdown flattened in roadmap
+- **Symptom:** Large AI-created goals and `NEXT` entries rendered as one paragraph, exposing inline `#` headings instead of separate Markdown blocks.
+- **Reproduction trigger:** Bootstrap specs from a task containing multiline Markdown, or view specs created before multiline preservation was added.
+- **Mitigation:** Preserve task newlines when generating specs, collect multiline tracker flags, and recover heading boundaries in the Markdown renderer for legacy one-line content.
+- **Status:** Fixed in `orchestrator/specs.js`, `dashboard/server/lib/specs.js`, and `dashboard/web/src/lib/markdown.jsx`; regression coverage added to the orchestrator and dashboard parser tests.

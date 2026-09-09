@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { EmptyState, Stamp } from './common.jsx';
 import { fmtTs, fmtDur } from '../lib/format.js';
+import { Markdown } from '../lib/markdown.jsx';
 
 const SESSION_STATUS = { created: 'running', idle: 'idle', error: 'error', compacted: 'compacted' };
 
@@ -16,11 +17,22 @@ export function lastSessionStatus(events, sessionID) {
 
 export function parseGoal(projectState) {
   if (!projectState) return null;
+  const goalLines = [];
+  let readingGoal = false;
   for (const line of projectState.split('\n')) {
-    const m = line.match(/^\s*-\s*Goal:\s*(.+)$/i);
-    if (m) return m[1].trim();
+    const m = line.match(/^\s*-\s*Goal:\s*(.*)$/i);
+    if (m) {
+      readingGoal = true;
+      goalLines.push(m[1]);
+      continue;
+    }
+    if (readingGoal) {
+      if (/^\s*-\s*Pending writes:/i.test(line)) break;
+      goalLines.push(line);
+    }
   }
-  return null;
+  const goal = goalLines.join('\n').trim();
+  return goal || null;
 }
 
 export function buildResumePrompt(goal) {
@@ -91,8 +103,8 @@ function HealthGauges({ runs }) {
   );
 }
 
-export function NowPanel({ summary, mergedEvents, state }) {
-  const goal = parseGoal(state?.projectState);
+export function NowPanel({ summary, mergedEvents, state, workflow }) {
+  const goal = workflow?.goal || workflow?.activeTask || parseGoal(state?.projectState);
   const hasRuns = summary && summary.runs.length > 0;
   return (
     <section id="now" className="now" aria-label="Current session">
@@ -142,9 +154,16 @@ export function NowPanel({ summary, mergedEvents, state }) {
             <Stamp word="resume" />
             <CopyButton text={buildResumePrompt(goal)} />
           </div>
-          <p className="resume-goal">
-            {goal ? <strong>open goal:</strong> : <strong>no open goal recorded.</strong>} {goal}
-          </p>
+          <div className="resume-goal">
+            {goal ? (
+              <>
+                <strong>open goal:</strong>
+                <Markdown text={goal} />
+              </>
+            ) : (
+              <strong>no open goal recorded.</strong>
+            )}
+          </div>
         </div>
       )}
 

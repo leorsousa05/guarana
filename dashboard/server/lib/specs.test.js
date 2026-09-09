@@ -32,6 +32,20 @@ describe('parseTracker', () => {
     assert.equal(tracker.schema, 'guarana');
   });
 
+  it('preserves multiline Markdown in roadmap flags', () => {
+    const tracker = parseTracker(`
+**NEXT:** # Big goal
+
+## Details
+| item | value |
+|---|---|
+| one | two |
+**BLOCKED:** nothing.
+`);
+    assert.deepEqual(tracker.NEXT, ['# Big goal\n\n## Details\n| item | value |\n|---|---|\n| one | two |']);
+    assert.deepEqual(tracker.BLOCKED, ['nothing.']);
+  });
+
   it('parses a table-only tracker (Skill header, no flags yet) as guarana', () => {
     const tracker = parseTracker(`
 | Skill | Status | Proof | Change |
