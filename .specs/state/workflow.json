@@ -5,7 +5,7 @@
   "activeTask": "Verify the latest multiline Markdown persistence/rendering fix without modifying files.",
   "goal": "Verify the latest multiline Markdown persistence/rendering fix without modifying files.",
   "condition": "Inspect the requested implementation/tests and run npm test, npm run build, npm run check-cli, git diff --check, and diff -qr dashboard/web/dist cli/dashboard/web/dist; report exact results.",
-  "updatedAt": 1788984991664,
+  "updatedAt": 1788985468341,
   "history": [
     {
       "ts": 1788711769257,
@@ -401,6 +401,13 @@
     },
     {
       "ts": 1788984991664,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1788985468341,
       "event": "new_task",
       "from": "planning",
       "to": "planning",
