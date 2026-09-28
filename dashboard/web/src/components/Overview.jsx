@@ -118,7 +118,6 @@ function MemoryCard({ memory }) {
       <dl className="ov-grid">
         <div><dt>nodes</dt><dd>{d.nodes?.total ?? 0}</dd></div>
         <div><dt>confirmed</dt><dd>{d.nodes?.confirmed ?? 0}</dd></div>
-        <div><dt>drafts</dt><dd>{d.nodes?.draft ?? 0}</dd></div>
         <div><dt>supernodes</dt><dd>{d.supernodes ?? 0}</dd></div>
         <div><dt>edges</dt><dd>{d.edges ?? 0}</dd></div>
       </dl>

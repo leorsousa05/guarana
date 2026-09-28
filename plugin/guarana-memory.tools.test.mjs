@@ -7,20 +7,25 @@ import fs from 'node:fs';
 import { initVault } from '../memory/vault.js';
 import { createNode, createEdge, getNode, listEdges } from '../memory/graph.js';
 
-// Slice 3 contract tests (criteria 11/12/13): the 4 memory_* tools, called
+// Slice 3 contract tests (criteria 11/12/13): memory_* tools, called
 // through the plugin's registered `tool` interface (not the engine directly).
 describe('GuaranaMemory tools (slice 3)', () => {
   let tmpDir;
   let api;
+  let oldHome;
   const vaultDir = () => path.join(tmpDir, '.guarana', 'memory');
 
   beforeEach(async () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-mem-tools-'));
+    oldHome = process.env.HOME;
+    process.env.HOME = path.join(tmpDir, 'home');
     initVault(tmpDir);
     api = await GuaranaMemory({ directory: tmpDir });
   });
 
   afterEach(() => {
+    if (oldHome === undefined) delete process.env.HOME;
+    else process.env.HOME = oldHome;
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
@@ -165,14 +170,14 @@ describe('GuaranaMemory tools (slice 3)', () => {
     it('returns a bounded grouped subgraph via 1-hop expansion', async () => {
       const { dec, old, bug, draft } = seedGraph();
       const res = await call('memory_get_context_for_task', { task: 'jwt authentication' });
-      for (const k of ['decisions', 'bugs', 'superseded', 'atoms']) assert.ok(Array.isArray(res[k]));
+      for (const k of ['decisions', 'bugs', 'solutions', 'refactors', 'preferences', 'superseded', 'atoms']) assert.ok(Array.isArray(res[k]));
       assert.ok(res.decisions.some((n) => n.id === dec.id));
       assert.ok(res.bugs.some((n) => n.id === bug.id)); // via caused-by edge
       assert.ok(res.superseded.some((n) => n.id === old.id)); // via supersedes edge
       const rejected = res.decisions.find((n) => n.id === dec.id).rejectedAlternatives;
       assert.deepEqual(rejected, ['server sessions', 'basic auth']);
-      const total =
-        res.decisions.length + res.bugs.length + res.superseded.length + res.atoms.length;
+      const total = ['decisions', 'bugs', 'solutions', 'refactors', 'preferences', 'superseded', 'atoms']
+        .reduce((sum, key) => sum + res[key].length, 0);
       assert.equal(res.count, total);
       assert.ok(total <= 10);
       assert.ok(!res.atoms.some((n) => n.id === draft.id)); // drafts never returned

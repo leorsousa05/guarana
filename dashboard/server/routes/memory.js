@@ -1,6 +1,6 @@
 import express from 'express';
 import path from 'node:path';
-import { summary, search, graph, drafts, review } from '../lib/memory.js';
+import { summary, search, graph, injections, drafts, review } from '../lib/memory.js';
 
 export function createMemoryRouter({ root }) {
   const router = express.Router();
@@ -24,6 +24,12 @@ export function createMemoryRouter({ root }) {
   router.get('/graph', async (req, res) => {
     const limit = req.query.limit ? Number(req.query.limit) : undefined;
     res.json(await graph(vaultDir, { limit }));
+  });
+
+  router.get('/injections', async (req, res) => {
+    const limit = req.query.limit ? Number(req.query.limit) : undefined;
+    const telemetryFile = path.join(root, '.specs', 'state', 'telemetry', 'events.jsonl');
+    res.json(await injections(vaultDir, telemetryFile, { limit }));
   });
 
   router.get('/drafts', async (_req, res) => {

@@ -1,6 +1,6 @@
 // guarana orchestrator - automatic .specs bootstrap for a new project.
-// Existing files are never replaced: the first task only creates the minimum
-// system of record and a task-specific feature spec for the planning step.
+// Existing files are never replaced: cold start creates a generic placeholder
+// spec; the planning step interprets the user's request and defines the task.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -31,7 +31,7 @@ export function ensureSpecs(projectDir, task, now = Date.now()) {
   const stateDir = path.join(specsDir, 'state');
   const decisionsDir = path.join(specsDir, 'decisions');
   const featuresDir = path.join(specsDir, 'features');
-  const slug = taskSlug(text);
+  const slug = 'initial-task';
   const featureDir = path.join(featuresDir, slug);
   const featureFile = path.join(featureDir, `${slug}.md`);
 
@@ -39,7 +39,7 @@ export function ensureSpecs(projectDir, task, now = Date.now()) {
   fs.mkdirSync(decisionsDir, { recursive: true });
   fs.mkdirSync(featureDir, { recursive: true });
 
-  const title = cleanTask(text) || 'Unspecified task';
+  const title = 'Initial task';
   const markdown = markdownTask(text);
   const created = [];
   const writeIfMissing = (file, content) => {
@@ -53,9 +53,9 @@ export function ensureSpecs(projectDir, task, now = Date.now()) {
     `# .specs - Guarana System of Record\n\n` +
       `Status pipeline: SPECIFIED -> TASKED -> IMPLEMENTED -> VALIDATED -> SHIPPED\n\n` +
       `| Name | Status | Proof | Change |\n|---|---|---|---|\n` +
-      `| ${slug} | SPECIFIED | | |\n\n` +
+      `| Initial task | SPECIFIED | | |\n\n` +
       `**DONE:** none.\n` +
-      `**NEXT:** ${markdown}\n` +
+      `**NEXT:** Interpret the incoming request and define the task spec.\n` +
       `**BLOCKED:** nothing.\n`
   );
   writeIfMissing(
@@ -65,7 +65,7 @@ export function ensureSpecs(projectDir, task, now = Date.now()) {
       `## Current step\n` +
       `Automatic guarana workflow.\n\n` +
       `## Checkpoint\n` +
-      `- Goal: ${markdown}\n` +
+      `- Request context: ${markdown}\n` +
       `- Pending writes: planning\n`
   );
   writeIfMissing(
@@ -73,7 +73,8 @@ export function ensureSpecs(projectDir, task, now = Date.now()) {
     `# Feature spec: ${title}\n\n` +
       `**Status:** SPECIFIED\n` +
       `**Date:** ${new Date(now).toISOString().slice(0, 10)}\n\n` +
-      `## Goal\n${markdown}\n\n` +
+      `## Planning required\nInterpret the incoming request and define a concise goal and acceptance criteria.\n\n` +
+      `## Request context\n${markdown}\n\n` +
       `## Acceptance criteria\n` +
       `- The requested behavior is implemented and independently verified.\n\n` +
       `## Definition of done\n` +

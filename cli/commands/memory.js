@@ -31,7 +31,7 @@ const MEMORY_HELP = `guarana memory — project-local memory vault (.guarana/mem
 
 Usage:
   guarana memory init                    Create .guarana/memory/ (idempotent) + .gitignore entry
-  guarana memory status                  Show node/edge counts and draft vs confirmed breakdown
+  guarana memory status                  Show node/edge counts and legacy draft vs confirmed breakdown
   guarana memory search [term] [flags]   Search confirmed nodes (drafts are never returned)
     --type <type>        Filter by node type (decision|bug|solution|refactor|atom|supernode)
     --project <hash>     Filter by project hash
@@ -42,10 +42,10 @@ Usage:
   guarana memory import <file>           Import a vault JSON file (replaces nodes/edges)
   guarana memory compact [--threshold <n>]  Collapse oldest atom nodes into a supernode (lessons/decisions preserved)
     (default threshold from config.json compactionThreshold; atom nodes only — decisions/bugs/etc. never compacted)
-  guarana memory prune --keep <n>        Drop oldest DRAFT atom nodes beyond n (draft-trimming only; keeps confirmed lessons)
-  guarana memory review --list           List draft nodes (id, type, intent, ts), most recent first
-  guarana memory review <id> --confirm   Confirm a draft (optional edits: --intent "..." --tags a,b)
-  guarana memory review <id> --discard   Remove a draft node and its edges
+  guarana memory prune --keep <n>        Drop oldest legacy DRAFT atom nodes beyond n
+  guarana memory review --list           List legacy draft nodes (id, type, intent, ts), most recent first
+  guarana memory review <id> --confirm   Migrate a legacy draft (optional edits: --intent "..." --tags a,b)
+  guarana memory review <id> --discard   Remove a legacy draft node and its edges
   guarana memory --help                  Show this help
 `;
 
@@ -159,6 +159,9 @@ async function run(args) {
         opts.threshold = t;
       }
       const r = compact.compactVault(vaultDir, opts);
+      if (r.removedSupernodes) {
+        console.log(`removed ${r.removedSupernodes} metadata-only legacy supernode(s)`);
+      }
       if (r.compacted === 0) {
         console.log(`nothing to compact (${r.remaining} atom node(s), below threshold)`);
       } else {

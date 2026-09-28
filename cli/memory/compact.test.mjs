@@ -27,19 +27,20 @@ afterEach(() => {
 const atom = (i, extra = {}) => ({
   id: `atom-${i}`,
   type: "atom",
-  status: "draft",
+  status: "confirmed",
   ts: i,
   tags: [],
+  summary: `memory atom ${i}`,
   ...extra,
 });
 
 describe("compaction", () => {
   it("compacts oldest atoms down to threshold, preserving decision text verbatim (criterion 14)", () => {
     const rows = [
-      atom(1, { decision: "first decision here" }),
-      atom(2, { decision: "second decision here" }),
-      atom(3),
-      atom(4),
+      atom(1, { intent: "choose storage", decision: "first decision here", tags: ["db"] }),
+      atom(2, { intent: "handle retries", summary: "retry on timeout", decision: "second decision here" }),
+      atom(3, { summary: "third useful note" }),
+      atom(4, { summary: "fourth useful note" }),
       atom(5, { decision: "third decision here" }),
     ];
     seed(rows);
@@ -52,9 +53,11 @@ describe("compaction", () => {
     const sup = nodes.find((n) => n.id === r.supernodeId);
     assert.equal(sup.type, "supernode");
     assert.equal(sup.status, "confirmed");
-    assert.ok(sup.summary.includes("supernode summarizing 3 atom node(s)"));
+    assert.ok(sup.summary.includes("choose storage — memory atom 1 — first decision here"));
+    assert.ok(sup.summary.includes("handle retries — retry on timeout — second decision here"));
     assert.ok(sup.summary.includes("first decision here"));
     assert.ok(sup.summary.includes("second decision here"));
+    assert.deepEqual(sup.tags, ["db"]);
     // remaining atoms are the newest two
     const remaining = nodes.filter((n) => n.type === "atom");
     assert.deepEqual(remaining.map((n) => n.id).sort(), ["atom-4", "atom-5"]);
@@ -135,5 +138,39 @@ describe("compaction", () => {
     const r = compactVault(vaultDir);
     assert.equal(r.compacted, 2);
     assert.equal(r.remaining, 1);
+  });
+
+  it("does not compact empty or draft atoms into a confirmed supernode", () => {
+    seed([
+      atom(1, { status: "draft" , intent: "unreviewed" }),
+      atom(2, { summary: "" }),
+      atom(3, { summary: "   " }),
+    ]);
+    const result = compactVault(vaultDir, { threshold: 0 });
+    assert.equal(result.compacted, 0);
+    assert.equal(result.remaining, 0);
+    assert.equal(listNodes(vaultDir).length, 3);
+    assert.equal(listNodes(vaultDir).some((node) => node.type === "supernode"), false);
+  });
+
+  it("removes legacy metadata-only supernodes and their edges, preserving useful supernodes", () => {
+    seed([
+      { id: "junk", type: "supernode", status: "confirmed", ts: 1, tags: [], summary: "supernode summarizing 1 atom node(s) ts range: 1788977598260..1788977598260", collapsedIds: ["old-atom"] },
+      { id: "useful", type: "supernode", status: "confirmed", ts: 2, tags: [], summary: "Use explicit decisions as durable memory.", collapsedIds: ["old-meaningful-atom"] },
+    ]);
+    addEdge(vaultDir, { from: "junk", to: "useful", rel: "summarizes", ts: 3 });
+    const result = compactVault(vaultDir, { threshold: 10 });
+    assert.equal(result.removedSupernodes, 1);
+    assert.deepEqual(listNodes(vaultDir).map((node) => node.id), ["useful"]);
+    assert.deepEqual(listEdges(vaultDir), []);
+  });
+
+  it("does not treat metadata-only legacy atom summaries as useful memory", () => {
+    seed([
+      atom(1, { summary: "supernode summarizing 1 atom node(s) ts range: 1..1" }),
+    ]);
+    const result = compactVault(vaultDir, { threshold: 0 });
+    assert.equal(result.compacted, 0);
+    assert.equal(listNodes(vaultDir).some((node) => node.type === "supernode"), false);
   });
 });

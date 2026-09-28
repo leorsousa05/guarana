@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-09-09 (automatic workflow/spec/memory bootstrap)
+Last updated: 2026-09-28 (global memories included in graph)
 
 ## Per-skill status
 | Skill | Status |
@@ -18,13 +18,13 @@ Last updated: 2026-09-09 (automatic workflow/spec/memory bootstrap)
 | guarana orchestrator | **SPECIFIED → IMPLEMENTED → VALIDATED** |
 
 ## Current step
-**Automatic workflow/spec/memory bootstrap (2026-09-09).** Natural tasks now activate the installed orchestrator without a separate plugin command, preserve the task goal, create missing `.specs` records and feature specs, initialize the project memory vault, inject bounded confirmed context, and record verified completions. Active skill injection refreshes after `workflow_tick`; installed global plugin smoke test passed. Details in `.specs/changes/2026-09-09-automatic-workflow.md`. `npm test` 166/166, `check-cli` PASS. Version 0.7.0.
+**Project/global memory graph (2026-09-28) — VALIDATED.** Confirmed nodes from both project and private global vaults now appear in the graph with scope labels and scoped edges; summary counts are split by scope. Intent-driven capture, session deduplication, injection history, and the specs validator are included in this batch. Verification: `npm test` 181/181, production build, `check-cli`, and `specs:validate` pass; global/project plugins are current.
 
-**Pending:** commit this validated batch (ADR-007); then optionally push `main` (ahead of origin).
+**Pending:** none; requested commit is being completed.
 
 ## Checkpoint
-- Goal: none (batch closed). Commit the orchestrator batch + push `main` if desired.
-- Pending writes: none (change ledger + state updated).
+- Goal: Display confirmed project and global memories together without mixing scopes or edges.
+- Pending writes: none.
 - Budget: ADR-005 defaults.
 
 ## Proofs that exist

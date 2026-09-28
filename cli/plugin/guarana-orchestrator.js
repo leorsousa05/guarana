@@ -12,6 +12,45 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const pluginDir = path.dirname(fileURLToPath(import.meta.url));
+const ORCHESTRATOR_INJECTION_MARKER = '<!-- guarana orchestrator injection -->';
+const MEMORY_CONTEXT_GROUPS = ['decisions', 'bugs', 'solutions', 'refactors', 'preferences', 'superseded', 'atoms'];
+const INJECTION_CACHE_SYMBOL = Symbol.for('guarana.orchestrator.memory-injection-cache');
+const injectedMemoryBySession = globalThis[INJECTION_CACHE_SYMBOL] || new Map();
+globalThis[INJECTION_CACHE_SYMBOL] = injectedMemoryBySession;
+
+const memoryNodeKey = (node) => `${node.scope === 'global' ? 'global' : 'project'}:${node.id}`;
+
+function selectUnseenMemory(context, seen) {
+  const selected = {};
+  const memories = [];
+  for (const group of MEMORY_CONTEXT_GROUPS) {
+    selected[group] = [];
+    for (const node of context?.[group] || []) {
+      if (!node.id) continue;
+      const key = memoryNodeKey(node);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      selected[group].push(node);
+      memories.push({ id: node.id, type: node.type, scope: node.scope === 'global' ? 'global' : 'project' });
+    }
+  }
+  selected.count = memories.length;
+  return { context: memories.length ? selected : null, memories };
+}
+
+function sessionIdFrom(event) {
+  const props = (event && event.properties) || event || {};
+  const info = props.info || props.session || props;
+  return (info && info.id) || props.sessionID || (event && event.sessionID) || null;
+}
+
+function storeSessionInjectionState(key, value) {
+  injectedMemoryBySession.delete(key);
+  injectedMemoryBySession.set(key, value);
+  while (injectedMemoryBySession.size > 128) {
+    injectedMemoryBySession.delete(injectedMemoryBySession.keys().next().value);
+  }
+}
 
 // Load the core engine from repo (plugin/ -> ../orchestrator) or bundle
 // (cli/plugin/ -> ../orchestrator). Same relative path covers both; ../../orchestrator
@@ -119,9 +158,10 @@ export const GuaranaOrchestrator = async ({ directory }) => {
   let latest = null;
   let memoryContext = null;
   let memoryPromise = null;
+  let activeSessionID = null;
+  const sessionCacheKey = (sessionID) => `${path.resolve(directory)}::${sessionID}`;
 
   const loadContext = async (task) => {
-    if (!task) return null;
     if (!memoryPromise) {
       memoryPromise = loadMemoryEngine().catch((err) => {
         append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
@@ -131,33 +171,30 @@ export const GuaranaOrchestrator = async ({ directory }) => {
     const e = await memoryPromise;
     if (!e) return null;
     try {
-      const vaultDir = e.vault.initVault(directory);
-      return await e.tools.memoryGetContextForTask(vaultDir, { task, limit: 10 });
+      const userVaultDir = e.vault.initUserVault();
+      const [projectContext, globalPreferences] = await Promise.all([
+        task
+          ? e.tools.memoryGetContextForTask(e.vault.initVault(directory), { task, limit: 7 })
+          : Promise.resolve({ decisions: [], bugs: [], solutions: [], refactors: [], preferences: [], superseded: [], atoms: [], count: 0 }),
+        e.tools.memoryGetGlobalPreferences(userVaultDir, { limit: 3 }),
+      ]);
+      const preferences = [
+        ...(projectContext.preferences || []),
+        ...globalPreferences.preferences,
+      ];
+      return {
+        ...projectContext,
+        preferences,
+        count: projectContext.count + globalPreferences.count,
+      };
     } catch (err) {
       append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
       return null;
     }
   };
 
-  const saveCompletionMemory = async (workflow) => {
-    if (!workflow.goal) return;
-    if (!memoryPromise) memoryPromise = loadMemoryEngine().catch(() => null);
-    const e = await memoryPromise;
-    if (!e) return;
-    try {
-      const vaultDir = e.vault.initVault(directory);
-      await e.tools.memorySaveDecision(vaultDir, {
-        intent: `completed task: ${workflow.goal}`,
-        decision: 'Task reached verification and was accepted by the automatic guarana workflow.',
-        tags: ['guarana', 'completed'],
-        author: 'guarana',
-      });
-    } catch (err) {
-      append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
-    }
-  };
-
-  const syncDecision = async (userText, lastResult) => {
+  const syncDecision = async (userText, lastResult, sessionID) => {
+    if (sessionID) activeSessionID = sessionID;
     const c = await core();
     if (!c) return;
     try {
@@ -181,7 +218,6 @@ export const GuaranaOrchestrator = async ({ directory }) => {
             }
           }
           c.state.save(directory, next);
-          if (next.state === 'completed') await saveCompletionMemory(next);
           append({
             ts: Date.now(),
             type: 'workflow',
@@ -278,7 +314,6 @@ export const GuaranaOrchestrator = async ({ directory }) => {
             append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
           }
         }
-        if (applied.state === 'completed') await saveCompletionMemory(applied);
         latest = applied;
         memoryContext = await loadContext(applied.goal || applied.activeTask || '');
         append({
@@ -303,7 +338,7 @@ export const GuaranaOrchestrator = async ({ directory }) => {
     'chat.message': async (input, output) => {
       try {
         const text = userText((output && output.parts) || (input && input.parts));
-        await syncDecision(text, null);
+        await syncDecision(text, null, input?.sessionID || output?.sessionID);
       } catch (err) {
         append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
       }
@@ -312,16 +347,59 @@ export const GuaranaOrchestrator = async ({ directory }) => {
     // Inject the always-on orchestration prompt + the active skill's full body.
     'experimental.chat.system.transform': async (input, output) => {
       try {
+        const sessionID = input?.sessionID || sessionIdFrom(input) || activeSessionID || 'unknown';
+        const cacheKey = sessionCacheKey(sessionID);
+        let sessionMemory = injectedMemoryBySession.get(cacheKey);
+        if (!sessionMemory) {
+          sessionMemory = { seen: new Set(), nextReason: 'session-start' };
+          storeSessionInjectionState(cacheKey, sessionMemory);
+        }
+        const seen = sessionMemory.seen;
+        if (Array.isArray(output.system) && output.system.some((item) => String(item).includes(ORCHESTRATOR_INJECTION_MARKER))) {
+          return;
+        }
         const c = await core();
         if (!c) return;
         const wf = latest ? latest : c.state.load(directory);
-        const injection = c.prompt.buildInjection(wf, { memoryContext, directory });
+        const pendingMemory = selectUnseenMemory(memoryContext, new Set(seen));
+        const injection = `${ORCHESTRATOR_INJECTION_MARKER}\n${c.prompt.buildInjection(wf, { memoryContext: pendingMemory.context, directory })}`;
         if (!Array.isArray(output.system)) output.system = [];
         if (output.system.length > 0) {
           output.system[output.system.length - 1] += '\n\n' + injection;
         } else {
           output.system.push(injection);
         }
+        if (pendingMemory.memories.length) {
+          for (const node of pendingMemory.memories) seen.add(`${node.scope}:${node.id}`);
+          append({
+            ts: Date.now(),
+            type: 'memory-injected',
+            sessionID,
+            workflowState: wf.state,
+            reason: sessionMemory.nextReason,
+            memories: pendingMemory.memories,
+          });
+          sessionMemory.nextReason = 'new-memories';
+        }
+      } catch (err) {
+        append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
+      }
+    },
+
+    'session.created': async (event) => {
+      const sessionID = sessionIdFrom(event);
+      if (sessionID) storeSessionInjectionState(sessionCacheKey(sessionID), { seen: new Set(), nextReason: 'session-start' });
+    },
+
+    'session.compacted': async (event) => {
+      const sessionID = sessionIdFrom(event) || activeSessionID || 'unknown';
+      storeSessionInjectionState(sessionCacheKey(sessionID), { seen: new Set(), nextReason: 'compacted' });
+      try {
+        const c = await core();
+        if (!c) return;
+        const wf = c.state.load(directory);
+        memoryContext = await loadContext(wf.goal || wf.activeTask || '');
+        latest = wf;
       } catch (err) {
         append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
       }

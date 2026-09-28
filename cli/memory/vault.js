@@ -7,6 +7,7 @@ export const DEFAULT_CONFIG = {
   compactionThreshold: 1000,
   embeddingProvider: null, // allowlisted ids only (see search.js EMBEDDING_PROVIDERS)
   maxNodes: 20000, // soft warning cap for `guarana memory status`; null disables
+  // Retained for compatibility with vaults created before explicit-only memory.
   capture: { enabled: true },
 };
 
@@ -20,8 +21,8 @@ export const paths = (vaultDir) => ({
 export const projectVaultDir = (projectDir) =>
   path.join(projectDir, ".guarana", "memory");
 
-export const userVaultDir = () =>
-  path.join(os.homedir(), ".config", "guarana", "memory");
+export const userVaultDir = (home = os.homedir()) =>
+  path.join(home, ".config", "guarana", "memory");
 
 export function readJsonl(file) {
   try {
@@ -86,16 +87,25 @@ function ensureGitignore(projectDir) {
 }
 
 // Create <project>/.guarana/memory/ idempotently + gitignore entry.
-export function initVault(projectDir) {
-  const vaultDir = projectVaultDir(projectDir);
+function initVaultFiles(vaultDir) {
   const p = paths(vaultDir);
   fs.mkdirSync(p.drafts, { recursive: true });
   if (!fs.existsSync(p.nodes)) fs.writeFileSync(p.nodes, "", "utf8");
   if (!fs.existsSync(p.edges)) fs.writeFileSync(p.edges, "", "utf8");
   if (!fs.existsSync(p.config))
     fs.writeFileSync(p.config, JSON.stringify(DEFAULT_CONFIG, null, 2) + "\n", "utf8");
+  return vaultDir;
+}
+
+export function initVault(projectDir) {
+  const vaultDir = initVaultFiles(projectVaultDir(projectDir));
   ensureGitignore(projectDir);
   return vaultDir;
+}
+
+// Create the private per-user vault without touching any project files.
+export function initUserVault(home = os.homedir()) {
+  return initVaultFiles(userVaultDir(home));
 }
 
 export function exportVault(vaultDir, outFile) {

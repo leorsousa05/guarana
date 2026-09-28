@@ -1,5 +1,5 @@
 // guarana memory plugin (Component B)
-// Captures tool calls / file edits as draft atoms in the project vault
+// Stores explicit memory decisions in the project vault
 // (.guarana/memory/nodes.jsonl), delegating to the memory/ engine.
 // Constraints: no external deps, never throws, and initializes the project
 // vault automatically so memory works without a separate setup command.
@@ -8,24 +8,17 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const MAX_TEXT = 2000;
-const TRUNC = "\n…[truncated]";
 const pluginDir = path.dirname(fileURLToPath(import.meta.url));
 
-function cap(text, max = MAX_TEXT) {
-  if (typeof text !== "string") return text;
-  return text.length > max ? text.slice(0, max) + TRUNC : text;
-}
-
-function stringify(value, max = MAX_TEXT) {
-  if (value == null) return "";
-  if (typeof value === "string") return cap(value, max);
-  try {
-    return cap(JSON.stringify(value), max);
-  } catch {
-    return cap(String(value), max);
-  }
-}
+const MEMORY_POLICY = [
+  '## Guarana automatic memory',
+  'Before answering each human message, notice whether it establishes a durable preference or project decision.',
+  '- Standing instructions about how the user wants the assistant to behave ("always", "never", response style) are global `preference` memories; save with `memory_save_node` and `scope: "global"`.',
+  '- Decisions, requirements, bugs, solutions, and refactors for the current codebase are project memories; save with the correct type and `scope: "project"`.',
+  '- Do this automatically when the intent is clear; do not wait for a memory command. Check for duplicates first and use `supersedes` when updating an existing preference.',
+  '- Save a concise, reusable statement, link only real relationships, and do not save ordinary task requests, temporary instructions, inferred personal facts, or sensitive data.',
+  '- Global preferences are injected at session start and after context compaction; project memories are task-relevant. Do not claim a save succeeded unless the memory tool succeeds.',
+].join('\n');
 
 // Engine lives at repo-root memory/ (repo layout: plugin/ -> ../memory/)
 // or at cli/memory/ in the bundle (cli/plugin/ -> ../memory/). Same relative
@@ -37,20 +30,16 @@ async function loadEngine() {
   ];
   for (const dir of candidates) {
     if (
-      fs.existsSync(path.join(dir, "capture.js")) &&
-      fs.existsSync(path.join(dir, "vault.js"))
+      fs.existsSync(path.join(dir, "vault.js")) &&
+      fs.existsSync(path.join(dir, "tools.js"))
     ) {
-      const [capture, vault, tools, compact] = await Promise.all([
-        import(pathToFileURL(path.join(dir, "capture.js")).href),
+      const [vault, tools] = await Promise.all([
         import(pathToFileURL(path.join(dir, "vault.js")).href),
         fs.existsSync(path.join(dir, "tools.js"))
           ? import(pathToFileURL(path.join(dir, "tools.js")).href)
           : Promise.resolve(null),
-        fs.existsSync(path.join(dir, "compact.js"))
-          ? import(pathToFileURL(path.join(dir, "compact.js")).href)
-          : Promise.resolve(null),
       ]);
-      return { capture, vault, tools, compact };
+      return { vault, tools };
     }
   }
   return null;
@@ -102,78 +91,6 @@ export const GuaranaMemory = async ({ directory }) => {
     return e;
   };
 
-  let skippedLogged = false;
-  const skip = (reason, sessionID) => {
-    if (skippedLogged) return; // at most once per session
-    skippedLogged = true;
-    append({
-      ts: Date.now(),
-      type: "memory-skipped",
-      reason,
-      sessionID: sessionID || "unknown",
-    });
-  };
-
-  // Core capture path. Never throws.
-  const tryCapture = async (eventData, meta = {}) => {
-    try {
-      const e = await engine();
-      if (!e) return;
-      const vaultDir = e.vault.projectVaultDir(directory);
-      if (!fs.existsSync(e.vault.paths(vaultDir).nodes)) e.vault.initVault(directory);
-      let cfg = null;
-      try {
-        cfg = e.vault.loadConfig(vaultDir); // malformed config -> defaults
-      } catch (err) {
-        recordError(err, meta.sessionID);
-      }
-      if (cfg && cfg.capture && cfg.capture.enabled === false)
-        return skip("capture-disabled", meta.sessionID);
-      const res = e.capture.captureAtom(vaultDir, eventData);
-      if (res.captured) {
-        append({
-          ts: Date.now(),
-          type: "memory-captured",
-          sessionID: meta.sessionID || "unknown",
-          tool: meta.tool || "unknown",
-          id: res.node.id,
-        });
-        // Automatic compaction trigger: collapse oldest atoms when over
-        // threshold. Errors -> memory-error telemetry; capture already
-        // succeeded and is unaffected.
-        if (e.compact) {
-          try {
-            const r = e.compact.compactVault(vaultDir, {
-              threshold: cfg ? cfg.compactionThreshold : undefined,
-            });
-            if (r.compacted > 0) {
-              append({
-                ts: Date.now(),
-                type: "memory-compacted",
-                sessionID: meta.sessionID || "unknown",
-                compacted: r.compacted,
-                supernodeId: r.supernodeId,
-                remaining: r.remaining,
-              });
-            }
-          } catch (err) {
-            recordError(err, meta.sessionID);
-          }
-        }
-      } else {
-        append({
-          ts: Date.now(),
-          type: "memory-filtered",
-          sessionID: meta.sessionID || "unknown",
-          tool: meta.tool || "unknown",
-          reason: res.reason || "unknown",
-        });
-      }
-    } catch (err) {
-      recordError(err, meta.sessionID);
-    }
-  };
-
   const recordLifecycle = (status, event) => {
     try {
       const props = (event && event.properties) || event || {};
@@ -190,21 +107,81 @@ export const GuaranaMemory = async ({ directory }) => {
     }
   };
 
-  // Stashed inputs from tool.execute.before, keyed by callID/sessionID.
-  const pending = new Map();
-
   // ---- Custom memory tools (ADR-008, Slice 3) ----
   // OpenCode custom-tool shape: a `tool` map on the hooks object, each entry
   // { description, args: {json-schema-ish}, async execute(args, ctx) }.
   // execute returns a JSON string (tool results are strings in OpenCode).
   // Boundary rule: NEVER throw — errors become { error: message } results.
   // Isolated in this section so an API-shape fix is a small local change.
+  const vaultFor = (e, scope) =>
+    scope === 'global' ? e.vault.initUserVault() : e.vault.initVault(directory);
+
+  const mergeContexts = (projectContext, globalContext, globalPreferences, limit) => {
+    const out = { decisions: [], bugs: [], solutions: [], refactors: [], preferences: [], superseded: [], atoms: [] };
+    const keys = Object.keys(out);
+    const candidates = [
+      ...(globalPreferences.preferences || []).map((node) => ({ node, group: 'preferences' })),
+      ...keys.flatMap((group) => (projectContext[group] || []).map((node) => ({ node, group }))),
+      ...keys.flatMap((group) => (globalContext[group] || []).map((node) => ({ node, group }))),
+    ];
+    const seen = new Set();
+    for (const { node, group } of candidates) {
+      const key = `${node.scope || 'project'}:${node.id}`;
+      if (seen.has(key) || out.count >= limit) continue;
+      seen.add(key);
+      out[group].push(node);
+      out.count = (out.count || 0) + 1;
+    }
+    out.count ||= 0;
+    return out;
+  };
+
   const runTool = (handlerName) => async (args) => {
     try {
       const e = await engine();
       if (!e || !e.tools) return JSON.stringify({ error: "memory engine not available" });
-      const vaultDir = e.vault.initVault(directory);
-      const result = await e.tools[handlerName](vaultDir, args || {});
+      const options = args || {};
+      const scopedRead = handlerName === 'memorySearch' || handlerName === 'memoryGetContextForTask';
+      const scope = options.scope || (scopedRead ? 'both' : 'project');
+      if (!['project', 'global', 'both'].includes(scope))
+        return JSON.stringify({ error: 'scope must be project, global, or both' });
+
+      if (scopedRead && scope === 'both') {
+        const projectVault = e.vault.initVault(directory);
+        const globalVault = e.vault.initUserVault();
+        if (handlerName === 'memorySearch') {
+          const limit = Number.isInteger(options.limit) && options.limit > 0 ? options.limit : 20;
+          const [project, global] = await Promise.all([
+            e.tools.memorySearch(projectVault, options),
+            e.tools.memorySearch(globalVault, options),
+          ]);
+          const results = [
+            ...(project.results || []).map((node) => ({ ...node, scope: 'project' })),
+            ...(global.results || []).map((node) => ({ ...node, scope: 'global' })),
+          ].sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, limit);
+          return JSON.stringify({ results, count: results.length });
+        }
+        const limit = Number.isInteger(options.limit) && options.limit > 0 ? options.limit : 10;
+        const [projectContext, globalContext, preferences] = await Promise.all([
+          e.tools.memoryGetContextForTask(projectVault, { ...options, limit }),
+          e.tools.memoryGetContextForTask(globalVault, { ...options, limit }),
+          e.tools.memoryGetGlobalPreferences(globalVault, { limit: Math.min(5, limit) }),
+        ]);
+        for (const group of Object.keys(projectContext)) {
+          if (Array.isArray(projectContext[group]))
+            projectContext[group] = projectContext[group].map((node) => ({ ...node, scope: 'project' }));
+        }
+        for (const group of Object.keys(globalContext)) {
+          if (Array.isArray(globalContext[group]))
+            globalContext[group] = globalContext[group].map((node) => ({ ...node, scope: 'global' }));
+        }
+        return JSON.stringify(mergeContexts(projectContext, globalContext, preferences, limit));
+      }
+
+      const vaultDir = vaultFor(e, scope);
+      const result = handlerName === 'memoryGetContextForTask'
+        ? await e.tools[handlerName](vaultDir, options)
+        : await e.tools[handlerName](vaultDir, options);
       return JSON.stringify(result);
     } catch (err) {
       try {
@@ -225,8 +202,9 @@ export const GuaranaMemory = async ({ directory }) => {
         type: {
           type: "string",
           description: "node type filter",
-          enum: ["decision", "bug", "solution", "refactor", "atom", "supernode"],
+          enum: ["decision", "bug", "solution", "refactor", "preference", "atom", "supernode"],
         },
+        scope: { type: "string", enum: ["project", "global", "both"], description: "search scope (default both)" },
         since: { type: "number", description: "minimum ts (epoch ms)" },
         until: { type: "number", description: "maximum ts (epoch ms)" },
         limit: { type: "number", description: "max results" },
@@ -235,7 +213,7 @@ export const GuaranaMemory = async ({ directory }) => {
     },
     memory_save_decision: {
       description:
-        "Record a decision as a confirmed memory node, with rejected alternatives.",
+        "Record a decision as a confirmed memory node. Add relatedTo links when a real relationship exists.",
       args: {
         intent: { type: "string", description: "what was being done" },
         decision: { type: "string", description: "what was decided and why" },
@@ -246,8 +224,47 @@ export const GuaranaMemory = async ({ directory }) => {
         },
         tags: { type: "array", items: { type: "string" } },
         author: { type: "string", description: "defaults to 'agent'" },
+        scope: { type: "string", enum: ["project", "global"], description: "memory scope (default project)" },
+        relatedTo: {
+          type: "array",
+          description: "optional explicit links to existing confirmed nodes",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              rel: { type: "string", enum: ["caused-by", "depends-on", "supersedes", "summarizes", "fixes", "relates-to"] },
+            },
+            required: ["id", "rel"],
+          },
+        },
       },
       execute: runTool("memorySaveDecision"),
+    },
+    memory_save_node: {
+      description:
+        "Save a confirmed decision, bug, solution, refactor, or standing user preference with its correct type and scope; include explicit relatedTo links when semantically connected.",
+      args: {
+        type: { type: "string", enum: ["decision", "bug", "solution", "refactor", "preference"] },
+        scope: { type: "string", enum: ["project", "global"], description: "global for standing user preferences; project for current-project knowledge" },
+        intent: { type: "string", description: "what was happening" },
+        summary: { type: "string", description: "the bug, solution, refactor, or decision and why it matters" },
+        rejectedAlternatives: { type: "array", items: { type: "string" } },
+        tags: { type: "array", items: { type: "string" } },
+        author: { type: "string", description: "defaults to 'agent'" },
+        relatedTo: {
+          type: "array",
+          description: "links to existing confirmed nodes; do not invent relationships",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              rel: { type: "string", enum: ["caused-by", "depends-on", "supersedes", "summarizes", "fixes", "relates-to"] },
+            },
+            required: ["id", "rel"],
+          },
+        },
+      },
+      execute: runTool("memorySaveNode"),
     },
     memory_get_context_for_task: {
       description:
@@ -255,12 +272,13 @@ export const GuaranaMemory = async ({ directory }) => {
       args: {
         task: { type: "string", description: "task description to match" },
         limit: { type: "number", description: "max nodes returned (default 10)" },
+        scope: { type: "string", enum: ["project", "global", "both"], description: "memory scope (default both)" },
       },
       execute: runTool("memoryGetContextForTask"),
     },
     memory_review_draft: {
       description:
-        "Review a draft memory node: action 'confirm' flips it to confirmed (optional edits), 'discard' removes it.",
+        "Migrate or discard a legacy draft node: action 'confirm' flips it to confirmed (optional edits), 'discard' removes it.",
       args: {
         id: { type: "string", description: "draft node id" },
         action: { type: "string", enum: ["confirm", "discard"] },
@@ -273,88 +291,11 @@ export const GuaranaMemory = async ({ directory }) => {
 
   return {
     tool: memoryTools,
-    "tool.execute.before": async (input, output) => {
-      try {
-        const key = (input && (input.callID || input.sessionID)) || "last";
-        pending.set(key, {
-          tool: input && input.tool != null ? String(input.tool) : "unknown",
-          sessionID: input && input.sessionID ? String(input.sessionID) : "unknown",
-          input: stringify(
-            output && output.args != null ? output.args : input && input.args,
-            1000
-          ),
-        });
-        if (pending.size > 100) pending.clear(); // bound memory
-      } catch (_) {
-        /* swallow */
-      }
+    'experimental.chat.system.transform': async (input, output) => {
+      if (!Array.isArray(output.system)) output.system = [];
+      if (!output.system.some((text) => String(text).includes('## Guarana automatic memory')))
+        output.system.push(MEMORY_POLICY);
     },
-
-    "tool.execute.after": async (input, output) => {
-      try {
-        const key = (input && (input.callID || input.sessionID)) || "last";
-        const st = pending.get(key) || pending.get("last") || {};
-        pending.delete(key);
-        const tool =
-          st.tool || (input && input.tool != null ? String(input.tool) : "unknown");
-        const sessionID =
-          st.sessionID ||
-          (input && input.sessionID) ||
-          (output && output.sessionID) ||
-          "unknown";
-        const inputText =
-          st.input || stringify(input && input.args, 1000);
-        const outputText = stringify(
-          output && output.output != null
-            ? output.output
-            : output && output.result != null
-              ? output.result
-              : output
-        );
-        const intent = inputText
-          ? `${tool}: ${inputText.slice(0, 120)}`
-          : String(tool);
-        await tryCapture(
-          {
-            intent,
-            input: inputText,
-            output: outputText,
-            tags: [String(tool)],
-          },
-          { sessionID, tool }
-        );
-      } catch (err) {
-        recordError(err, input && input.sessionID);
-      }
-    },
-
-    "file.edited": async (event) => {
-      try {
-        const e = (event && event.event) || event || {};
-        const props = e.properties || e;
-        const info = props.info || props;
-        const file =
-          props.file ||
-          props.path ||
-          props.filePath ||
-          info.path ||
-          info.file ||
-          "unknown";
-        const sessionID = props.sessionID || e.sessionID || "unknown";
-        await tryCapture(
-          {
-            intent: `file edited: ${file}`,
-            input: String(file),
-            output: "",
-            tags: ["file.edited"],
-          },
-          { sessionID, tool: "file.edited" }
-        );
-      } catch (err) {
-        recordError(err);
-      }
-    },
-
     "session.created": async (event) => {
       recordLifecycle("created", event);
       try {

@@ -1,11 +1,26 @@
-import { describe, it } from 'node:test';
+import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
 import { summary, search, graph, drafts, review } from './memory.js';
-import { initVault } from '../../../memory/vault.js';
+import { initVault, initUserVault } from '../../../memory/vault.js';
 import { createNode, createEdge } from '../../../memory/graph.js';
+
+let oldHome;
+let fakeHome;
+
+beforeEach(() => {
+  oldHome = process.env.HOME;
+  fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-user-memory-'));
+  process.env.HOME = fakeHome;
+});
+
+afterEach(() => {
+  if (oldHome === undefined) delete process.env.HOME;
+  else process.env.HOME = oldHome;
+  fs.rmSync(fakeHome, { recursive: true, force: true });
+});
 
 function seedVault() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-mem-'));
@@ -46,7 +61,28 @@ describe('memory lib — summary', () => {
       assert.equal(s.nodes.confirmed, 2);
       assert.equal(s.nodes.byType.atom, 2);
       assert.equal(s.nodes.byType.decision, 1);
+      assert.deepEqual(s.nodes.byScope, { project: 3, global: 0 });
       assert.equal(s.edges, 1);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('hides metadata-only legacy supernodes from memory summaries and search', async () => {
+    const { tmp, vaultDir, confirmed2 } = seedVault();
+    try {
+      const junk = createNode(vaultDir, {
+        type: 'supernode',
+        status: 'confirmed',
+        summary: 'supernode summarizing 1 atom node(s) ts range: 1788977598260..1788977598260',
+      });
+      createEdge(vaultDir, { from: junk.id, to: confirmed2.id, rel: 'summarizes' });
+      const s = await summary(vaultDir);
+      assert.equal(s.nodes.total, 3);
+      assert.equal(s.supernodes, 0);
+      assert.equal(s.edges, 1);
+      const res = await search(vaultDir, { q: 'supernode summarizing' });
+      assert.equal(res.results.length, 0);
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
@@ -56,7 +92,11 @@ describe('memory lib — summary', () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-mem-'));
     try {
       const s = await summary(path.join(tmp, '.guarana', 'memory'));
-      assert.deepEqual(s, { nodes: { total: 0, byType: {}, draft: 0, confirmed: 0 }, edges: 0, supernodes: 0 });
+      assert.deepEqual(s, {
+        nodes: { total: 0, byType: {}, byScope: { project: 0, global: 0 }, draft: 0, confirmed: 0 },
+        edges: 0,
+        supernodes: 0,
+      });
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
@@ -102,6 +142,47 @@ describe('memory lib — graph', () => {
         assert.ok(g.nodes.some((n) => n.id === e.from));
         assert.ok(g.nodes.some((n) => n.id === e.to));
       }
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('includes confirmed global nodes and labels each scope without mixing edge IDs', async () => {
+    const { tmp, vaultDir, confirmed2 } = seedVault();
+    try {
+      const globalVault = initUserVault();
+      const preference = createNode(globalVault, {
+        type: 'preference', status: 'confirmed', scope: 'global',
+        intent: 'response language', summary: 'Use Portuguese.',
+      });
+      const globalDecision = createNode(globalVault, {
+        type: 'decision', status: 'confirmed', scope: 'global',
+        intent: 'keep answers concise', summary: 'Prefer short replies.',
+      });
+      createEdge(globalVault, { from: preference.id, to: globalDecision.id, rel: 'depends-on' });
+
+      const result = await graph(vaultDir, { limit: 10 });
+      assert.ok(result.nodes.some((n) => n.id === preference.id && n.scope === 'global'));
+      assert.ok(result.nodes.some((n) => n.id === confirmed2.id && n.scope === 'project'));
+      assert.ok(result.edges.some((e) => e.scope === 'global' && e.from === preference.id && e.to === globalDecision.id));
+      assert.ok(result.edges.some((e) => e.scope === 'project' && (e.from === confirmed2.id || e.to === confirmed2.id)));
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('omits metadata-only legacy supernodes and connected edges', async () => {
+    const { tmp, vaultDir, confirmed2 } = seedVault();
+    try {
+      const junk = createNode(vaultDir, {
+        type: 'supernode',
+        status: 'confirmed',
+        summary: 'supernode summarizing 1 atom node(s) ts range: 1..1',
+      });
+      createEdge(vaultDir, { from: junk.id, to: confirmed2.id, rel: 'summarizes' });
+      const g = await graph(vaultDir);
+      assert.equal(g.nodes.some((n) => n.id === junk.id), false);
+      assert.equal(g.edges.some((e) => e.from === junk.id || e.to === junk.id), false);
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }

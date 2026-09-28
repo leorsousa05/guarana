@@ -1,4 +1,5 @@
-// guarana memory — tool-call event → draft atom, with security filters. Zero deps.
+// Legacy draft-atom helper. Automatic plugin capture is retired; retained for
+// migration and security tests. Zero deps.
 import crypto from "node:crypto";
 import path from "node:path";
 import { addNode, newId } from "./graph.js";

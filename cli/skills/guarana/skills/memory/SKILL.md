@@ -1,33 +1,48 @@
 ---
 name: guarana:memory
-description: Use when using or querying the memory vault — recovering prior decisions/bugs, saving a decision, searching confirmed memory, or reviewing auto-captured drafts. The orchestrator supplies bounded confirmed context automatically.
+description: Use when using or querying the memory vault — recovering prior decisions/bugs, saving a decision, or searching confirmed memory. The orchestrator supplies bounded confirmed context automatically.
 ---
 
 # guarana:memory
 
-The orchestrator automatically initializes the project vault, retrieves
-relevant confirmed context for active tasks, and records completed verified
-runs. Use this skill for deeper searches, decision review, or inspecting the
-memory graph; normal work does not require a `guarana:memory` command.
+The orchestrator automatically initializes both memory scopes, injects relevant
+project context and global standing preferences once per session and after
+context compaction. Use this
+skill for deeper searches, decision review, or inspecting the graph; normal work
+does not require a `guarana:memory` command.
 
-The memory vault is a project-local graph of decisions, bugs, solutions and refactors. The orchestrator automatically supplies bounded confirmed context for the active task; explicit tools provide deeper access.
+The memory system has a project graph and a private user graph. Project decisions,
+bugs, solutions, and refactors live in `<project>/.guarana/memory/`; durable
+"always/never" preferences live in `~/.config/guarana/memory/` and apply across
+projects. The assistant judges user intent and invokes a memory tool when the
+user states durable knowledge. Tool/file activity itself is telemetry, not memory.
 
-## The four tools
+## The memory tools
 | Tool | When to call |
 |---|---|
-| `memory_search({query,type?,since?,until?,limit?})` | You need to find something in confirmed memory: a past decision, bug, or solution matching a topic. Confirmed-only hybrid search. |
-| `memory_get_context_for_task({task,limit?})` | Resuming/interrupting work and you want the decision rationale, rejected alternatives, and bugs behind how something is built. Returns a bounded subgraph. |
-| `memory_save_decision({intent,decision,rejectedAlternatives?,tags?,author?})` | Closing/completing a run and a key decision is worth persisting for future resumes. Writes a confirmed node. |
-| `memory_review_draft({id,action:"confirm"\|"discard",edits?})` | Reviewing auto-captured drafts before relying on them. |
+| `memory_search({query,type?,scope?,since?,until?,limit?})` | Search confirmed memory; scope can be `project`, `global`, or `both` (default). |
+| `memory_get_context_for_task({task,scope?,limit?})` | Retrieve the task's relevant project/global subgraph; standing global preferences are included. |
+| `memory_save_decision({intent,decision,rejectedAlternatives?,tags?,author?})` | Backward-compatible project decision save. |
+| `memory_save_node({type,scope,intent,summary,relatedTo?,tags?,author?})` | Save a confirmed `decision`, `bug`, `solution`, `refactor`, or `preference`; use `global` for standing user preferences and `project` for current-project knowledge. |
+| `memory_review_draft({id,action:"confirm"\|"discard",edits?})` | Migrating or discarding legacy draft atoms from older versions. |
 
-## Draft → confirmed lifecycle
-Auto-captured atoms are `status: draft`. Drafts are never returned by search or context retrieval — only confirmed nodes are. Review a draft (`memory_review_draft`) before you rely on it; confirm it to make it retrievable, or discard it if it's noise. Treat unreviewed drafts as untrusted.
+## Explicit memory lifecycle
+When a user sets a lasting preference or makes a durable project decision, save
+it automatically with `memory_save_node` before answering. Search its scope to
+avoid duplicates; use a `supersedes` link when the user changes an existing
+preference. Add other `relatedTo` links only when the relation is real. Ordinary
+requests, temporary instructions, inferred personal facts, tool calls, and file
+edits do not create memory nodes. `memory_save_decision` remains for explicit
+decision saves.
+Legacy draft atoms from older versions are never retrieved automatically; use
+`memory_review_draft` only to migrate or discard them.
 
 ## Automatic retrieval boundary
-Only relevant confirmed nodes are automatically injected, capped at ten nodes.
-Drafts are never injected. Query the tools when you need deeper context or need
-to review and confirm a draft.
+Relevant project nodes and up to three current global preferences are injected
+automatically (ten nodes total). Global preferences apply across projects unless
+a project-specific instruction overrides them. Legacy drafts are never injected.
 
 ## Gotchas
-- Drafts don't exist to search. If you need it in a search result, confirm it first.
+- A normal task request is not a memory; capture only durable user intent.
+- Legacy drafts don't exist to search. Migrate one only if it contains durable knowledge.
 - Memory complements the disk restore (`guarana:remember`); it never replaces disk as truth.

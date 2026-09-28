@@ -5,20 +5,26 @@ import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
 import { load, workflowFile } from '../orchestrator/state.js';
-import { createNode } from '../memory/graph.js';
+import { createNode, listNodes } from '../memory/graph.js';
+import { initUserVault } from '../memory/vault.js';
 
 describe('GuaranaOrchestrator', () => {
   let tmpDir;
   let eventsFile;
   let api;
+  let oldHome;
 
   beforeEach(async () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-orch-plugin-'));
+    oldHome = process.env.HOME;
+    process.env.HOME = path.join(tmpDir, 'home');
     api = await GuaranaOrchestrator({ directory: tmpDir });
     eventsFile = path.join(tmpDir, '.specs', 'state', 'telemetry', 'events.jsonl');
   });
 
   afterEach(() => {
+    if (oldHome === undefined) delete process.env.HOME;
+    else process.env.HOME = oldHome;
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
@@ -65,9 +71,10 @@ describe('GuaranaOrchestrator', () => {
     assert.ok(fs.existsSync(path.join(tmpDir, '.specs', 'README.md')));
     assert.ok(fs.existsSync(path.join(tmpDir, '.specs', 'state', 'project-state.md')));
     assert.ok(fs.existsSync(path.join(tmpDir, '.specs', 'decisions')));
-    assert.ok(fs.existsSync(path.join(tmpDir, '.specs', 'features', 'implement-oauth-authentication', 'implement-oauth-authentication.md')));
+    assert.ok(fs.existsSync(path.join(tmpDir, '.specs', 'features', 'initial-task', 'initial-task.md')));
     assert.ok(fs.existsSync(path.join(tmpDir, '.guarana', 'memory', 'nodes.jsonl')));
     assert.ok(fs.existsSync(path.join(tmpDir, '.guarana', 'memory', 'config.json')));
+    assert.equal(fs.readFileSync(path.join(tmpDir, '.guarana', 'memory', 'nodes.jsonl'), 'utf8').trim(), '');
   });
 
   it('injects relevant confirmed memory on the next automatic turn', async () => {
@@ -83,6 +90,92 @@ describe('GuaranaOrchestrator', () => {
     await api['experimental.chat.system.transform']({}, out);
     assert.match(out.system[0], /guarana memory \(automatic context\)/);
     assert.match(out.system[0], /Use PKCE for the OAuth flow/);
+  });
+
+  it('injects global preferences even when their wording does not match the project task', async () => {
+    const globalVault = initUserVault();
+    createNode(globalVault, {
+      type: 'preference',
+      status: 'confirmed',
+      scope: 'global',
+      intent: 'response language',
+      summary: 'Always answer me in Portuguese.',
+    });
+    await chat('Build an unrelated database migration tool');
+    const out = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID: 'session-global-pref' }, out);
+    assert.match(out.system.join('\n'), /Always answer me in Portuguese/);
+    assert.match(out.system.join('\n'), /"scope":"global"/);
+    const injected = readEvents().find((event) => event.type === 'memory-injected');
+    assert.equal(injected.sessionID, 'session-global-pref');
+    assert.equal(injected.reason, 'session-start');
+    assert.deepEqual(injected.memories, [{ id: listNodes(globalVault).find((n) => n.type === 'preference').id, type: 'preference', scope: 'global' }]);
+    assert.equal('summary' in injected.memories[0], false);
+
+    const repeated = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID: 'session-global-pref' }, repeated);
+    assert.doesNotMatch(repeated.system.join('\n'), /guarana memory \(automatic context\)/);
+    assert.equal(readEvents().filter((event) => event.type === 'memory-injected').length, 1);
+
+    const newPreference = createNode(globalVault, {
+      type: 'preference',
+      status: 'confirmed',
+      scope: 'global',
+      intent: 'answer structure',
+      summary: 'Use short bullet lists.',
+    });
+    await chat('Continue with the current project task');
+    const newMemory = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID: 'session-global-pref' }, newMemory);
+    assert.match(newMemory.system.join('\n'), /Use short bullet lists/);
+    assert.doesNotMatch(newMemory.system.join('\n'), /Always answer me in Portuguese/);
+    assert.equal(readEvents().filter((event) => event.type === 'memory-injected').length, 2);
+    assert.deepEqual(readEvents().filter((event) => event.type === 'memory-injected')[1].memories, [
+      { id: newPreference.id, type: 'preference', scope: 'global' },
+    ]);
+
+    await api['session.compacted']({ properties: { info: { id: 'session-global-pref' } } });
+    const afterCompact = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID: 'session-global-pref' }, afterCompact);
+    assert.match(afterCompact.system.join('\n'), /Always answer me in Portuguese/);
+    assert.match(afterCompact.system.join('\n'), /Use short bullet lists/);
+    assert.equal(readEvents().filter((event) => event.type === 'memory-injected').length, 3);
+    assert.equal(readEvents().filter((event) => event.type === 'memory-injected')[2].reason, 'compacted');
+  });
+
+  it('avoids duplicate memory injection when both plugin scopes transform one prompt', async () => {
+    const globalVault = initUserVault();
+    createNode(globalVault, {
+      type: 'preference', status: 'confirmed', scope: 'global',
+      intent: 'response format', summary: 'Use concise bullet points.',
+    });
+    const duplicate = await GuaranaOrchestrator({ directory: tmpDir });
+    await chat('Implement a dashboard filter');
+    await duplicate['chat.message']({ sessionID: 's1' }, { parts: parts('Implement a dashboard filter') });
+    const out = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID: 's1' }, out);
+    const duplicateOut = { system: [] };
+    await duplicate['experimental.chat.system.transform']({ sessionID: 's1' }, duplicateOut);
+    assert.equal((out.system.join('\n').match(/guarana memory \(automatic context\)/g) || []).length, 1);
+    assert.doesNotMatch(duplicateOut.system.join('\n'), /guarana memory \(automatic context\)/);
+    assert.equal(readEvents().filter((event) => event.type === 'memory-injected').length, 1);
+  });
+
+  it('injects global preferences on an idle non-task turn', async () => {
+    const globalVault = initUserVault();
+    createNode(globalVault, {
+      type: 'preference',
+      status: 'confirmed',
+      scope: 'global',
+      intent: 'answer style',
+      summary: 'Always use concise answers.',
+    });
+    await chat('Oi, uma pergunta rápida');
+    assert.equal(workflow().state, 'idle');
+    const out = { system: [] };
+    await api['experimental.chat.system.transform']({}, out);
+    assert.match(out.system.join('\n'), /Always use concise answers/);
+    assert.match(out.system.join('\n'), /"scope":"global"/);
   });
 
   it('explicit guarana:verify forces the verifying state', async () => {
@@ -124,14 +217,42 @@ describe('GuaranaOrchestrator', () => {
     assert.match(out.system[0], /guarana:build \(injected\)/);
   });
 
-  it('verified completion is recorded as confirmed memory', async () => {
+  it('verified completion does not create generic memory', async () => {
     await chat('Implement OAuth authentication');
+    const memoryDir = path.join(tmpDir, '.guarana', 'memory');
+    const existing = createNode(memoryDir, {
+      type: 'decision',
+      status: 'confirmed',
+      intent: 'keep durable memory',
+      summary: 'Only intentional knowledge belongs in memory.',
+    });
     for (const action of ['plan_complete', 'run_start', 'code_complete', 'verify_pass']) {
       await api.tool.workflow_tick.execute({ action });
     }
     const raw = fs.readFileSync(path.join(tmpDir, '.guarana', 'memory', 'nodes.jsonl'), 'utf8');
-    assert.match(raw, /completed task: Implement OAuth authentication/);
-    assert.match(raw, /"status":"confirmed"/);
+    const nodes = raw.trim().split('\n').map(JSON.parse);
+    assert.equal(nodes.length, 1);
+    assert.equal(nodes[0].id, existing.id);
+    assert.doesNotMatch(raw, /completed task: Implement OAuth authentication/);
+  });
+
+  it('chat-driven verified completion does not create generic memory', async () => {
+    await chat('Implement OAuth authentication');
+    for (const action of ['plan_complete', 'run_start', 'code_complete']) {
+      await api.tool.workflow_tick.execute({ action });
+    }
+    const memoryDir = path.join(tmpDir, '.guarana', 'memory');
+    const existing = createNode(memoryDir, {
+      type: 'decision',
+      status: 'confirmed',
+      intent: 'keep durable memory',
+      summary: 'Only intentional knowledge belongs in memory.',
+    });
+    await chat('verified, all good');
+    assert.equal(workflow().state, 'completed');
+    const nodes = fs.readFileSync(path.join(memoryDir, 'nodes.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.equal(nodes.length, 1);
+    assert.equal(nodes[0].id, existing.id);
   });
 
   it('workflow_tick rejects an illegal transition without changing state', async () => {

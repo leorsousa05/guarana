@@ -929,16 +929,318 @@ table.ledger {
   letter-spacing: 0.05em;
 }
 
-.mem-type--decision { color: var(--ink); }
-.mem-type--bug { color: var(--guarana); border-color: var(--guarana); }
-.mem-type--solution { color: var(--leaf); border-color: var(--leaf); }
-.mem-type--refactor { color: var(--amber); border-color: var(--amber); }
-.mem-type--supernode { color: var(--ink); font-weight: 700; border-width: 2px; }
-.mem-type--atom { color: var(--ink); opacity: 0.7; }
+.mem-type--decision { color: #315c8c; border-color: #315c8c; --mem-fill: #dce8f5; --mem-stroke: #315c8c; }
+.mem-type--bug { color: #9e1b1e; border-color: #9e1b1e; --mem-fill: #f5dddd; --mem-stroke: #9e1b1e; }
+.mem-type--solution { color: #315c35; border-color: #315c35; --mem-fill: #e0eddd; --mem-stroke: #315c35; }
+.mem-type--refactor { color: #875900; border-color: #875900; --mem-fill: #f7e8c9; --mem-stroke: #875900; }
+.mem-type--preference { color: #006b68; border-color: #006b68; --mem-fill: #d6eeeb; --mem-stroke: #006b68; }
+.mem-type--supernode { color: #68428b; border-color: #68428b; --mem-fill: #eadff4; --mem-stroke: #68428b; font-weight: 700; border-width: 2px; }
+.mem-type--atom { color: #52646c; border-color: #52646c; --mem-fill: #e0e8ea; --mem-stroke: #52646c; }
 
 .mem-graph {
   border: 1px solid var(--hairline);
   padding: 0.6rem 0.75rem;
+}
+
+.memory-injections {
+  --brain-project: #e3eadb;
+  --brain-global: #dcebea;
+}
+
+.memory-injection-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0.4rem 0 1rem;
+  border-bottom: 1px solid var(--ink);
+  padding-bottom: 0.65rem;
+}
+
+.memory-injection-heading h3 {
+  margin: 0;
+  font: 600 1.35rem var(--display);
+}
+
+.memory-injection-heading p {
+  margin: 0.25rem 0 0;
+  max-width: 38rem;
+}
+
+.memory-injection-heading time,
+.memory-injection-entry time {
+  font: 0.75rem var(--mono);
+  white-space: nowrap;
+}
+
+.memory-injection-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(15rem, 0.75fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.memory-brain-panel,
+.memory-injection-history {
+  min-width: 0;
+  border: 1px solid var(--hairline);
+  background: #faf6ec;
+  padding: 0.75rem;
+}
+
+.memory-brain-scopes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  text-align: center;
+  font: 600 0.76rem var(--mono);
+}
+
+.memory-brain-scope {
+  padding-bottom: 0.25rem;
+  border-bottom: 2px solid currentColor;
+}
+
+.memory-brain-scope--project { color: var(--leaf); }
+.memory-brain-scope--global { color: #006b68; }
+
+.memory-brain-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 23rem;
+  overflow: visible;
+}
+
+.memory-brain-hemi path:first-child {
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.memory-brain-hemi--project path:first-child {
+  fill: var(--brain-project);
+  stroke: var(--leaf);
+}
+
+.memory-brain-hemi--global path:first-child {
+  fill: var(--brain-global);
+  stroke: #006b68;
+}
+
+.memory-brain-hemi .memory-brain-fold {
+  fill: none;
+  stroke: #82778a;
+  stroke-width: 2;
+  stroke-linecap: round;
+  opacity: 0.55;
+}
+
+.memory-brain-seam {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.4;
+  stroke-dasharray: 3 5;
+  opacity: 0.45;
+}
+
+.memory-brain-link {
+  stroke: #766982;
+  stroke-width: 1.7;
+  stroke-dasharray: 3 3;
+  opacity: 0.75;
+}
+
+.memory-brain-neuron {
+  cursor: pointer;
+  outline: none;
+}
+
+.memory-brain-neuron circle {
+  fill: var(--mem-fill);
+  stroke: var(--mem-stroke);
+  stroke-width: 2.5;
+  transition: r 120ms ease-out, stroke-width 120ms ease-out;
+}
+
+.memory-brain-neuron:hover circle,
+.memory-brain-neuron--selected circle,
+.memory-brain-neuron:focus-visible circle {
+  stroke: var(--ink);
+  stroke-width: 3.5;
+}
+
+.memory-brain-neuron:focus-visible circle {
+  filter: drop-shadow(0 0 3px var(--ink));
+}
+
+.memory-injection-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.9rem;
+  border-top: 1px solid var(--hairline);
+  padding-top: 0.55rem;
+  font: 0.7rem var(--mono);
+}
+
+.memory-injection-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.memory-injection-dot {
+  width: 0.58rem;
+  height: 0.58rem;
+  border: 1.5px solid var(--mem-stroke);
+  border-radius: 50%;
+  background: var(--mem-fill);
+}
+
+.memory-injected-detail {
+  margin-top: 0.65rem;
+  border-top: 1px solid var(--hairline);
+  padding-top: 0.6rem;
+}
+
+.memory-injected-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.memory-scope {
+  display: inline-block;
+  border-bottom: 1px solid currentColor;
+  font: 0.68rem var(--mono);
+  text-transform: uppercase;
+}
+
+.memory-scope--project { color: var(--leaf); }
+.memory-scope--global { color: #006b68; }
+
+.memory-unavailable {
+  color: var(--guarana);
+  font: 0.68rem var(--mono);
+}
+
+.memory-injected-detail h4 {
+  margin: 0.45rem 0 0.2rem;
+  font: 600 1rem var(--display);
+}
+
+.memory-injected-detail p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.memory-injection-history h4 {
+  margin: 0 0 0.5rem;
+  font: 600 0.95rem var(--display);
+}
+
+.memory-injection-history ol {
+  list-style: none;
+  max-height: 29rem;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.memory-injection-history li {
+  border-bottom: 1px solid var(--hairline);
+}
+
+.memory-injection-entry {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 1fr auto;
+  gap: 0.2rem 0.5rem;
+  border: 0;
+  border-left: 3px solid transparent;
+  background: transparent;
+  color: var(--ink);
+  padding: 0.6rem 0.5rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.memory-injection-entry:hover,
+.memory-injection-entry--active {
+  border-left-color: var(--guarana);
+  background: var(--hover);
+}
+
+.memory-injection-entry:focus-visible {
+  outline: 2px solid var(--guarana);
+  outline-offset: -2px;
+}
+
+.memory-injection-entry span:nth-child(2) {
+  color: var(--leaf);
+  font: 0.72rem var(--mono);
+}
+
+.memory-injection-session {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  color: var(--ink);
+  font: 0.65rem var(--mono);
+  opacity: 0.65;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memory-injection-reason {
+  grid-column: 1 / -1;
+  color: var(--leaf);
+  font: 0.65rem var(--mono);
+}
+
+@media (max-width: 760px) {
+  .memory-injection-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .memory-injection-history ol {
+    max-height: 14rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .memory-brain-neuron circle {
+    transition: none;
+  }
+}
+
+.mem-graph-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 1rem;
+  align-items: center;
+  margin: 0 0 0.55rem;
+  color: var(--ink);
+  font-size: 0.76rem;
+}
+
+.mem-graph-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.mem-graph-scope-label {
+  padding-left: 0.5rem;
+  border-left: 1px solid var(--hairline);
+}
+
+.mem-graph-legend-swatch {
+  width: 0.72rem;
+  height: 0.72rem;
+  border: 1.5px solid var(--mem-stroke);
+  background: var(--mem-fill);
+  border-radius: 50%;
 }
 
 .mem-graph-svg {
@@ -966,16 +1268,16 @@ table.ledger {
   font-size: 10px;
 }
 
-.mem-node circle {
-  stroke: var(--ink);
+.mem-node circle.mem-type {
+  stroke: var(--mem-stroke);
   stroke-width: 1.5;
-  fill: var(--aril);
+  fill: var(--mem-fill);
   cursor: pointer;
 }
 
-.mem-node--active circle {
+.mem-node--active circle.mem-type {
+  stroke: var(--ink);
   stroke-width: 3;
-  fill: var(--hover);
 }
 
 .mem-node-text {
@@ -986,6 +1288,17 @@ table.ledger {
   letter-spacing: 0.04em;
   pointer-events: none;
 }
+
+.mem-node-scope-text {
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.02em;
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.mem-node-scope-text.memory-scope--project { fill: var(--leaf); }
+.mem-node-scope-text.memory-scope--global { fill: #006b68; }
 
 .mem-detail {
   margin-top: 0.75rem;
@@ -1078,21 +1391,6 @@ table.ledger {
 
 .mem-edge-rel {
   color: var(--leaf);
-}
-
-.mem-drafts {
-  border-top: 1px solid var(--hairline);
-}
-
-.mem-draft-meta {
-  font-size: 0.72rem;
-  opacity: 0.6;
-  margin-top: 0.15rem;
-}
-
-.decision-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 
 @media (max-width: 600px) {

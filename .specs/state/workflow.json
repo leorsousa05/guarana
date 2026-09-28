@@ -1,11 +1,11 @@
 {
   "version": 1,
-  "state": "planning",
-  "skill": "plan",
-  "activeTask": "Verify the latest multiline Markdown persistence/rendering fix without modifying files.",
-  "goal": "Verify the latest multiline Markdown persistence/rendering fix without modifying files.",
-  "condition": "Inspect the requested implementation/tests and run npm test, npm run build, npm run check-cli, git diff --check, and diff -qr dashboard/web/dist cli/dashboard/web/dist; report exact results.",
-  "updatedAt": 1788985468341,
+  "state": "completed",
+  "skill": null,
+  "activeTask": "Include private global memories in the Guarana Web graph.",
+  "goal": "Include private global memories in the Guarana Web graph.",
+  "condition": "`npm test` 181/181; production build, CLI bundle/spec checks, and diff checks pass; live API serves global and project nodes with scope labels.",
+  "updatedAt": 1790628164756,
   "history": [
     {
       "ts": 1788711769257,
@@ -412,6 +412,601 @@
       "from": "planning",
       "to": "planning",
       "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1788986958477,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Planning complete; implementation and validation were carried out in this run."
+    },
+    {
+      "ts": 1788986967384,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Implementation run started."
+    },
+    {
+      "ts": 1788986974859,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Implementation complete; source, dashboard, docs, tests, and CLI bundle updated."
+    },
+    {
+      "ts": 1788986977502,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "tool result signaled failure during verification"
+    },
+    {
+      "ts": 1788986988194,
+      "event": "new_task",
+      "from": "debugging",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1788987011833,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Routing to independent verification; no file changes, commits, or pushes."
+    },
+    {
+      "ts": 1788987022168,
+      "event": "force",
+      "from": "building",
+      "to": "verifying",
+      "note": "Independent verifier requested; skip implementation stage and preserve read-only scope."
+    },
+    {
+      "ts": 1788987025265,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "tool result signaled failure during verification"
+    },
+    {
+      "ts": 1788987269572,
+      "event": "debug_complete",
+      "from": "debugging",
+      "to": "verifying",
+      "note": "Verification found a documentation/behavior consistency residual; no files modified per user scope."
+    },
+    {
+      "ts": 1788987348008,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "Independent verification passed; one stale test-count note remains in project-state.md."
+    },
+    {
+      "ts": 1790539884840,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": ""
+    },
+    {
+      "ts": 1790539967839,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Implementation scope is orchestrator/specs.js and focused orchestrator tests."
+    },
+    {
+      "ts": 1790539972168,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Run source change and focused test."
+    },
+    {
+      "ts": 1790540000476,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Updated orchestrator/specs.js and workflow.test.js; 29/29 focused tests pass."
+    },
+    {
+      "ts": 1790540002330,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "tool result signaled failure during verification"
+    },
+    {
+      "ts": 1790540039230,
+      "event": "debug_complete",
+      "from": "debugging",
+      "to": "verifying",
+      "note": "Misrouting was unclassified and recorded in known-issues; implementation tests passed 29/29."
+    },
+    {
+      "ts": 1790540043374,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "node --test orchestrator/workflow.test.js passed 29/29; git diff --check passed."
+    },
+    {
+      "ts": 1790540133100,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "new task detected"
+    },
+    {
+      "ts": 1790540138180,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": ""
+    },
+    {
+      "ts": 1790540196044,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "The current compact.js collapses every atom regardless of status/content and creates metadata-only supernodes."
+    },
+    {
+      "ts": 1790540200699,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Implement in memory/compact.js and compact.test.mjs."
+    },
+    {
+      "ts": 1790540303561,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Implemented eligibility filtering and content-rich summaries; focused test suite passes 9/9."
+    },
+    {
+      "ts": 1790540309402,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "Evidence from node --test memory/compact.test.mjs: 9 passed, 0 failed; diff check passed."
+    },
+    {
+      "ts": 1790540512199,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "User supplied legacy supernode example whose summary contains only compaction count and timestamp range."
+    },
+    {
+      "ts": 1790540527633,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "The observed summary format is recognizable (`supernode summarizing N atom node(s) ts range: ...`); only that placeholder form should be deleted."
+    },
+    {
+      "ts": 1790540533162,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Modify memory/compact.js, tests, CLI output and synchronize bundle if required."
+    },
+    {
+      "ts": 1790540713152,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Removed 1,956 matching junk nodes across cleanup passes; final vault check shows zero metadata-only supernodes and supplied ID absent."
+    },
+    {
+      "ts": 1790540722186,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "npm test: 163/163; npm run check-cli passes; git diff --check passes; live vault re-scan reports zero metadata-only supernodes and supplied ID absent."
+    },
+    {
+      "ts": 1790540903687,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": ""
+    },
+    {
+      "ts": 1790541038281,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Dashboard uses existing per-type classes in badges but all graph circles share one fill; API currently returns metadata-only confirmed supernodes."
+    },
+    {
+      "ts": 1790541041538,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "UI, API filtering, tests, build and live data cleanup."
+    },
+    {
+      "ts": 1790542660593,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Dashboard built and CLI bundle synced; globally installed plugin updated after stale auto-capture was identified."
+    },
+    {
+      "ts": 1790542666213,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "npm test 165/165; npm run build passed; npm run check-cli passed; live cleanup removed 34 current placeholders and reported ID was absent."
+    },
+    {
+      "ts": 1790542732359,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": ""
+    },
+    {
+      "ts": 1790542801378,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Found `.opencode/plugins/guarana-memory.js` was stale even though the global plugin had been updated; deploying project-scoped bundle."
+    },
+    {
+      "ts": 1790542805509,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Project-level plugin install completed; cleaning vault after correcting actual override."
+    },
+    {
+      "ts": 1790542843401,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "The project plugin was the active stale override; project install updated it, and cleanup removed 18 placeholder supernodes with zero remaining in the immediate vault check."
+    },
+    {
+      "ts": 1790542847452,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "Last cleanup output: removed 18, remainingPlaceholderSupernodes 0, reportedIdPresent false, projectPluginAutoCapture false."
+    },
+    {
+      "ts": 1790542951958,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "new task detected"
+    },
+    {
+      "ts": 1790542997628,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1790542997640,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1790543019021,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "User reports standalone decisions including a bug stored as decision; asked whether memories should be linked and says current memory handling seems wrong."
+    },
+    {
+      "ts": 1790543142151,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Audit evidence: 3 confirmed decisions, 0 bug nodes, 0 edges; memorySaveDecision hardcodes type decision and exposes no relation creation."
+    },
+    {
+      "ts": 1790543146243,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Modify graph/tools/plugin/UI docs and migrate two clearly misclassified vault records."
+    },
+    {
+      "ts": 1790543497507,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Added memory_save_node, fixes/relates-to relations, one-hop retrieval, tests/docs; repaired deployability bug and solution records in the project vault."
+    },
+    {
+      "ts": 1790543502177,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "Full suite: 168/168; npm build and bundle check pass; both project/global plugins report up to date; live migration result confirmed."
+    },
+    {
+      "ts": 1790543845730,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": ""
+    },
+    {
+      "ts": 1790543989092,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "Audit found `mem-1790543502178-816e6c79` is an isolated generic completion marker created by `saveCompletionMemory` on every completed workflow."
+    },
+    {
+      "ts": 1790544036366,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Current project vault contains one confirmed node whose content is solely a workflow completion marker; source saves one on each `verify_pass`."
+    },
+    {
+      "ts": 1790544045487,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Remove saveCompletionMemory function and update regression/docs."
+    },
+    {
+      "ts": 1790544351553,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Removed completion persistence, updated both path tests and docs; full suite 169/169 and bundle checks pass."
+    },
+    {
+      "ts": 1790544364147,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "The legacy completion marker is being removed in the final vault migration immediately after this state transition."
+    },
+    {
+      "ts": 1790621432766,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "new task detected"
+    },
+    {
+      "ts": 1790621432805,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1790621455529,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "User wants Hermes-like memory behavior native to OpenCode: the AI should notice durable user decisions/preferences without explicit memory commands."
+    },
+    {
+      "ts": 1790621743431,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Use model judgment via an always-on memory policy prompt and a typed scope-aware save tool. Global preferences are retrieved regardless of task wording; project memory remains semantically task-filtered."
+    },
+    {
+      "ts": 1790621750540,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Modify memory engine, plugin system prompt, cross-scope retrieval, tests/docs."
+    },
+    {
+      "ts": 1790622524446,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Implemented global preference vault/type, system capture policy, scoped tools/retrieval, and live-saved this request in both scopes."
+    },
+    {
+      "ts": 1790622530074,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "Verified plugin status global+project, live scope records, global preference retrieval; diff check clean."
+    },
+    {
+      "ts": 1790622776412,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "Current loadContext returns early for an empty task, so global preferences are skipped when the workflow is idle."
+    },
+    {
+      "ts": 1790622804367,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "The current early return in `loadContext` skips both project and global memory when task is empty; remove the early return but keep project search conditional."
+    },
+    {
+      "ts": 1790622813176,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Update orchestrator context loading and add idle-turn regression coverage."
+    },
+    {
+      "ts": 1790623005258,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Removed empty-task early return; global preference retrieval now runs each chat turn while project search remains conditional on task context."
+    },
+    {
+      "ts": 1790623011637,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "npm test 175/175; build/check-cli pass; plugin status current in both scopes; diff check clean."
+    },
+    {
+      "ts": 1790623159360,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "User wants a dedicated, attractive Guarana Web page to see which memory was injected."
+    },
+    {
+      "ts": 1790623353876,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Design: custom bilateral brain SVG (global/project hemispheres), type-colored real injected nodes, selectable recent-injection timeline; project telemetry stores IDs/scopes/types only, dashboard hydrates text from vaults."
+    },
+    {
+      "ts": 1790623360246,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Modify orchestrator injection hook, memory API, Memory view/component, styles, and tests."
+    },
+    {
+      "ts": 1790623998041,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Telemetry records only node IDs/scope/type; page joins live project/global vault nodes. Global and project plugins are installed."
+    },
+    {
+      "ts": 1790624011897,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "API integration test confirms project/global hydration; production build and full suite pass; both plugin installs are current."
+    },
+    {
+      "ts": 1790624200082,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "User wants a script the Guarana AI can run to validate whether a project's specs are correctly formed."
+    },
+    {
+      "ts": 1790625045459,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Found the CLI command map and project conventions; validator checks required tracker/state, feature acceptance, ADR format, and local links."
+    },
+    {
+      "ts": 1790625054957,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Implementation and tests completed before workflow state transitions due to direct CLI discovery."
+    },
+    {
+      "ts": 1790625069959,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Added `guarana specs validate`, `npm run specs:validate`, exit-code/JSON tests, docs, and bumped package to 0.8.3."
+    },
+    {
+      "ts": 1790625078971,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "npm test 179/179; specs validate JSON: 83 files, 13 feature specs, 15 ADRs, 122 links, 0 issues; check-cli and diff-check pass."
+    },
+    {
+      "ts": 1790625663891,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "User reports repeated identical six-node injections within one session before context compaction."
+    },
+    {
+      "ts": 1790626939682,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Root cause was system.transform appending the same context on every generation, compounded by project/global plugin instances."
+    },
+    {
+      "ts": 1790626948798,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Full tests, production build, CLI check, and plugin installs have completed."
+    },
+    {
+      "ts": 1790626958964,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Implemented project/session-shared seen-node cache, reset at session creation/compaction, and legacy-history duplicate collapse."
+    },
+    {
+      "ts": 1790626971903,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "`npm test` 180/180; `npm run build`, `check-cli`, `specs:validate`, project/global plugin status and diff check all pass."
+    },
+    {
+      "ts": 1790627059610,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "new task detected"
+    },
+    {
+      "ts": 1790627079980,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "User notes global memories are absent from the graph and explicitly asks to commit everything."
+    },
+    {
+      "ts": 1790627197152,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "The API currently accepts only the project vault; the graph/UI must distinguish global and project nodes to avoid cross-vault ID collisions."
+    },
+    {
+      "ts": 1790627210229,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Modify dashboard memory backend, scope styling, fixture isolation, API integration test."
+    },
+    {
+      "ts": 1790628149079,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Added global nodes/edges to memory APIs and scope labels to graph; API tests cover global and project graph records."
+    },
+    {
+      "ts": 1790628164756,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "Full suite 181/181; build/check-cli/specs:validate pass; graph API integration test covers global preference nodes and edges."
     }
   ]
 }

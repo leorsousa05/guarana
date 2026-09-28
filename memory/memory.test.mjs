@@ -6,6 +6,7 @@ import os from "node:os";
 
 import {
   initVault,
+  initUserVault,
   projectVaultDir,
   loadConfig,
   exportVault,
@@ -62,6 +63,15 @@ describe("vault lifecycle", () => {
     const gi = fs.readFileSync(path.join(tmpDir, ".gitignore"), "utf8");
     assert.ok(gi.includes("node_modules"));
     assert.ok(gi.includes(".guarana/memory/"));
+  });
+
+  it("initializes an isolated user vault without touching a project gitignore", () => {
+    const home = path.join(tmpDir, "fake-home");
+    const userVault = initUserVault(home);
+    assert.equal(userVault, path.join(home, ".config", "guarana", "memory"));
+    assert.ok(fs.existsSync(paths(userVault).nodes));
+    assert.ok(fs.existsSync(paths(userVault).config));
+    assert.equal(fs.existsSync(path.join(home, ".gitignore")), false);
   });
 
   it("loadConfig deep-merges file over defaults", () => {
@@ -243,6 +253,73 @@ describe("search", () => {
 });
 
 describe("security", () => {
+  it("saves typed bugs and solutions with explicit links returned in task context", async () => {
+    const { memorySaveNode, memoryGetContextForTask } = await import("./tools.js");
+    const bug = await memorySaveNode(vaultDir, {
+      type: "bug",
+      intent: "retries disappear after timeout",
+      summary: "The retry scheduler drops jobs after a worker timeout.",
+      tags: ["scheduler"],
+    });
+    const solution = await memorySaveNode(vaultDir, {
+      type: "solution",
+      intent: "preserve timed-out retry jobs",
+      summary: "Requeue the job when a worker times out.",
+      relatedTo: [{ id: bug.id, rel: "fixes" }],
+    });
+    assert.equal(bug.type, "bug");
+    assert.equal(solution.type, "solution");
+    assert.deepEqual(solution.edges.map((e) => [e.from, e.to, e.rel]), [
+      [solution.id, bug.id, "fixes"],
+    ]);
+
+    const context = await memoryGetContextForTask(vaultDir, { task: "retry job worker timeout" });
+    assert.ok(context.bugs.some((n) => n.id === bug.id));
+    assert.ok(context.solutions.some((n) => n.id === solution.id));
+  });
+
+  it("saves a standing preference globally and retrieves it independent of task wording", async () => {
+    const { memorySaveNode, memoryGetGlobalPreferences } = await import("./tools.js");
+    const globalVault = initUserVault(path.join(tmpDir, "user-home"));
+    const preference = await memorySaveNode(globalVault, {
+      type: "preference",
+      scope: "global",
+      intent: "response language",
+      summary: "Always answer me in Portuguese.",
+      tags: ["style"],
+    });
+    assert.equal(preference.scope, "global");
+    assert.equal(preference.projectHash, null);
+    const result = await memoryGetGlobalPreferences(globalVault, { limit: 3 });
+    assert.equal(result.count, 1);
+    assert.equal(result.preferences[0].id, preference.id);
+    assert.equal(result.preferences[0].summary, "Always answer me in Portuguese.");
+    const replacement = await memorySaveNode(globalVault, {
+      type: "preference",
+      scope: "global",
+      intent: "response language",
+      summary: "Use concise Portuguese answers.",
+      relatedTo: [{ id: preference.id, rel: "supersedes" }],
+    });
+    const current = await memoryGetGlobalPreferences(globalVault, { limit: 3 });
+    assert.equal(current.count, 1);
+    assert.equal(current.preferences[0].id, replacement.id);
+  });
+
+  it("rejects invalid memory links before persisting an orphan node", async () => {
+    const { memorySaveNode } = await import("./tools.js");
+    await assert.rejects(
+      () => memorySaveNode(vaultDir, {
+        type: "bug",
+        intent: "test bug",
+        summary: "test summary",
+        relatedTo: [{ id: "missing", rel: "fixes" }],
+      }),
+      /existing confirmed node/
+    );
+    assert.equal(listNodes(vaultDir).length, 0);
+  });
+
   it("detects sensitive shapes", () => {
     assert.ok(isSensitive("key: sk-abcdefghijklmnopqrstuvwxyz"));
     assert.ok(isSensitive("aws AKIAIOSFODNN7EXAMPLE here"));

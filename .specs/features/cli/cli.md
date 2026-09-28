@@ -13,6 +13,7 @@ A Node.js CLI named `guarana` that installs/uninstalls/lists/updates the guarana
 - `guarana uninstall [--project]` — remove the installed suite and its automatic plugins/engines from the target.
 - `guarana list [--project]` — show installed skills and version at the target.
 - `guarana update [--project]` — re-install from the CLI's bundled skills (overwrites target).
+- `guarana specs validate [project-root] [--json]` — deterministically validate a project's `.specs/` structure, feature criteria, ADR format, and local Markdown links; exit 1 on errors.
 - `guarana --version`, `guarana --help`.
 
 ## Addendum 2026-08-21: plugin command
@@ -63,3 +64,15 @@ From a temp HOME:
 4. `guarana uninstall` removes the global install cleanly.
 5. `guarana update` re-installs without error.
 6. `--help` and `--version` work.
+
+## Addendum 2026-09-28: deterministic specs validation
+- `guarana specs validate [project-root] [--json]` checks required tracker/state directories and files, tracker flags/schema, feature goal/summary and non-empty acceptance criteria, ADR filename/heading/status/decision sections, and local Markdown links within the project root.
+- Default root is cwd. Human output lists file-specific issues; `--json` emits a machine-readable report. Exit code 0 means no errors; 1 means validation failed.
+- This validates spec structure and references, not implementation correctness; acceptance criteria still require their prescribed tests/proofs.
+
+### Acceptance
+19. A valid temporary `.specs/` tree passes with exit 0 and reports feature/ADR/link counts.
+20. Missing required state, malformed ADRs, missing feature acceptance, broken links, and links escaping the project root produce file-specific errors and exit 1.
+21. `--json` output parses as JSON without diagnostic text mixed into stdout.
+22. The current repository passes the validator through both `guarana specs validate` and `npm run specs:validate`.
+23. `guarana:verify` runs the structural validator before checking implementation acceptance criteria.

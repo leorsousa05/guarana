@@ -25,7 +25,7 @@ task requests automatically move through planning, implementation, verification,
 and memory, while the important state stays inspectable on disk.
 
 <p>
-  <a href="https://github.com/leorsousa05/guarana"><img src="https://img.shields.io/badge/version-0.8.1-7c3aed?style=flat-square" alt="Version 0.8.1"></a>
+  <a href="https://github.com/leorsousa05/guarana"><img src="https://img.shields.io/badge/version-0.8.4-7c3aed?style=flat-square" alt="Version 0.8.4"></a>
   <img src="https://img.shields.io/badge/license-MIT-2563eb?style=flat-square" alt="MIT license">
 </p>
 
@@ -70,7 +70,7 @@ guarana install
 ```
 
 `guarana install` installs the skill suite and the OpenCode plugins that power
-automatic orchestration, memory capture, and telemetry. Open a new OpenCode
+automatic orchestration, explicit memory decisions, and telemetry. Open a new OpenCode
 session, then describe the work normally.
 
 For a project-local installation:
@@ -133,9 +133,10 @@ overwrites existing project content.
     └── config.json
 ```
 
-The memory vault is project-local and gitignored. Confirmed nodes can be
-automatically supplied as bounded context; captured tool atoms remain drafts
-until reviewed.
+Project memories live in a gitignored vault; standing user preferences live in
+the private global vault. Guarana Web's memory graph displays both scopes with
+their relationships. Relevant confirmed memories are injected as bounded
+context; normal tool activity remains telemetry and never becomes a memory atom.
 
 ## Skills
 
@@ -172,11 +173,12 @@ guarana plugin uninstall [--project]    Remove plugins and engines
 guarana memory init                      Initialize a vault manually
 guarana memory status                    Show node, edge, and draft counts
 guarana memory search <term>             Search confirmed memory
-guarana memory review --list             List draft atoms
+guarana memory review --list              Inspect legacy draft atoms
 guarana memory export <file>             Export project memory
 guarana memory import <file>             Import project memory
 
 guarana web [--port N] [--no-open]       Open the local dashboard
+guarana specs validate [root] [--json]   Validate a project's .specs
 guarana --help                           Show all commands
 ```
 
@@ -223,7 +225,7 @@ npm run build
 
 ## Status
 
-Guarana `0.8.1` is validated with the full test suite, CLI bundle checks, and
+Guarana `0.8.4` is validated with the full test suite, CLI bundle checks, and
 an installed-plugin smoke test.
 
 ## License

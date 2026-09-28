@@ -3,12 +3,15 @@ import { fmtTs } from '../lib/format.js';
 import { buildLineage } from '../lib/lineage.js';
 
 const TYPE_CLASS = (t) => `mem-type mem-type--${t}`;
+const NODE_TYPES = ['decision', 'bug', 'solution', 'refactor', 'preference', 'supernode', 'atom'];
 
 const REL_WHY = {
   'caused-by': 'was caused by',
   'depends-on': 'depends on',
   supersedes: 'supersedes',
   summarizes: 'summarizes',
+  fixes: 'fixes',
+  'relates-to': 'is related to',
 };
 
 const REL_DESC = {
@@ -16,6 +19,8 @@ const REL_DESC = {
   'depends-on': 'this node requires the other',
   supersedes: 'this node replaced the other',
   summarizes: 'this node condenses the other',
+  fixes: 'this node fixes the other',
+  'relates-to': 'this node is related to the other',
 };
 
 const W = 760;
@@ -75,19 +80,29 @@ function layout(nodes, edges) {
 
 export function MemoryGraph({ nodes, edges, selected, onSelect }) {
   const svgRef = useRef(null);
-  const [pos, setPos] = useState(() => layout(nodes, edges));
+  const graphNodes = useMemo(() => nodes.map((node) => ({
+    ...node,
+    memoryId: node.id,
+    id: `${node.scope || 'project'}:${node.id}`,
+  })), [nodes]);
+  const graphEdges = useMemo(() => edges.map((edge) => ({
+    ...edge,
+    from: `${edge.scope || 'project'}:${edge.from}`,
+    to: `${edge.scope || 'project'}:${edge.to}`,
+  })), [edges]);
+  const [pos, setPos] = useState(() => layout(graphNodes, graphEdges));
   const [drag, setDrag] = useState(null);
-  const nodesById = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
+  const nodesById = useMemo(() => new Map(graphNodes.map((n) => [n.id, n])), [graphNodes]);
 
   useEffect(() => {
-    setPos(layout(nodes, edges));
-  }, [nodes, edges]);
+    setPos(layout(graphNodes, graphEdges));
+  }, [graphNodes, graphEdges]);
 
   const neighbors = useMemo(() => {
     if (!selected) return { set: new Set(), list: [] };
     const set = new Set();
     const list = [];
-    for (const e of edges) {
+    for (const e of graphEdges) {
       if (e.from === selected) {
         set.add(e.to);
         list.push({ other: nodesById.get(e.to), rel: e.rel, dir: 'out', edge: e });
@@ -97,7 +112,7 @@ export function MemoryGraph({ nodes, edges, selected, onSelect }) {
       }
     }
     return { set, list };
-  }, [selected, edges, nodesById]);
+  }, [selected, graphEdges, nodesById]);
 
   const onPointerDown = (id, ev) => {
     ev.preventDefault();
@@ -139,10 +154,20 @@ export function MemoryGraph({ nodes, edges, selected, onSelect }) {
     endDrag();
   };
 
-  if (!nodes.length) return null;
+  if (!graphNodes.length) return null;
 
   return (
     <div className="mem-graph">
+      <div className="mem-graph-legend" aria-label="Node type colors">
+        {NODE_TYPES.map((type) => (
+          <span key={type} className="mem-graph-legend-item">
+            <span className={`mem-graph-legend-swatch mem-type--${type}`} aria-hidden="true" />
+            {type}
+          </span>
+        ))}
+        <span className="mem-graph-scope-label"><span className="memory-scope memory-scope--project">project</span></span>
+        <span className="mem-graph-scope-label"><span className="memory-scope memory-scope--global">global</span></span>
+      </div>
       <svg
         ref={svgRef}
         viewBox={`0 0 ${W} ${H}`}
@@ -150,7 +175,7 @@ export function MemoryGraph({ nodes, edges, selected, onSelect }) {
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
       >
-        {edges.map((e, i) => {
+        {graphEdges.map((e, i) => {
           const a = pos.get(e.from);
           const b = pos.get(e.to);
           if (!a || !b) return null;
@@ -170,7 +195,7 @@ export function MemoryGraph({ nodes, edges, selected, onSelect }) {
             </g>
           );
         })}
-        {nodes.map((n) => {
+        {graphNodes.map((n) => {
           const p = pos.get(n.id);
           if (!p) return null;
           const active = selected === n.id || neighbors.set.has(n.id);
@@ -185,8 +210,11 @@ export function MemoryGraph({ nodes, edges, selected, onSelect }) {
               <text x={p.x} y={p.y - 16} textAnchor="middle" className="mem-node-text">
                 {n.type}
               </text>
+              <text x={p.x} y={p.y + 24} textAnchor="middle" className={`mem-node-scope-text memory-scope--${n.scope || 'project'}`}>
+                {n.scope || 'project'}
+              </text>
               <title>
-                {n.type}: {n.intent || n.id} — click to inspect
+                {n.scope || 'project'} {n.type}: {n.intent || n.memoryId || n.id} — click to inspect
               </title>
             </g>
           );
@@ -207,7 +235,8 @@ export function MemoryGraph({ nodes, edges, selected, onSelect }) {
                   <span className={TYPE_CLASS(n.type)}>{n.type}</span> {n.intent}
                 </h4>
                 <div className="mem-detail-meta">
-                  {n.id} · {fmtTs(n.ts)}
+                 <span className={`memory-scope memory-scope--${n.scope || 'project'}`}>{n.scope || 'project'}</span>{' '}
+                 {n.memoryId} · {fmtTs(n.ts)}
                   {n.tags?.length > 0 && <> · {n.tags.join(', ')}</>}
                 </div>
                 {n.summary && <p className="mem-detail-text">{n.summary}</p>}

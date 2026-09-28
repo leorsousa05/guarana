@@ -10,9 +10,9 @@ export class MemoryValidationError extends Error {
   }
 }
 
-export const NODE_TYPES = ["decision", "bug", "solution", "refactor", "atom", "supernode"];
+export const NODE_TYPES = ["decision", "bug", "solution", "refactor", "preference", "atom", "supernode"];
 export const NODE_STATUSES = ["draft", "confirmed"];
-export const EDGE_RELS = ["caused-by", "depends-on", "supersedes", "summarizes"];
+export const EDGE_RELS = ["caused-by", "depends-on", "supersedes", "summarizes", "fixes", "relates-to"];
 
 export const newId = () => `mem-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
 

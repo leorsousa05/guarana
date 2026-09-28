@@ -4,13 +4,12 @@ import { GuaranaMemory } from './guarana-memory.js';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
-import { initVault, paths } from '../memory/vault.js';
+import { initVault } from '../memory/vault.js';
 
 describe('GuaranaMemory', () => {
   let tmpDir;
   let eventsFile;
   let api;
-  const projectName = () => path.basename(tmpDir);
   const vaultDir = () => path.join(tmpDir, '.guarana', 'memory');
   const nodesFile = () => path.join(vaultDir(), 'nodes.jsonl');
 
@@ -45,158 +44,94 @@ describe('GuaranaMemory', () => {
     }
   }
 
-  async function simulateToolCall(input, output) {
-    await api['tool.execute.before'](input.input, input.output || {});
-    await api['tool.execute.after'](input.input, output);
-  }
-
-  // Criterion 8: tool.execute.after -> draft atom in the project vault
-  describe('capture (criterion 8)', () => {
-    it('appends a draft atom with intent/input/output/ts/projectHash', async () => {
-      initVault(tmpDir);
-      await simulateToolCall(
-        { input: { tool: 'bash', sessionID: 's1', callID: 'c1' }, output: { args: { command: 'ls' } } },
-        { output: 'file1\nfile2' }
-      );
-      const nodes = readNodes();
-      assert.equal(nodes.length, 1);
-      const n = nodes[0];
-      assert.equal(n.type, 'atom');
-      assert.equal(n.status, 'draft');
-      assert.ok(n.intent.includes('bash'));
-      assert.ok(n.input.includes('ls'));
-      assert.ok(n.output.includes('file1'));
-      assert.equal(typeof n.ts, 'number');
-      assert.equal(typeof n.projectHash, 'string');
-      assert.ok(n.projectHash.length > 0);
-      const ev = readEvents().find((e) => e.type === 'memory-captured');
-      assert.ok(ev);
-      assert.equal(ev.project, projectName());
-      assert.equal(ev.sessionID, 's1');
-    });
-
-    it('truncates oversized output', async () => {
-      initVault(tmpDir);
-      await simulateToolCall(
-        { input: { tool: 'read', sessionID: 's1' }, output: { args: { file: 'big.txt' } } },
-        { output: 'x'.repeat(5000) }
-      );
-      const n = readNodes()[0];
-      assert.ok(n.output.length < 2100);
-      assert.ok(n.output.includes('[truncated]'));
-    });
-
-    it('records file.edited as an atom', async () => {
-      initVault(tmpDir);
-      await api['file.edited']({ properties: { path: 'src/index.js', sessionID: 's9' } });
-      const n = readNodes()[0];
-      assert.ok(n.intent.includes('src/index.js'));
-      assert.equal(n.status, 'draft');
-    });
-
-    it('session.created/session.idle write lifecycle telemetry only (no atoms)', async () => {
-      initVault(tmpDir);
-      await api['session.created']({ properties: { info: { id: 's2' } } });
-      await api['session.idle']({ properties: { info: { id: 's2' } } });
-      assert.equal(readNodes().length, 0);
-      const evs = readEvents().filter((e) => e.type === 'memory-session');
-      assert.equal(evs.length, 2);
-      assert.equal(evs[0].status, 'created');
-      assert.equal(evs[1].status, 'idle');
-    });
+  it('does not register automatic capture hooks', () => {
+    assert.equal(api['tool.execute.before'], undefined);
+    assert.equal(api['tool.execute.after'], undefined);
+    assert.equal(api['file.edited'], undefined);
   });
 
-  // Criterion 9: sensitive content -> no secret verbatim + memory-filtered telemetry
-  describe('security filtering (criterion 9)', () => {
-    it('rejects a tool call containing an sk- API key', async () => {
-      initVault(tmpDir);
-      await simulateToolCall(
-        { input: { tool: 'read', sessionID: 's3' } },
-        { output: 'the key is sk-abc123def456 ok' }
-      );
-      assert.equal(readNodes().length, 0);
-      const raw = fs.existsSync(nodesFile()) ? fs.readFileSync(nodesFile(), 'utf8') : '';
-      assert.ok(!raw.includes('sk-abc123def456'));
-      const ev = readEvents().find((e) => e.type === 'memory-filtered');
-      assert.ok(ev);
-      assert.equal(ev.reason, 'sensitive-content');
-    });
-
-    it('rejects .env-style blocks', async () => {
-      initVault(tmpDir);
-      await simulateToolCall(
-        { input: { tool: 'read', sessionID: 's3' } },
-        { output: 'DB_HOST=localhost\nDB_PASSWORD=hunter2\nPORT=5432' }
-      );
-      assert.equal(readNodes().length, 0);
-      assert.ok(readEvents().some((e) => e.type === 'memory-filtered'));
-    });
-
-    it('rejects ghp_ GitHub tokens', async () => {
-      initVault(tmpDir);
-      await simulateToolCall(
-        { input: { tool: 'bash', sessionID: 's3' } },
-        { output: 'token: ghp_16charstringxx' }
-      );
-      assert.equal(readNodes().length, 0);
-      const raw = fs.readFileSync(nodesFile(), 'utf8');
-      assert.ok(!raw.includes('ghp_16charstringxx'));
-      assert.ok(readEvents().some((e) => e.type === 'memory-filtered'));
-    });
+  it('injects automatic memory rules distinguishing global preferences from project decisions', async () => {
+    const output = { system: [] };
+    await api['experimental.chat.system.transform']({}, output);
+    assert.match(output.system.join('\n'), /automatically.*clear/i);
+    assert.match(output.system.join('\n'), /scope: "global"/);
+    assert.match(output.system.join('\n'), /scope: "project"/);
+    assert.match(output.system.join('\n'), /ordinary task requests/);
   });
 
-  // Criterion 10: never throws on missing vault, malformed config, read-only FS
-  describe('robustness (criterion 10)', () => {
-    it('missing vault: initializes automatically and captures the first atom', async () => {
-      await simulateToolCall(
-        { input: { tool: 'bash', sessionID: 's4' }, output: { args: { command: 'ls' } } },
-        { output: 'ok' }
-      );
-      await simulateToolCall(
-        { input: { tool: 'bash', sessionID: 's4', callID: 'c2' }, output: { args: { command: 'pwd' } } },
-        { output: 'ok' }
-      );
-      assert.ok(fs.existsSync(vaultDir()));
-      assert.equal(readNodes().length, 2);
-      assert.ok(readEvents().some((e) => e.type === 'memory-captured'));
-    });
+  it('keeps normal tool activity out of the memory vault', async () => {
+    initVault(tmpDir);
+    await api['session.created']({ properties: { info: { id: 's1' } } });
+    assert.equal(readNodes().length, 0);
+    assert.equal(readEvents().filter((e) => e.type === 'memory-captured').length, 0);
+    assert.equal(readEvents().filter((e) => e.type === 'memory-session').length, 1);
+  });
 
-    it('malformed config.json: falls back to defaults, captures normally', async () => {
-      initVault(tmpDir);
-      fs.writeFileSync(paths(vaultDir()).config, '{ not json !!!', 'utf8');
-      await simulateToolCall(
-        { input: { tool: 'bash', sessionID: 's5' }, output: { args: { command: 'ls' } } },
-        { output: 'ok' }
-      );
-      assert.equal(readNodes().length, 1);
-    });
+  it('creates confirmed memory only through the explicit decision tool', async () => {
+    const result = JSON.parse(await api.tool.memory_save_decision.execute({
+      intent: 'choose explicit memory',
+      decision: 'Only deliberate decisions enter long-term memory.',
+      rejectedAlternatives: ['Capture every tool call'],
+      tags: ['policy'],
+      author: 'test',
+    }));
+    assert.equal(result.status, 'confirmed');
+    assert.equal(result.type, 'decision');
+    assert.equal(readNodes().length, 1);
+  });
 
-    it('capture.enabled=false skips capture', async () => {
-      initVault(tmpDir);
-      fs.writeFileSync(paths(vaultDir()).config, JSON.stringify({ capture: { enabled: false } }), 'utf8');
-      await simulateToolCall(
-        { input: { tool: 'bash', sessionID: 's6' }, output: { args: { command: 'ls' } } },
-        { output: 'ok' }
-      );
+  it('saves a typed bug and connects its solution with a fixes edge', async () => {
+    const bug = JSON.parse(await api.tool.memory_save_node.execute({
+      type: 'bug',
+      intent: 'memory retrieval loses related bugs',
+      summary: 'The context tool returns only the matching decision.',
+      tags: ['memory'],
+    }));
+    const solution = JSON.parse(await api.tool.memory_save_node.execute({
+      type: 'solution',
+      intent: 'include related bug context',
+      summary: 'Expand task context across explicit fixes links.',
+      relatedTo: [{ id: bug.id, rel: 'fixes' }],
+    }));
+    assert.equal(bug.type, 'bug');
+    assert.equal(solution.type, 'solution');
+    assert.equal(solution.edges[0].rel, 'fixes');
+    assert.equal(solution.edges[0].to, bug.id);
+    const edges = fs.readFileSync(path.join(vaultDir(), 'edges.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.equal(edges.length, 1);
+  });
+
+  it('stores an automatic standing preference in the user vault, not the project vault', async () => {
+    const oldHome = process.env.HOME;
+    const fakeHome = path.join(tmpDir, 'user-home');
+    fs.mkdirSync(fakeHome, { recursive: true });
+    process.env.HOME = fakeHome;
+    try {
+      const result = JSON.parse(await api.tool.memory_save_node.execute({
+        type: 'preference',
+        scope: 'global',
+        intent: 'response language',
+        summary: 'Always answer me in Portuguese.',
+      }));
+      const globalNodes = fs.readFileSync(path.join(fakeHome, '.config', 'guarana', 'memory', 'nodes.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+      assert.equal(result.scope, 'global');
+      assert.equal(globalNodes.length, 1);
       assert.equal(readNodes().length, 0);
-      const skipped = readEvents().filter((e) => e.type === 'memory-skipped');
-      assert.equal(skipped.length, 1);
-      assert.equal(skipped[0].reason, 'capture-disabled');
-    });
-
-    it('read-only vault: hook returns normally, records memory-error', async (t) => {
-      if (typeof process.getuid === 'function' && process.getuid() === 0) {
-        t.skip('root ignores file permissions');
-        return;
-      }
-      initVault(tmpDir);
-      fs.chmodSync(nodesFile(), 0o444);
-      fs.chmodSync(vaultDir(), 0o555);
-      await simulateToolCall(
-        { input: { tool: 'bash', sessionID: 's7' }, output: { args: { command: 'ls' } } },
-        { output: 'ok' }
-      );
-      assert.ok(readEvents().some((e) => e.type === 'memory-error'));
-    });
+      const context = JSON.parse(await api.tool.memory_get_context_for_task.execute({
+        task: 'build a database migration',
+        scope: 'both',
+      }));
+      assert.equal(context.preferences.length, 1);
+      assert.equal(context.preferences[0].id, result.id);
+      const search = JSON.parse(await api.tool.memory_search.execute({
+        query: 'Portuguese',
+        scope: 'both',
+      }));
+      assert.equal(search.results.length, 1);
+      assert.equal(search.results[0].scope, 'global');
+    } finally {
+      if (oldHome === undefined) delete process.env.HOME;
+      else process.env.HOME = oldHome;
+    }
   });
 });

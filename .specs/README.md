@@ -15,14 +15,14 @@ Status pipeline: SPECIFIED → TASKED → IMPLEMENTED → VALIDATED → SHIPPED
 | guarana:debug (optional) | **SHIPPED** | [proofs](features/guarana/proofs/debug-proofs.md) | [2026-08-21](changes/2026-08-21-debug.md) |
 | guarana:measure (optional) | **SHIPPED** | [proofs](features/guarana/proofs/measure-proofs.md) | [2026-08-21](changes/2026-08-21-measure.md) |
 
-| guarana CLI | **SHIPPED** | [spec](features/cli/cli.md) | [2026-08-21](changes/2026-08-21-cli.md) |
-| guarana dashboard | **SHIPPED** | [spec](features/dashboard/dashboard.md) | [2026-08-21](changes/2026-08-21-dashboard.md) · [bugfix](changes/2026-08-22-dashboard-bugfix.md) |
-| guarana memory | **ALL 6 SLICES VALIDATED (6/6)** · **FINAL GATE PASSED** | [spec](features/memory/memory.md) | [1](changes/2026-08-30-memory-slice1.md) · [2](changes/2026-08-30-memory-slice2.md) · [3](changes/2026-08-30-memory-slice3.md) · [4](changes/2026-08-30-memory-slice4.md) · [5](changes/2026-08-30-memory-slice5.md) · [6](changes/2026-08-31-memory-slice6.md) |
+| guarana CLI | **SHIPPED** | [spec](features/cli/cli.md) | [2026-08-21](changes/2026-08-21-cli.md) · [specs validator](changes/2026-09-28-specs-validator.md) |
+| guarana dashboard | **SHIPPED** | [spec](features/dashboard/dashboard.md) | [2026-08-21](changes/2026-08-21-dashboard.md) · [bugfix](changes/2026-08-22-dashboard-bugfix.md) · [injected-memory brain](changes/2026-09-28-memory-injection-view.md) · [deduplicated injection](changes/2026-09-28-memory-injection-dedup.md) · [global memory graph](changes/2026-09-28-global-memory-graph.md) |
+| guarana memory | **ALL 6 SLICES VALIDATED (6/6)** · **FINAL GATE PASSED** | [spec](features/memory/memory.md) | [1](changes/2026-08-30-memory-slice1.md) · [2](changes/2026-08-30-memory-slice2.md) · [3](changes/2026-08-30-memory-slice3.md) · [4](changes/2026-08-30-memory-slice4.md) · [5](changes/2026-08-30-memory-slice5.md) · [6](changes/2026-08-31-memory-slice6.md) · [typed links](changes/2026-09-27-memory-typed-links.md) · [completion memory](changes/2026-09-27-no-completion-memory.md) · [intent capture](changes/2026-09-28-intent-driven-memory.md) |
 | guarana orchestrator | **SPECIFIED → IMPLEMENTED → VALIDATED** | [spec](features/orchestrator/orchestrator.md) | [2026-08-31](changes/2026-08-31-orchestrator.md) · [automatic bootstrap](changes/2026-09-09-automatic-workflow.md) |
 
-**DONE:** all 7 skills specified, audited, implemented, validated (worker-verify PASS per skill), shipped. Memory feature **closed** — 6/6 slices + deployability fix + human final gate PASSED. Automatic orchestrator **implemented + validated** — always-on state machine (`idle/planning/building/coding/verifying/debugging/completed`), automatic plugin installation, idempotent `.specs`/memory bootstrap, bounded confirmed-memory injection, completion recording, auto-routes verify-fail → debug → re-verify, explicit `guarana:*` still forces a step; dashboard Workflow panel added.
+**DONE:** all 7 skills specified, audited, implemented, validated (worker-verify PASS per skill), shipped. Memory feature **6/6 slices validated**; intent-driven project/global capture and session-deduplicated injection are implemented and verified. The `guarana specs validate` deterministic `.specs` check is implemented. Automatic orchestrator **implemented + validated** — always-on state machine (`idle/planning/building/coding/verifying/debugging/completed`), automatic plugin installation, idempotent `.specs`/memory bootstrap, bounded confirmed-memory injection, auto-routes verify-fail → debug → re-verify, explicit `guarana:*` still forces a step; dashboard Workflow and memory-injection views added.
 **HUMAN FINAL GATE PASSED 2026-08-21** — evidence in `../human-gate-validation.md`; 4 observations accepted as reconciled. All 7 skills: **HUMAN-VERIFIED / CLOSED**. Build closed.
-**NEXT:** commit + push orchestrator batch (dashboard Workflow panel, orchestrator engine/plugin deployed).
+**NEXT:** nothing.
 **BLOCKED:** nothing.
 
 ## Index
@@ -32,7 +32,7 @@ Status pipeline: SPECIFIED → TASKED → IMPLEMENTED → VALIDATED → SHIPPED
 - [glossary.md](glossary.md) — terms
 - [state/](state/) — [project-state](state/project-state.md) · [known-issues](state/known-issues.md)
 - [features/](features/) — [overview](features/overview.md) + [guarana/](features/guarana/) (7 specs + [proofs/](features/guarana/proofs/) + [audits/](features/guarana/audits/)) + [cli/](features/cli/) + [dashboard/](features/dashboard/) + [orchestrator/](features/orchestrator/)
-- [decisions/](decisions/) — ADR-001…010 (append-only)
+- [decisions/](decisions/) — ADR-001…016 (append-only)
 - [changes/](changes/) — validated change ledger
 - [archive/](archive/) — superseded artifacts
 - Runtime suite: `../skills/guarana/` · Knowledge: `../docs/reference/`

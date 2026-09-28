@@ -16,7 +16,9 @@ Every run: read README.md → project-state.md → decisions/* → current featu
 
 The orchestrator automatically creates missing spec scaffolding, initializes the
 project vault, and injects relevant confirmed vault context for the active task.
-The disk tree remains the source of truth; drafts are never injected.
+Only explicit memory decisions, plus the existing verified-workflow completion
+record, are persisted as vault nodes; normal tool activity remains telemetry.
+The disk tree remains the source of truth; legacy drafts are never injected.
 
 ## Silent context truncation
 Contexts truncate without notice. Defenses: checkpoint open facts at stage boundaries; on restore, verify the checkpoint matches; on mismatch, re-read from disk — never reconstruct from recall. Markdown over vector DB (ADR-004): inspectable, diffable, append-only, zero infrastructure.

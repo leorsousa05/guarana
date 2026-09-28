@@ -140,15 +140,21 @@ test('decide: problem report from idle routes to planning', () => {
   assert.equal(d.skill, 'plan');
 });
 
-test('automatic specs bootstrap is idempotent and task-specific', () => {
+test('automatic specs bootstrap uses a generic spec path and is idempotent', () => {
   const dir = tmp();
-  const first = ensureSpecs(dir, 'Implement OAuth authentication', 0);
-  const second = ensureSpecs(dir, 'Implement OAuth authentication', 1);
+  const request = 'Implement OAuth authentication';
+  const first = ensureSpecs(dir, request, 0);
+  const second = ensureSpecs(dir, request, 1);
   assert.equal(taskSlug('Implement OAuth authentication'), 'implement-oauth-authentication');
   assert.equal(first.created.length, 3);
   assert.equal(second.created.length, 0);
+  assert.equal(first.featureFile, path.join(dir, '.specs', 'features', 'initial-task', 'initial-task.md'));
+  assert.doesNotMatch(first.featureFile, /implement-oauth-authentication/);
   assert.ok(fs.existsSync(first.featureFile));
-  assert.match(fs.readFileSync(first.featureFile, 'utf8'), /Implement OAuth authentication/);
+  const spec = fs.readFileSync(first.featureFile, 'utf8');
+  assert.match(spec, /## Planning required/);
+  assert.match(spec, /## Request context\nImplement OAuth authentication/);
+  assert.doesNotMatch(spec, /^# Feature spec: Implement OAuth authentication/m);
 });
 
 test('automatic specs bootstrap preserves multiline task Markdown', () => {
@@ -157,9 +163,9 @@ test('automatic specs bootstrap preserves multiline task Markdown', () => {
   const result = ensureSpecs(dir, task, 0);
   const read = (file) => fs.readFileSync(path.join(dir, '.specs', file), 'utf8');
 
-  assert.match(read('README.md'), /\*\*NEXT:\*\* # Big goal\n\n## Details/);
-  assert.match(read('state/project-state.md'), /- Goal: # Big goal\n\n## Details/);
-  assert.match(fs.readFileSync(result.featureFile, 'utf8'), /## Goal\n# Big goal\n\n## Details/);
+  assert.match(read('README.md'), /\*\*NEXT:\*\* Interpret the incoming request/);
+  assert.match(read('state/project-state.md'), /- Request context: # Big goal\n\n## Details/);
+  assert.match(fs.readFileSync(result.featureFile, 'utf8'), /## Request context\n# Big goal\n\n## Details/);
 });
 
 test('decide: explicit guarana:code forces coding', () => {

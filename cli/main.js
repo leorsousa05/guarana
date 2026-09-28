@@ -11,6 +11,7 @@ const COMMANDS = {
   plugin: require('./commands/plugin.js'),
   web: require('./commands/web.js'),
   memory: require('./commands/memory.js'),
+  specs: require('./commands/specs.js'),
 };
 
 function main(args) {

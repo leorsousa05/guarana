@@ -4,7 +4,7 @@ import { createApp } from './app.js';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
-import { initVault } from '../../memory/vault.js';
+import { initVault, initUserVault } from '../../memory/vault.js';
 import { createNode } from '../../memory/graph.js';
 
 describe('GET /api/telemetry/stream (SSE)', () => {
@@ -13,6 +13,8 @@ describe('GET /api/telemetry/stream (SSE)', () => {
   let eventsFile;
   let server;
   let base;
+  let oldHome;
+  let projectMemory;
 
   beforeEach(async () => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-sse-'));
@@ -87,11 +89,15 @@ describe('GET/POST /api/memory', () => {
   let tmp;
   let server;
   let base;
+  let oldHome;
+  let projectMemory;
 
   beforeEach(async () => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-memapp-'));
+    oldHome = process.env.HOME;
+    process.env.HOME = path.join(tmp, 'home');
     const vaultDir = initVault(tmp);
-    createNode(vaultDir, {
+    projectMemory = createNode(vaultDir, {
       type: 'decision',
       status: 'confirmed',
       intent: 'dash decision',
@@ -112,6 +118,8 @@ describe('GET/POST /api/memory', () => {
 
   afterEach(async () => {
     await new Promise((resolve) => server.close(resolve));
+    if (oldHome === undefined) delete process.env.HOME;
+    else process.env.HOME = oldHome;
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -137,6 +145,51 @@ describe('GET/POST /api/memory', () => {
     const body = await res.json();
     assert.equal(body.nodes.length, 1);
     assert.equal(body.nodes.some((n) => n.intent === 'draft leak check'), false);
+  });
+
+  it('injections hydrates project and private global node references', async () => {
+    const globalVault = initUserVault();
+    const preference = createNode(globalVault, {
+      type: 'preference',
+      status: 'confirmed',
+      scope: 'global',
+      intent: 'response language',
+      summary: 'Always answer me in Portuguese.',
+    });
+    const summary = await (await fetch(`${base}/api/memory/summary`)).json();
+    assert.deepEqual(summary.nodes.byScope, { project: 2, global: 1 });
+    const graph = await (await fetch(`${base}/api/memory/graph?limit=10`)).json();
+    assert.ok(graph.nodes.some((node) => node.id === preference.id && node.scope === 'global'));
+    assert.ok(graph.nodes.some((node) => node.id === projectMemory.id && node.scope === 'project'));
+    const telemetryDir = path.join(tmp, '.specs', 'state', 'telemetry');
+    fs.mkdirSync(telemetryDir, { recursive: true });
+    const event = {
+      ts: 100,
+      type: 'memory-injected',
+      sessionID: 'session-1',
+      workflowState: 'planning',
+      memories: [
+        { id: projectMemory.id, type: 'decision', scope: 'project' },
+        { id: preference.id, type: 'preference', scope: 'global' },
+      ],
+    };
+    const events = [
+      event,
+      { ...event, ts: 101 }, // duplicate from two installed plugin scopes
+      { ts: 150, type: 'session', status: 'compacted', sessionID: 'session-1' },
+      { ...event, ts: 200, reason: 'compacted' },
+    ];
+    fs.writeFileSync(path.join(telemetryDir, 'events.jsonl'), `${events.map((row) => JSON.stringify(row)).join('\n')}\n`);
+
+    const res = await fetch(`${base}/api/memory/injections?limit=10`);
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(body.injections.length, 2);
+    assert.equal(body.injections[0].reason, 'compacted');
+    assert.deepEqual(body.injections[0].memories.map((n) => [n.id, n.scope, n.summary]), [
+      [projectMemory.id, 'project', 'confirmed decision for dashboard'],
+      [preference.id, 'global', 'Always answer me in Portuguese.'],
+    ]);
   });
 
   it('drafts lists draft nodes and review confirms them', async () => {
@@ -172,6 +225,10 @@ describe('GET/POST /api/memory', () => {
     const graphRes = await fetch(`${base}/api/memory/graph`);
     assert.equal(graphRes.status, 200);
     assert.deepEqual(await graphRes.json(), { nodes: [], edges: [] });
+
+    const injectionRes = await fetch(`${base}/api/memory/injections`);
+    assert.equal(injectionRes.status, 200);
+    assert.deepEqual(await injectionRes.json(), { injections: [] });
 
     const reviewRes = await fetch(`${base}/api/memory/review`, {
       method: 'POST',

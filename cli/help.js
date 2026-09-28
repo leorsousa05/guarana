@@ -21,6 +21,7 @@ Usage:
     memory review --list            List draft nodes awaiting confirmation
     memory review <id> --confirm    Confirm a draft node (optional --intent/--tags edits)
     memory review <id> --discard    Remove a draft node and its edges
+  guarana specs validate [root] [--json]  Validate a project's .specs structure and links
   guarana --help                  Show this help
   guarana --version               Show version
 

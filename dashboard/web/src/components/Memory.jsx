@@ -3,15 +3,16 @@ import { fmtTs } from '../lib/format.js';
 import { usePoll } from '../hooks/usePoll.js';
 import { EmptyState, ErrorBanner } from './common.jsx';
 import { MemoryGraph } from './MemoryGraph.jsx';
+import { MemoryInjections } from './MemoryInjections.jsx';
 
-const TYPE_LABEL = { decision: 'decision', bug: 'bug', solution: 'solution', refactor: 'refactor', supernode: 'supernode', atom: 'atom' };
+const TYPE_LABEL = { decision: 'decision', bug: 'bug', solution: 'solution', refactor: 'refactor', preference: 'preference', supernode: 'supernode', atom: 'atom' };
 const TYPE_CLASS = (t) => (TYPE_LABEL[t] ? `mem-type mem-type--${t}` : 'mem-type');
 
 const TABS = [
+  ['injected', 'Injected'],
   ['summary', 'Summary'],
   ['search', 'Search'],
   ['graph', 'Graph'],
-  ['drafts', 'Drafts'],
 ];
 
 function summaryCards(s) {
@@ -19,8 +20,9 @@ function summaryCards(s) {
   if (!d) return [];
   return [
     ['total nodes', d.nodes?.total ?? 0],
+    ['project', d.nodes?.byScope?.project ?? d.nodes?.total ?? 0],
+    ['global', d.nodes?.byScope?.global ?? 0],
     ['confirmed', d.nodes?.confirmed ?? 0],
-    ['drafts', d.nodes?.draft ?? 0],
     ['supernodes', d.supernodes ?? 0],
     ['edges', d.edges ?? 0],
   ];
@@ -29,15 +31,13 @@ function summaryCards(s) {
 export function Memory() {
   const summary = usePoll('/api/memory/summary', 5000);
   const graph = usePoll('/api/memory/graph', 5000);
-  const drafts = usePoll('/api/memory/drafts', 5000);
-  const [tab, setTab] = useState('summary');
+  const [tab, setTab] = useState('injected');
   const [sel, setSel] = useState(null);
   const [q, setQ] = useState('');
   const [type, setType] = useState('');
   const [results, setResults] = useState(null);
   const [searched, setSearched] = useState(false);
   const [searching, setSearching] = useState(false);
-  const [busyId, setBusyId] = useState(null);
   const [err, setErr] = useState(null);
 
   const runSearch = async (e) => {
@@ -60,33 +60,6 @@ export function Memory() {
     }
   };
 
-  const review = async (id, action) => {
-    if (action === 'discard') {
-      const ok = window.confirm('Discard this memory draft permanently? This cannot be undone.');
-      if (!ok) return;
-    }
-    setBusyId(id);
-    setErr(null);
-    try {
-      const res = await fetch('/api/memory/review', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, action }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `${res.status} ${res.statusText}`);
-      }
-      drafts.refetch();
-      summary.refetch();
-    } catch (ex) {
-      setErr(String(ex));
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  const hasDrafts = drafts.data && drafts.data.drafts?.length > 0;
   const sdata = summary.data;
   const hasGraph = graph.data && graph.data.nodes?.length > 0;
 
@@ -110,6 +83,11 @@ export function Memory() {
       </div>
 
       {summary.error && <ErrorBanner text={summary.error} />}
+      {tab === 'injected' && (
+        <div role="tabpanel" aria-label="Injected memory">
+          <MemoryInjections />
+        </div>
+      )}
       {tab === 'summary' && (
         <div role="tabpanel" aria-label="Summary">
           {!summary.data && <p className="loading">loading…</p>}
@@ -201,48 +179,6 @@ export function Memory() {
         </div>
       )}
 
-      {tab === 'drafts' && (
-        <div role="tabpanel" aria-label="Drafts">
-          {drafts.error && <ErrorBanner text={drafts.error} />}
-          {err && <ErrorBanner text={err} />}
-          {!drafts.data && <p className="loading">loading…</p>}
-          {drafts.data && !hasDrafts && <EmptyState copy="no drafts awaiting review" />}
-          {hasDrafts && (
-            <ul className="decisions-list mem-drafts">
-              {drafts.data.drafts.map((d) => (
-                <li key={d.id}>
-                  <div className="decisions-statement">
-                    <span className={TYPE_CLASS(d.type)}>{d.type}</span>{' '}
-                    <strong>{d.intent}</strong>
-                    <div className="mem-draft-meta">
-                      {d.id} · {fmtTs(d.ts)}
-                      {d.tags?.length > 0 && <> · {d.tags.join(', ')}</>}
-                    </div>
-                  </div>
-                  <div className="decisions-actions">
-                    <button
-                      type="button"
-                      className="decision-btn"
-                      disabled={busyId === d.id}
-                      onClick={() => review(d.id, 'confirm')}
-                    >
-                      confirm
-                    </button>
-                    <button
-                      type="button"
-                      className="decision-btn"
-                      disabled={busyId === d.id}
-                      onClick={() => review(d.id, 'discard')}
-                    >
-                      discard
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
     </section>
   );
 }

@@ -148,9 +148,32 @@ Surface spec proposals that need a human decision and let the user accept/reject
 ### Accept (addendum f)
 41. With a temp `.specs` containing one `**Decision:** pending:` line in an ADR, `GET /api/decisions/pending` lists it.
 42. `POST /api/decisions/resolve` accept → 200; ADR gains appended resolved line; subsequent pending list is empty; original content untouched.
-43. Reject path → same, wording "rejected".
-44. Path-traversal `file` → 4xx; duplicate resolve → 409.
-45. Frontend: panel renders statement + Accept/Reject; click resolves and panel updates (headless browser or curl+code-inspection, state method).
+
+## Addendum 2026-09-28: memory injection history — brain view
+
+Add a dedicated **Injected** tab to the Memory view. The orchestrator logs a
+`memory-injected` event at system-context construction with session/time/state
+and memory `{ id, type, scope }` references only. `GET /api/memory/injections`
+hydrates those references from the project and private user vaults, keeping
+global preference text out of project telemetry.
+
+The page presents the selected injection as a bilateral brain: project memories
+on one hemisphere, global preferences on the other, with injected nodes colored
+by type. Selecting a neuron reveals its exact text; a recent-injection timeline
+switches the view between turns. The brain is an information map, not decoration.
+
+43. A context injection appends one reference-only telemetry event; no raw prompt or memory text is duplicated into telemetry.
+44. `GET /api/memory/injections` returns recent events with hydrated text/type/scope from their correct vault; missing nodes remain identifiable by ID.
+45. The Memory view opens on an Injected tab with an accessible brain map, distinct project/global hemispheres, type-colored memory nodes, keyboard selection, and recent history.
+46. Empty history has a clear next-step message; 375px layout stacks the brain and history without overflow.
+47. Repeated system transforms in one session do not re-inject or re-log the same memory IDs; duplicate global/project plugin instances produce one system block/event.
+48. A `session.compacted` event resets the session cache and causes the current relevant memory set to be injected and logged once again.
+49. Consecutive duplicate injection history is collapsed within each session; a compaction boundary preserves the next identical set as a new event.
+50. The default memory graph includes confirmed project and private global nodes and edges; every displayed node is labeled with its scope.
+51. Memory summary cards report project/global counts separately; project/global edges remain scoped and node identities do not collide.
+51. Reject path → same, wording "rejected".
+52. Path-traversal `file` → 4xx; duplicate resolve → 409.
+53. Frontend: panel renders statement + Accept/Reject; click resolves and panel updates (headless browser or curl+code-inspection, state method).
 
 ## Out of scope
 - npm publish, auth, multi-project views, live websockets (polling is fine).

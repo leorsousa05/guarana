@@ -16,6 +16,12 @@ The termination skill, loaded by worker-verify in a SEPARATE context from whoeve
 If the diff under review was produced in THIS context, REFUSE and reroute to a fresh worker-verify. No exceptions.
 
 ## The gate
+Before reviewing implementation criteria, if the project has `.specs/`, run
+`guarana specs validate <project-root> --json`. A nonzero exit means the specs
+structure is invalid: report the validator's file-specific issues and do not
+confuse a clean structural check with proof that the implementation meets its
+acceptance criteria.
+
 For each acceptance criterion in the spec:
 1. Re-state the criterion's pass/fail condition.
 2. Apply the falsifiability test: if this criterion's failure would be undetectable, REJECT it (hard truth 5) — e.g., "output looks reasonable" is not a criterion.
