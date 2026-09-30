@@ -144,19 +144,36 @@ export async function injections(vaultDir, telemetryFile, opts = {}) {
     const lastBySession = new Map();
     for (const event of readJsonl(telemetryFile)) {
       const sessionID = event.sessionID || 'unknown';
-      if (event.type === 'session' && event.status === 'compacted') {
+      if (event.type === 'session' && ['created', 'compacted'].includes(event.status)) {
         lastBySession.delete(sessionID);
         continue;
       }
       if (event.type !== 'memory-injected' || !Array.isArray(event.memories)) continue;
-      const signature = event.memories
+      const memories = [...new Map(event.memories
         .filter((ref) => ref && typeof ref.id === 'string')
-        .map((ref) => `${ref.scope || 'project'}:${ref.type || ''}:${ref.id}`)
-        .sort()
-        .join('|');
-      if (signature && signature === lastBySession.get(sessionID) && event.reason !== 'compacted') continue;
-      lastBySession.set(sessionID, signature);
-      injectionEvents.push(event);
+        .map((ref) => [`${ref.scope || 'project'}:${ref.id}`, ref])).values()];
+      const signature = memories.map((ref) => `${ref.scope || 'project'}:${ref.id}`).sort().join('|');
+      const previous = lastBySession.get(sessionID);
+      const withinOneTurn = previous && Math.abs((event.ts ?? 0) - (previous.event.ts ?? 0)) <= 1000;
+      const sameReasonBoundary = previous && (event.reason === 'compacted') === (previous.event.reason === 'compacted');
+      if (withinOneTurn && sameReasonBoundary) {
+        const merged = new Map(previous.event.memories.map((ref) => [`${ref.scope || 'project'}:${ref.id}`, ref]));
+        for (const ref of memories) {
+          const key = `${ref.scope || 'project'}:${ref.id}`;
+          if (!merged.has(key)) merged.set(key, ref);
+        }
+        previous.event.memories = [...merged.values()];
+        previous.signature = previous.event.memories
+          .map((ref) => `${ref.scope || 'project'}:${ref.id}`)
+          .sort()
+          .join('|');
+        continue;
+      }
+      if (signature && signature === previous?.signature && event.reason !== 'compacted') continue;
+      const normalized = { ...event, memories };
+      const entry = { event: normalized, signature };
+      injectionEvents.push(normalized);
+      lastBySession.set(sessionID, entry);
     }
     const events = injectionEvents
       .sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0))

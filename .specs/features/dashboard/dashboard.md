@@ -175,5 +175,70 @@ switches the view between turns. The brain is an information map, not decoration
 52. Path-traversal `file` → 4xx; duplicate resolve → 409.
 53. Frontend: panel renders statement + Accept/Reject; click resolves and panel updates (headless browser or curl+code-inspection, state method).
 
+## Addendum 2026-09-28: continuity UX polish
+
+Preserve the existing ledger tokens, typography, layout, and interaction vocabulary.
+Refinements focus on status clarity and keyboard operation across existing views.
+
+54. Memory and Specs tabs support ArrowLeft/ArrowRight/Home/End with roving focus and explicit tab-panel relationships.
+55. Decision resolution disables duplicate actions and provides an announced success or error outcome; document loading and failures are visible.
+56. Successful polling clears a previous transient error; loading states are announced without changing their visual treatment.
+57. The Memory Graph has an informative empty state, and unavailable clipboard support is reported from the resume action.
+
+## Addendum 2026-09-28: restrained layout refinement
+
+Keep the ledger's paper/ink palette, existing type system, square geometry, and
+rule-based surfaces. Improve reading order through proportion, spacing, and
+responsive flow; keep Overview as stacked ledger sections rather than a KPI-card grid.
+
+58. Every view uses the same simple shell: header, horizontal section rail, then one main content column; the active item is marked with the existing red token.
+59. Overview presents workflow/run evidence before supporting memory/decision data as a simple single-column ledger, separated by rules rather than boxed cards.
+60. System-state documents stack in one reading column; at tablet/mobile widths the section rail scrolls within its own bounds without causing page overflow.
+
+## Addendum 2026-09-28: Memory Graph stability and legibility
+
+Keep the graph focused on relationships: scope-aware initial placement, labels
+only where useful, and explicit drag/reset guidance. Manual placement is user
+state and must survive telemetry polling and view changes.
+
+61. Refreshing an unchanged node/edge topology preserves every node coordinate; adding nodes preserves existing coordinates and places only new nodes.
+62. Manual coordinates persist across Memory tab changes and app-view remounts; Reset layout is an explicit user action.
+63. Nodes support keyboard selection; pointer capture allows dragging across the canvas, and drag movement does not trigger click-selection.
+64. Unselected edges omit relation labels; selecting a node reveals labels only for its connected edges and labels its neighboring nodes.
+
+## Addendum 2026-09-28: Specs and Workflow reading order
+
+Use page-specific structure within the shared single-column ledger shell. Specs
+separates implementation status, roadmap, and documents; Workflow foregrounds
+the current task and phase before its supporting details and history.
+
+65. Specs Overview labels the tracker and roadmap as separate sections; Documents categories begin collapsed and the category containing the active document opens.
+66. Project state and known issues remain a stacked, rule-separated reading flow.
+67. Workflow presents the active task and current phase before the ordered phase rail and labeled run details.
+68. Transition history separates route, event, note, and time, wrapping at narrow widths without page overflow.
+
+## Addendum 2026-09-28: compact Specs and interactive Workflow
+
+Keep Specs page height bounded by showing concise previews and opening the full
+Markdown only when requested. Make workflow progress directly inspectable with
+phase-specific state and color semantics.
+
+69. Roadmap entries, pending decisions, project state, and known issues show compact previews; each opens the complete content in an accessible modal.
+70. Documents lists titles only; selecting a document opens its complete Markdown in the same modal reader rather than an inline page-length pane.
+71. Specs modal supports Escape/backdrop close, focus containment/restoration, and links to other local `.specs` documents.
+72. Workflow phase controls are keyboard-operable; selected phase shows whether it is current, passed, or upcoming and the associated transition event/history.
+73. Workflow uses existing red/leaf/amber tokens for current/passed/upcoming phases and remains legible at mobile widths.
+
+## Addendum 2026-09-28: cross-instance memory injection deduplication
+
+Injection deduplication must work even when project/global plugin instances run
+in isolated processes. Same-turn telemetry from duplicate instances represents
+one context build; merge overlapping node references in history without
+crossing session or compaction boundaries.
+
+74. Per-session seen memory IDs are claimed atomically in shared project telemetry state; duplicate plugin instances inject each ID at most once until compaction.
+75. Session creation and compaction reset persisted seen IDs; compaction preserves its distinct injection-history boundary.
+76. Overlapping memory-injected events from the same session within one second merge to one history entry containing the union of unique scope/ID references.
+
 ## Out of scope
 - npm publish, auth, multi-project views, live websockets (polling is fine).

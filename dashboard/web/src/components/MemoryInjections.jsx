@@ -109,7 +109,7 @@ export function MemoryInjections() {
   };
 
   if (history.error) return <ErrorBanner text={history.error} />;
-  if (!history.data) return <p className="loading">loading memory history…</p>;
+  if (!history.data) return <p className="loading" role="status">loading memory history…</p>;
   if (history.data.error) return <ErrorBanner text={history.data.error} />;
 
   if (!injections.length) {

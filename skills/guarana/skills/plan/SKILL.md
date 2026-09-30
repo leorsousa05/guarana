@@ -1,6 +1,6 @@
 ---
 name: guarana:plan
-description: Use automatically when a task starts or resumes. Restores state from disk, creates missing specs, uses relevant memory, dispatches a worker with a verifiable condition and budget, and persists the plan.
+description: Use automatically when a task starts or resumes. Restores state, checks requirements for consequential gaps, asks targeted questions before coding when needed, then dispatches with a verifiable condition and budget.
 ---
 
 # guarana:plan
@@ -28,6 +28,39 @@ and no project-specific ADR is fabricated. The plan worker fills in the
 acceptance condition and asks only for contract facts that cannot be inferred.
 Only after `.specs/` exists on disk does "disk is truth" (ADR-004) apply.
 
+## Requirements discovery gate (before any code dispatch)
+
+Do not treat a user's first sentence as a complete specification for a substantial
+or ambiguous change. First inspect the relevant implementation, specs, project
+conventions, and confirmed memory. Then make a short requirements ledger:
+
+- **Known:** facts stated by the user or established by repository evidence.
+- **Inferred:** low-risk defaults that follow from existing patterns.
+- **Unknown:** decisions that cannot be safely inferred.
+
+Ask the human when an unknown could materially change scope or architecture,
+user-visible behavior, data shape/migration, integrations, security/privacy,
+operational constraints, or the acceptance gate. For greenfield or multi-surface
+work, explicitly check the desired outcome, in/out of scope, key users/flows,
+constraints/integrations, and what observable result counts as done.
+
+Question policy:
+1. Investigate before asking; never ask for facts the repo/specs already answer.
+2. Ask a small, coherent batch of the highest-impact questions (up to five per
+   round). Use the question tool when available; otherwise ask plainly in chat.
+3. Do not ask questions just to appear thorough. A precise, low-risk task proceeds
+   without a questionnaire; record only assumptions that affect the implementation.
+4. **Do not dispatch worker-code or begin implementation while a critical unknown
+   remains unanswered.** Wait for the human, incorporate the answer, and record
+   durable requirements in the feature spec; record a durable project decision in
+   an ADR when needed.
+5. If the human explicitly authorizes assumptions, write them down with their
+   consequence and proceed only when the acceptance condition remains falsifiable.
+
+Discovery is complete when the outcome, boundaries, constraints, and acceptance
+condition are concrete enough to reject an incorrect implementation. Non-critical
+unknowns may remain as explicit, reversible assumptions.
+
 ## 2. Classify intent → route to exactly ONE skill
 | User intent | Route |
 |---|---|
@@ -47,6 +80,9 @@ Ambiguous intent → ASK the human (Rule 0). Never guess a route. Never load deb
 - **Verifiable condition:** the exact checkable predicate defining done
 - **Budget:** per ADR-005 (code 8k / verify 4k / debug 6k tokens)
 - **State pointers:** which `.specs/` files the worker reads and may append to
+
+Before a worker-code dispatch, confirm the requirements discovery gate above is
+closed and the feature spec contains a checkable acceptance condition.
 
 ## 4. Stop
 After dispatch, wait for the worker summary. Do not hold worker detail in the main thread; durable facts go to disk, not summaries.

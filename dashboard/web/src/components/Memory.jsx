@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { fmtTs } from '../lib/format.js';
 import { usePoll } from '../hooks/usePoll.js';
-import { EmptyState, ErrorBanner } from './common.jsx';
+import { EmptyState, ErrorBanner, handleTabKeyDown } from './common.jsx';
 import { MemoryGraph } from './MemoryGraph.jsx';
 import { MemoryInjections } from './MemoryInjections.jsx';
 
@@ -67,13 +67,17 @@ export function Memory() {
     <section id="memory" aria-label="Memory">
       <h2 className="section-title">Memory</h2>
 
-      <div className="mem-tabs" role="tablist" aria-label="Memory sections">
+      <div className="mem-tabs" role="tablist" aria-label="Memory sections" onKeyDown={(event) => handleTabKeyDown(event, TABS.map(([id]) => id), setTab)}>
         {TABS.map(([id, label]) => (
           <button
             key={id}
             type="button"
             role="tab"
+            id={`memory-tab-${id}`}
+            data-tab-id={id}
+            aria-controls={`memory-panel-${id}`}
             aria-selected={tab === id}
+            tabIndex={tab === id ? 0 : -1}
             className={`mem-tab${tab === id ? ' mem-tab--active' : ''}`}
             onClick={() => setTab(id)}
           >
@@ -84,13 +88,13 @@ export function Memory() {
 
       {summary.error && <ErrorBanner text={summary.error} />}
       {tab === 'injected' && (
-        <div role="tabpanel" aria-label="Injected memory">
+        <div id="memory-panel-injected" role="tabpanel" aria-labelledby="memory-tab-injected" tabIndex={0}>
           <MemoryInjections />
         </div>
       )}
       {tab === 'summary' && (
-        <div role="tabpanel" aria-label="Summary">
-          {!summary.data && <p className="loading">loading…</p>}
+        <div id="memory-panel-summary" role="tabpanel" aria-labelledby="memory-tab-summary" tabIndex={0}>
+          {!summary.data && !summary.error && <p className="loading" role="status">loading summary…</p>}
           {sdata && (
             <dl className="mem-summary now-grid">
               {summaryCards(summary).map(([label, val]) => (
@@ -105,7 +109,7 @@ export function Memory() {
       )}
 
       {tab === 'search' && (
-        <div role="tabpanel" aria-label="Search" aria-live="polite">
+        <div id="memory-panel-search" role="tabpanel" aria-labelledby="memory-tab-search" tabIndex={0} aria-live="polite">
           <form className="mem-search" onSubmit={runSearch}>
             <input
               type="search"
@@ -126,7 +130,9 @@ export function Memory() {
               {searching ? 'Searching…' : 'Search'}
             </button>
           </form>
+          {err && <ErrorBanner text={`Memory search failed: ${err}`} />}
           {results && results.error && <ErrorBanner text={results.error} />}
+          {!searched && !searching && <EmptyState copy="Search confirmed memory by text or type." />}
           {results && !results.error && results.results?.length === 0 && (
             <EmptyState copy="no confirmed matches" hint="try a different query" />
           )}
@@ -158,26 +164,23 @@ export function Memory() {
               </table>
             </div>
           )}
-          {searched && !searching && results === null && !err && <p className="loading">no search yet</p>}
         </div>
       )}
 
-      {tab === 'graph' && (
-        <div role="tabpanel" aria-label="Graph">
-          {graph.error && <ErrorBanner text={graph.error} />}
-          {!graph.data && <p className="loading">loading…</p>}
-          {hasGraph ? (
-            <MemoryGraph
-              nodes={graph.data.nodes}
-              edges={graph.data.edges}
-              selected={sel}
-              onSelect={setSel}
-            />
-          ) : (
-            !graph.data && graph.data?.nodes?.length === 0 && <EmptyState copy="no confirmed nodes" />
-          )}
-        </div>
-      )}
+      <div id="memory-panel-graph" role="tabpanel" aria-labelledby="memory-tab-graph" tabIndex={0} hidden={tab !== 'graph'}>
+        {graph.error && <ErrorBanner text={graph.error} />}
+        {!graph.data && !graph.error && <p className="loading" role="status">loading memory graph…</p>}
+        {hasGraph ? (
+          <MemoryGraph
+            nodes={graph.data.nodes}
+            edges={graph.data.edges}
+            selected={sel}
+            onSelect={setSel}
+          />
+        ) : graph.data && graph.data.nodes?.length === 0 ? (
+          <EmptyState copy="No confirmed memories in the graph yet. Save a decision to get started." />
+        ) : null}
+      </div>
 
     </section>
   );

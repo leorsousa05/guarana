@@ -5,7 +5,7 @@ import { TICKER_KIND } from './Ticker.jsx';
 
 export function EventStream({ sessionID }) {
   const { data } = usePoll(`/api/telemetry/events?session=${encodeURIComponent(sessionID)}`);
-  if (!data) return <p className="loading">loading events…</p>;
+  if (!data) return <p className="loading" role="status">loading events…</p>;
   return (
     <div className="events">
       <h3 className="sub-title">event stream — {sessionID}</h3>

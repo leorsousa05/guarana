@@ -161,19 +161,26 @@ describe('GET/POST /api/memory', () => {
     assert.ok(graph.nodes.some((node) => node.id === projectMemory.id && node.scope === 'project'));
     const telemetryDir = path.join(tmp, '.specs', 'state', 'telemetry');
     fs.mkdirSync(telemetryDir, { recursive: true });
+    const firstRefs = [
+      { id: projectMemory.id, type: 'decision', scope: 'project' },
+      { id: preference.id, type: 'preference', scope: 'global' },
+      ...Array.from({ length: 3 }, (_, index) => ({ id: `missing-small-${index}`, type: 'atom', scope: 'project' })),
+    ];
+    const largerRefs = [
+      ...firstRefs,
+      ...Array.from({ length: 3 }, (_, index) => ({ id: `missing-large-${index}`, type: 'atom', scope: 'project' })),
+    ];
     const event = {
       ts: 100,
       type: 'memory-injected',
       sessionID: 'session-1',
       workflowState: 'planning',
-      memories: [
-        { id: projectMemory.id, type: 'decision', scope: 'project' },
-        { id: preference.id, type: 'preference', scope: 'global' },
-      ],
+      memories: firstRefs,
     };
     const events = [
       event,
       { ...event, ts: 101 }, // duplicate from two installed plugin scopes
+      { ...event, ts: 102, memories: largerRefs }, // overlapping 5-node / 8-node payload from a second scope
       { ts: 150, type: 'session', status: 'compacted', sessionID: 'session-1' },
       { ...event, ts: 200, reason: 'compacted' },
     ];
@@ -187,7 +194,13 @@ describe('GET/POST /api/memory', () => {
     assert.deepEqual(body.injections[0].memories.map((n) => [n.id, n.scope, n.summary]), [
       [projectMemory.id, 'project', 'confirmed decision for dashboard'],
       [preference.id, 'global', 'Always answer me in Portuguese.'],
+      ['missing-small-0', 'project', ''],
+      ['missing-small-1', 'project', ''],
+      ['missing-small-2', 'project', ''],
     ]);
+    assert.equal(body.injections[1].memories.length, 8);
+    assert.equal(new Set(body.injections[1].memories.map((node) => node.id)).size, 8);
+    assert.equal(body.injections[1].memories.find((node) => node.id === 'missing-large-0').available, false);
   });
 
   it('drafts lists draft nodes and review confirms them', async () => {

@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-09-28 (global memories included in graph)
+Last updated: 2026-09-28 (adaptive requirements discovery)
 
 ## Per-skill status
 | Skill | Status |
@@ -18,12 +18,12 @@ Last updated: 2026-09-28 (global memories included in graph)
 | guarana orchestrator | **SPECIFIED → IMPLEMENTED → VALIDATED** |
 
 ## Current step
-**Project/global memory graph (2026-09-28) — VALIDATED.** Confirmed nodes from both project and private global vaults now appear in the graph with scope labels and scoped edges; summary counts are split by scope. Intent-driven capture, session deduplication, injection history, and the specs validator are included in this batch. Verification: `npm test` 181/181, production build, `check-cli`, and `specs:validate` pass; global/project plugins are current.
+**Adaptive requirements discovery (2026-09-28) — VALIDATED.** `guarana:plan` uses evidence-first review and asks targeted questions for critical unknowns before implementation; answers persist in specs while small, fully specified tasks proceed without a questionnaire. Independent verification passed; 186 tests, build, CLI check, specs validation, and diff check pass.
 
-**Pending:** none; requested commit is being completed.
+**Pending:** none.
 
 ## Checkpoint
-- Goal: Display confirmed project and global memories together without mixing scopes or edges.
+- Goal: Ensure planning asks about consequential requirement gaps before implementation begins.
 - Pending writes: none.
 - Budget: ADR-005 defaults.
 

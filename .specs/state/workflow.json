@@ -2,10 +2,10 @@
   "version": 1,
   "state": "completed",
   "skill": null,
-  "activeTask": "Include private global memories in the Guarana Web graph.",
-  "goal": "Include private global memories in the Guarana Web graph.",
-  "condition": "`npm test` 181/181; production build, CLI bundle/spec checks, and diff checks pass; live API serves global and project nodes with scope labels.",
-  "updatedAt": 1790628164756,
+  "activeTask": "Verification complete: all five planning discovery criteria pass; requested commands pass. No files were edited intentionally.",
+  "goal": "Verification complete: all five planning discovery criteria pass; requested commands pass. No files were edited intentionally.",
+  "condition": "Report evidence-based verification outcome and command results.",
+  "updatedAt": 1790798394280,
   "history": [
     {
       "ts": 1788711769257,
@@ -1007,6 +1007,1021 @@
       "from": "verifying",
       "to": "completed",
       "note": "Full suite 181/181; build/check-cli/specs:validate pass; graph API integration test covers global preference nodes and edges."
+    },
+    {
+      "ts": 1790628983742,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "User requests a full UI redesign and migration to Tailwind CSS."
+    },
+    {
+      "ts": 1790629226053,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Keep the Node 18 compatibility contract by using Tailwind 3 with PostCSS/Vite, while preserving the existing stack and .specs APIs."
+    },
+    {
+      "ts": 1790629241266,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Design tokens and responsive shell are specified; now integrate dependencies and migrate components."
+    },
+    {
+      "ts": 1790631241307,
+      "event": "new_task",
+      "from": "coding",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1790631241337,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1790633325745,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "User's steer changed the design direction to a minimal Guarana red/green identity; Tailwind 3 is integrated and component styling has been revised accordingly."
+    },
+    {
+      "ts": 1790633343836,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Running final production build, test suite, and CLI bundle check after the final palette/typography simplification."
+    },
+    {
+      "ts": 1790633437923,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Tailwind 3/PostCSS integrated; all views migrated; visual palette simplified and logo removed."
+    },
+    {
+      "ts": 1790633454940,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "`npm run build`, `npm test` 181/181, `npm run check-cli`, and `npm run specs:validate` pass."
+    },
+    {
+      "ts": 1790633707274,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "new task detected"
+    },
+    {
+      "ts": 1790633731897,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "User reports black text against dark green backgrounds in the redesigned dashboard."
+    },
+    {
+      "ts": 1790633920098,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "The low-contrast source is `.spec-markdown`'s inherited `text-ink` and dark heading/link overrides in the overview hero."
+    },
+    {
+      "ts": 1790633937406,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Extended the Markdown component with an explicit dark tone and applied it to the overview goal."
+    },
+    {
+      "ts": 1790634024520,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Added a dark tone to the shared Markdown renderer and applied it to the Overview goal; light-surface docs keep the existing tone."
+    },
+    {
+      "ts": 1790634043319,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "`npm run build`, `npm test` 181/181, `npm run check-cli`, `npm run specs:validate`, and `git diff --check` pass."
+    },
+    {
+      "ts": 1790640798261,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "User asks for UX improvements to the redesigned dashboard."
+    },
+    {
+      "ts": 1790641060337,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Other main flows already have mobile layouts, error/empty states, keyboard-openable runs, keyboard-selectable memory graph nodes, and an accessible modal."
+    },
+    {
+      "ts": 1790641077900,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "The implementation is already in worktree; document coverage and rerun checks."
+    },
+    {
+      "ts": 1790641209473,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Specs criteria and change log now capture the UX work; build and 181 tests passed, specs validation and diff check are clean."
+    },
+    {
+      "ts": 1790641214209,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "Build succeeds; tests 181/181; CLI check and specs validation pass; git diff --check is clean."
+    },
+    {
+      "ts": 1790644051982,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "new task detected"
+    },
+    {
+      "ts": 1790644159619,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Restored dashboard/web from the pre-redesign baseline while retaining unrelated package-version and server-test edits."
+    },
+    {
+      "ts": 1790644164521,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "UI source and generated bundle have been restored and rebuilt."
+    },
+    {
+      "ts": 1790644168312,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Restored Vite output matches the prior asset hashes; full test suite and validation passed."
+    },
+    {
+      "ts": 1790644171791,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "Production build succeeded; 181/181 tests passed; CLI bundle and specs validation passed."
+    },
+    {
+      "ts": 1790644193920,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "new task detected"
+    },
+    {
+      "ts": 1790644193939,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1790644335307,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Plan targets interaction/accessibility refinements and fixes the Memory Graph blank state plus stale polling errors."
+    },
+    {
+      "ts": 1790644340309,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Targeting shared polling, tab behavior, decision actions, Memory Graph states, and clipboard feedback."
+    },
+    {
+      "ts": 1790644654244,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Implementation is complete; handing off to independent verification."
+    },
+    {
+      "ts": 1790644662901,
+      "event": "new_task",
+      "from": "verifying",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1790644662940,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1790644671634,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Verification-only task routed to independent verifier."
+    },
+    {
+      "ts": 1790644674681,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Verifier context is separate from implementation context; no file edits."
+    },
+    {
+      "ts": 1790644678822,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "No implementation changes; begin verification."
+    },
+    {
+      "ts": 1790644716169,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "All requested implementation criteria and required validation commands passed."
+    },
+    {
+      "ts": 1790644844471,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "new task detected"
+    },
+    {
+      "ts": 1790644970885,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Layout uses the existing aril/ink/guarana/leaf palette, current fonts, and ledger rules; no decorative dashboard widgets."
+    },
+    {
+      "ts": 1790644976240,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Adjusting container width, shell proportions, overview grid, and mobile nav/table flow while preserving existing styles."
+    },
+    {
+      "ts": 1790645133862,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Preserved existing ledger palette/type/square surfaces; adjusted shell width/proportions, Overview grid, and mobile nav behavior."
+    },
+    {
+      "ts": 1790645142490,
+      "event": "new_task",
+      "from": "verifying",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1790645142519,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1790645147641,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Route directly to verification; read-only review requested"
+    },
+    {
+      "ts": 1790645150710,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Start verification run"
+    },
+    {
+      "ts": 1790645153578,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "No files will be changed; move to independent verification"
+    },
+    {
+      "ts": 1790645191123,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "Build/tests/checks pass, but tablet breakpoint requirement fails: 601–900px retains two-column shell and vertical rail."
+    },
+    {
+      "ts": 1790645259096,
+      "event": "debug_complete",
+      "from": "debugging",
+      "to": "verifying",
+      "note": "Root cause: mobile shell/nav breakpoint stops at 600px while the verified layout criterion includes tablets; apply the shared one-column/horizontal-nav behavior through 840px."
+    },
+    {
+      "ts": 1790645266468,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "tool result signaled failure during verification"
+    },
+    {
+      "ts": 1790645278012,
+      "event": "force",
+      "from": "debugging",
+      "to": "coding",
+      "note": "Verifier identified a specific breakpoint mismatch; implement the minimal CSS breakpoint adjustment."
+    },
+    {
+      "ts": 1790645365029,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Extended one-column shell, Overview, and contained horizontal navigation through 840px; medium desktop keeps a narrowed side rail."
+    },
+    {
+      "ts": 1790645375487,
+      "event": "new_task",
+      "from": "verifying",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1790645375529,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1790645385786,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Routing to verification."
+    },
+    {
+      "ts": 1790645388988,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Read-only verification."
+    },
+    {
+      "ts": 1790645392474,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "No files edited; proceeding to independent verification."
+    },
+    {
+      "ts": 1790645458021,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "CSS evidence confirms requested breakpoint behaviors; all five requested commands passed."
+    },
+    {
+      "ts": 1790645769180,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "new task detected"
+    },
+    {
+      "ts": 1790645931830,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "User authorized layout changes but wants to keep the interface simple; replacing repeated overview boxes with a vertical reading order."
+    },
+    {
+      "ts": 1790645936513,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "The single-column Overview CSS is applied; verify build and UI bundles next."
+    },
+    {
+      "ts": 1790645961817,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Replaced the overview's boxed multi-column grid with a single-column rule-separated ledger; all required commands passed."
+    },
+    {
+      "ts": 1790645969629,
+      "event": "new_task",
+      "from": "verifying",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1790645969699,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1790645980551,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Verification-only task; inspected state summary and will check the current source/spec."
+    },
+    {
+      "ts": 1790646032558,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Ran all five checks and reviewed source diff; no source edits made."
+    },
+    {
+      "ts": 1790646038840,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Read-only review completed; moving to independent verification verdict."
+    },
+    {
+      "ts": 1790646045505,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "All criteria pass on source inspection and all five required checks."
+    },
+    {
+      "ts": 1790646511270,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "User explicitly authorized changing the full app layout while keeping it simple and avoiding a card-heavy dashboard."
+    },
+    {
+      "ts": 1790646518693,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Design uses the current aril/ink, red/leaf, Space Grotesk/IBM Plex Mono, and rule-based visual system."
+    },
+    {
+      "ts": 1790646524500,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Update global shell/nav and stacked reading sections; no extra widgets or content."
+    },
+    {
+      "ts": 1790646619774,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "The shared shell is now a full-width header, horizontal rule-based nav, and one main content column; Specs pages also stack."
+    },
+    {
+      "ts": 1790646632269,
+      "event": "new_task",
+      "from": "verifying",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1790646632339,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1790646638198,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Intent is independent verification; proceed in verifier step."
+    },
+    {
+      "ts": 1790646641021,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "No edits permitted."
+    },
+    {
+      "ts": 1790646643787,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Verification only; entering verification."
+    },
+    {
+      "ts": 1790646681067,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "Build/tests/CLI/spec validation/diff-check pass, but Overview retains card-named component structure and stacked ledger pages have no explicit separator between pages; criterion wording needs failure."
+    },
+    {
+      "ts": 1790646745943,
+      "event": "force",
+      "from": "debugging",
+      "to": "coding",
+      "note": "Independent review found CSS boxes gone but components still use repeated *Card wrappers and docs lacked a rule between project-state and known-issues."
+    },
+    {
+      "ts": 1790646801686,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Overview uses semantic rule-separated sections instead of Card components/classes; system-state document pages are separated with hairlines."
+    },
+    {
+      "ts": 1790646812153,
+      "event": "new_task",
+      "from": "verifying",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1790646812212,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1790646829234,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Verification only; user explicitly prohibits edits."
+    },
+    {
+      "ts": 1790646832007,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "This is a verification-only run."
+    },
+    {
+      "ts": 1790646834771,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "No files edited; moving to independent verification gate."
+    },
+    {
+      "ts": 1790646893421,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "All acceptance criteria pass; build regenerated dashboard dist assets as a side effect."
+    },
+    {
+      "ts": 1790649560185,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "Current position-reset effect depends on fresh arrays from every poll; the graph tab also unmounts between views."
+    },
+    {
+      "ts": 1790649708765,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Root cause confirmed: graph effect resets on fresh array identity every poll; graph tab is conditionally unmounted."
+    },
+    {
+      "ts": 1790649714870,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Implement a pure layout helper with tests, stable topology identity, session-persisted coordinates, and scope-aware labeling."
+    },
+    {
+      "ts": 1790649990778,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Added a pure tested scope-aware layout, stable topology signature, session-persisted coordinates, explicit reset, focused relationship labels, keyboard selection, pointer capture, and drag threshold."
+    },
+    {
+      "ts": 1790649998749,
+      "event": "new_task",
+      "from": "verifying",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1790649998816,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1790650006168,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Verification only, as explicitly requested."
+    },
+    {
+      "ts": 1790650010508,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "No code edits; start independent verification."
+    },
+    {
+      "ts": 1790650015067,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "No files modified; proceed to verification gate."
+    },
+    {
+      "ts": 1790650067543,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "Implementation checks largely pass, but sessionStorage-only persistence does not satisfy app-view unmount persistence (different Memory component mount in same tab should actually persist, yes session persists; selection too). Yet same signature effect graphKey stable; effect dependency arrays ref but only graphKey. Potential bug: when initial previous empty and layout has zero nodes, then new nodes default relayout; fine. CSS identity appearance check limited but evident. Need report no independent browser."
+    },
+    {
+      "ts": 1790650073279,
+      "event": "debug_complete",
+      "from": "debugging",
+      "to": "verifying",
+      "note": "No code defect established; document verification caveat: no end-to-end browser run requested or configured."
+    },
+    {
+      "ts": 1790650077612,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "Criterion 5 (visual identity) is only source-inspected rather than browser/computed-style tested; criterion 2 (cross-main-view persistence) is inferred from sessionStorage and conditional mount, no UI integration test. Marking full strict verification fail for no direct test evidence."
+    },
+    {
+      "ts": 1790650189063,
+      "event": "force",
+      "from": "debugging",
+      "to": "coding",
+      "note": "Independent gate lacked a focused test of the session-storage round trip; add a testable storage helper used by the component."
+    },
+    {
+      "ts": 1790650247768,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Extracted storage read/write helpers and added a regression test that simulates graph remount and verifies manual coordinates are restored."
+    },
+    {
+      "ts": 1790650264065,
+      "event": "new_task",
+      "from": "verifying",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1790650264139,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1790650268541,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Verification-only request. Continue directly to verification."
+    },
+    {
+      "ts": 1790650271900,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Starting requested independent verification."
+    },
+    {
+      "ts": 1790650281360,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "No changes made; verification is next."
+    },
+    {
+      "ts": 1790650309890,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "All requested source checks and five commands passed; no files edited."
+    },
+    {
+      "ts": 1790786408786,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "User requested layout refinements specifically for Specs and Workflow."
+    },
+    {
+      "ts": 1790786468963,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Use a single content column, rules, existing palette/type, and no generic panels; Documents reading remains inline below its index."
+    },
+    {
+      "ts": 1790786476662,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Working only in Specs/Workflow components, Documents component, and their CSS/spec criteria."
+    },
+    {
+      "ts": 1790786901141,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Specs now has named vertical sections and compact disclosures; Workflow now leads with active task and phase, with row-based details/history."
+    },
+    {
+      "ts": 1790786911283,
+      "event": "new_task",
+      "from": "verifying",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1790786911355,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1790786922717,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Verification-only request; plan restored from .specs and prior workflow context."
+    },
+    {
+      "ts": 1790786926000,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Starting read-only checks."
+    },
+    {
+      "ts": 1790786931730,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "No source edits; transitioning into verification."
+    },
+    {
+      "ts": 1790786960711,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "Source inspection confirms requested structure and responsive rules; build, tests, CLI consistency, specs validation, and diff check passed."
+    },
+    {
+      "ts": 1790787243753,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "Human clarified Specs text must not expand page height and asks for an interactive, colorful Workflow."
+    },
+    {
+      "ts": 1790787261710,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Use existing ledger palette/type, accessible modal focus handling, and semantically meaningful progress colors."
+    },
+    {
+      "ts": 1790787270474,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Add reusable reader modal, short summaries/actions, and selectable phase detail."
+    },
+    {
+      "ts": 1790787364994,
+      "event": "new_task",
+      "from": "coding",
+      "to": "planning",
+      "note": "Human asks to keep long Specs and Documents text available without expanding the page, and make Workflow interactive/color-coded."
+    },
+    {
+      "ts": 1790787374408,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "One reusable Markdown modal will handle overview documents, roadmap items, and files; interactive phases will filter history."
+    },
+    {
+      "ts": 1790787383113,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Implement accessible modal, compact previews, document click-to-read, and selectable Workflow rail."
+    },
+    {
+      "ts": 1790787770560,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Added reusable focus-trapped Specs Markdown modal, concise previews, document-to-modal reading, and clickable phase controls with filtered history and semantic colors."
+    },
+    {
+      "ts": 1790787782710,
+      "event": "new_task",
+      "from": "verifying",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1790787782789,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1790787787907,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Proceeding as an independent verification."
+    },
+    {
+      "ts": 1790787791181,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Verification-only run."
+    },
+    {
+      "ts": 1790787854376,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Verification performed; no files intentionally edited. Build command regenerated tracked dist bundles."
+    },
+    {
+      "ts": 1790787857438,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "All requested checks passed."
+    },
+    {
+      "ts": 1790797217850,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "Telemetry shows two injection events for one session at the same timestamp: an 8-node event and an overlapping 5-node event."
+    },
+    {
+      "ts": 1790797228743,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Confirmed telemetry evidence: same session and timestamp show overlapping 8-node and 5-node payloads; in-memory global cache alone does not span plugin isolates."
+    },
+    {
+      "ts": 1790797236883,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Add locked telemetry-side state for atomic claims and an endpoint merge for already-recorded 5/8-node overlap."
+    },
+    {
+      "ts": 1790797662459,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Implemented atomic shared state plus history union; added isolated-instance and overlapping 5/8-node tests."
+    },
+    {
+      "ts": 1790797674239,
+      "event": "new_task",
+      "from": "verifying",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1790797674304,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1790797682900,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Verification-only; change was made in prior context, meeting split-check."
+    },
+    {
+      "ts": 1790797687883,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Verification-only run."
+    },
+    {
+      "ts": 1790797762602,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "No source edits performed; validation completed."
+    },
+    {
+      "ts": 1790797766052,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "All requested commands pass and implementation/test evidence supports criteria."
+    },
+    {
+      "ts": 1790798001310,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "new task detected"
+    },
+    {
+      "ts": 1790798129473,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "No separate always-on questionnaire; discovery is conditional on material ambiguity/project scope and records answers in the feature spec."
+    },
+    {
+      "ts": 1790798138381,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Edits are confined to plan skill, orchestrator prompt/tests, specs/ADR, and synced CLI output."
+    },
+    {
+      "ts": 1790798305648,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Added discovery ledger/question policy, blocking gate before worker-code, small-task exception, plan acceptance criteria, ADR-017, always-on reminder, and regression test."
+    },
+    {
+      "ts": 1790798317227,
+      "event": "new_task",
+      "from": "verifying",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1790798317280,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1790798391037,
+      "event": "force",
+      "from": "planning",
+      "to": "verifying",
+      "note": "Current workflow was planning, so verify_fail was not a legal transition; forced verifier step after finishing evidence review."
+    },
+    {
+      "ts": 1790798394280,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "All five acceptance criteria are supported by source/spec/test evidence; all requested commands passed."
     }
   ]
 }

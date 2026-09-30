@@ -87,7 +87,7 @@ export default function App() {
         <Sidebar active={active} onSelect={selectView} />
         <div className="app-content">
           {summary.error && <ErrorBanner text={summary.error} />}
-          {!summary.data && !summary.error && <p className="loading">loading…</p>}
+          {!summary.data && !summary.error && <p className="loading" role="status">loading dashboard…</p>}
           {active === 'overview' && (
             <Overview summary={summary.data} state={state.data} tracker={tracker.data} workflow={workflow.data} />
           )}

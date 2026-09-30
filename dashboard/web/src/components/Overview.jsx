@@ -22,12 +22,12 @@ function HealthLine({ runs }) {
   );
 }
 
-function WorkflowCard({ workflow }) {
+function WorkflowSection({ workflow }) {
   const state = workflow?.state || 'idle';
   const idx = STATE_ORDER.indexOf(state);
   return (
-    <section className="ov-card" aria-label="Workflow">
-      <header className="ov-card-head">
+    <section className="ov-section" aria-label="Workflow">
+      <header className="ov-section-head">
         <h3>Workflow</h3>
         <Stamp word={state} />
       </header>
@@ -56,12 +56,12 @@ function parseGoal2(workflow) {
   return workflow.goal || workflow.activeTask || null;
 }
 
-function RunsCard({ summary }) {
+function RunsSection({ summary }) {
   const runs = summary?.runs || [];
   const hasData = runs.length > 0;
   return (
-    <section className="ov-card" aria-label="Runs">
-      <header className="ov-card-head">
+    <section className="ov-section" aria-label="Runs">
+      <header className="ov-section-head">
         <h3>Runs</h3>
         {hasData && <span className="ov-count">{runs.length}</span>}
       </header>
@@ -84,11 +84,11 @@ function RunsCard({ summary }) {
   );
 }
 
-function DecisionsCard({ decisions, onOpen }) {
+function DecisionsSection({ decisions }) {
   const list = decisions?.data?.decisions || [];
   return (
-    <section className="ov-card" aria-label="Decisions">
-      <header className="ov-card-head">
+    <section className="ov-section" aria-label="Decisions">
+      <header className="ov-section-head">
         <h3>Decisions</h3>
         {list.length > 0 && <span className="ov-count">{list.length}</span>}
       </header>
@@ -107,12 +107,12 @@ function DecisionsCard({ decisions, onOpen }) {
   );
 }
 
-function MemoryCard({ memory }) {
+function MemorySection({ memory }) {
   const d = memory?.data;
-  if (!d) return <p className="loading">loading…</p>;
+  if (!d) return <p className="loading" role="status">loading…</p>;
   return (
-    <section className="ov-card" aria-label="Memory">
-      <header className="ov-card-head">
+    <section className="ov-section" aria-label="Memory">
+      <header className="ov-section-head">
         <h3>Memory</h3>
       </header>
       <dl className="ov-grid">
@@ -134,11 +134,11 @@ function roadmapItems(tracker, key, workflow) {
   return next && goal.startsWith(next) ? [workflow.goal] : items;
 }
 
-function RoadmapCard({ tracker, workflow }) {
-  if (!tracker) return <p className="loading">loading…</p>;
+function RoadmapSection({ tracker, workflow }) {
+  if (!tracker) return <p className="loading" role="status">loading…</p>;
   return (
-    <section className="ov-card ov-card--wide" aria-label="Roadmap">
-      <header className="ov-card-head">
+    <section className="ov-section ov-section--roadmap" aria-label="Roadmap">
+      <header className="ov-section-head">
         <h3>Roadmap</h3>
       </header>
       {['BLOCKED', 'NEXT', 'DONE'].map((k) => {
@@ -176,12 +176,12 @@ export function Overview({ summary, state, tracker, workflow }) {
           'System of record — no active goal recorded.'
         )}
       </div>
-      <div className="ov-grid-layout">
-        <WorkflowCard workflow={workflow} />
-        <RunsCard summary={summary} />
-        <MemoryCard memory={memory} />
-        <DecisionsCard decisions={decisions} />
-        <RoadmapCard tracker={tracker} workflow={workflow} />
+      <div className="ov-ledger">
+        <WorkflowSection workflow={workflow} />
+        <RunsSection summary={summary} />
+        <MemorySection memory={memory} />
+        <DecisionsSection decisions={decisions} />
+        <RoadmapSection tracker={tracker} workflow={workflow} />
       </div>
     </div>
   );

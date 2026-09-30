@@ -1,10 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { EmptyState } from './common.jsx';
-import { Markdown, MdLink, isSpecPath } from '../lib/markdown.jsx';
-
-// Any local `.specs` markdown path is servable by /api/specs/file, regardless
-// of which directory it lives in. External/absolute URLs are excluded by shape.
-const isDocPath = (rel) => isSpecPath(rel);
 
 const fallbackTitle = (rel) => rel.split('/').pop().replace(/\.md$/i, '');
 
@@ -50,35 +45,15 @@ export function buildGroups(tree) {
   return [...known, ...extra];
 }
 
-export function ReadingPane({ path, onOpenFile, canOpen }) {
-  const [content, setContent] = useState(null);
-  useEffect(() => {
-    let cancelled = false;
-    setContent(null);
-    fetch(`/api/specs/file?path=${encodeURIComponent(path)}`)
-      .then(async (res) => {
-        if (cancelled) return;
-        setContent(res.ok ? await res.text() : `error ${res.status}`);
-      })
-      .catch((e) => {
-        if (!cancelled) setContent(String(e));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [path]);
-  if (content === null) return <p className="loading">loading document…</p>;
-  return (
-    <div className="reading-pane">
-      <Markdown text={content} onOpenFile={onOpenFile} canOpen={canOpen} />
-    </div>
-  );
-}
-
-export function Documents({ tree, titles, active, onOpen, onOpenFile, canOpen }) {
+export function Documents({ tree, titles, active, onOpen }) {
   const groups = useMemo(() => buildGroups(tree), [tree]);
   const hasAny = groups.some((g) => g.items.length > 0);
-  const [collapsed, setCollapsed] = useState({});
+  const [collapsed, setCollapsed] = useState(() => Object.fromEntries(groups.map((group) => [group.key, true])));
+  useEffect(() => {
+    if (!active) return;
+    const activeGroup = groups.find((group) => group.items.includes(active));
+    if (activeGroup) setCollapsed((current) => ({ ...current, [activeGroup.key]: false }));
+  }, [active, groups]);
   return (
     <div className="documents">
       {!hasAny && <EmptyState copy="no documents found" />}
@@ -115,11 +90,9 @@ export function Documents({ tree, titles, active, onOpen, onOpenFile, canOpen })
           </section>
         );
       })}
-      {active ? (
-        <ReadingPane path={active} onOpenFile={onOpenFile} canOpen={canOpen} />
-      ) : (
-        <p className="empty-copy">select a document to read it</p>
-      )}
+      <p className="documents-hint">
+        {active ? 'Selected document is open in the reading window.' : 'Choose a document to open its full text.'}
+      </p>
     </div>
   );
 }

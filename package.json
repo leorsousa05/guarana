@@ -1,6 +1,6 @@
 {
   "name": "guarana",
-  "version": "0.8.4",
+  "version": "0.8.6",
   "description": "Install/uninstall/list/update the guarana skill suite for OpenCode",
   "bin": {
     "guarana": "bin/guarana.js"
@@ -10,7 +10,7 @@
     "cli"
   ],
   "scripts": {
-    "test": "node --test orchestrator/*.test.js dashboard/server/lib/*.test.js dashboard/server/app.test.js plugin/*.test.mjs cli/commands/*.test.js cli/lib/*.test.js memory/*.test.mjs",
+    "test": "node --test orchestrator/*.test.js dashboard/server/lib/*.test.js dashboard/server/app.test.js dashboard/web/src/lib/memoryGraphLayout.test.js plugin/*.test.mjs cli/commands/*.test.js cli/lib/*.test.js memory/*.test.mjs",
     "test:all": "node --test '*/**/*.test.{js,mjs}'",
     "sync-cli": "node scripts/sync-cli-bundle.mjs",
     "check-cli": "node scripts/check-cli-bundle.mjs",

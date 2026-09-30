@@ -229,6 +229,17 @@ test('system block is always-on and names the skill', () => {
   assert.match(block, /Guarana workflow/);
   assert.match(block, /Current state: \*\*planning\*\*/);
   assert.match(block, /guarana:plan/);
+  assert.match(block, /ask about consequential requirement gaps/i);
+  assert.match(block, /Skip redundant questions for small, fully specified tasks/i);
+});
+
+test('planning injection asks about consequential unknowns before code dispatch', () => {
+  const workflow = apply(createWorkflow(), 'new_task', { goal: 'Build a multi-surface product' });
+  const injection = buildInjection(workflow);
+  assert.match(injection, /Requirements discovery gate/);
+  assert.match(injection, /Do not dispatch worker-code or begin implementation while a critical unknown/i);
+  assert.match(injection, /up to five per\s+round/i);
+  assert.match(injection, /acceptance condition/i);
 });
 
 test('resolveSkillBody returns the plan SKILL.md body', () => {

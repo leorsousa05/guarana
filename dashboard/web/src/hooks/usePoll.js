@@ -11,7 +11,10 @@ export function usePoll(url, intervalMs = 5000, tick = 0) {
         const res = await fetch(url);
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
         const json = await res.json();
-        if (!cancelled) setData(json);
+        if (!cancelled) {
+          setData(json);
+          setError(null);
+        }
       } catch (e) {
         if (!cancelled) setError(String(e));
       }

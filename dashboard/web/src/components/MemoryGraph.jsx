@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { fmtTs } from '../lib/format.js';
 import { buildLineage } from '../lib/lineage.js';
+import { graphSignature, GRAPH_HEIGHT as H, GRAPH_WIDTH as W, layoutGraph, readGraphPositions, saveGraphPositions } from '../lib/memoryGraphLayout.js';
 
 const TYPE_CLASS = (t) => `mem-type mem-type--${t}`;
 const NODE_TYPES = ['decision', 'bug', 'solution', 'refactor', 'preference', 'supernode', 'atom'];
@@ -23,60 +24,18 @@ const REL_DESC = {
   'relates-to': 'this node is related to the other',
 };
 
-const W = 760;
-const H = 480;
-const LG = 150; // rest length for edge springs
+const shortLabel = (value) => {
+  const text = String(value || 'memory');
+  return text.length > 24 ? `${text.slice(0, 23)}…` : text;
+};
 
-function layout(nodes, edges) {
-  const pos = new Map();
-  const n = nodes.length;
-  nodes.forEach((nd, i) => {
-    const a = (i / Math.max(n, 1)) * Math.PI * 2;
-    const r = Math.min(W, H) / 3;
-    pos.set(nd.id, { x: W / 2 + Math.cos(a) * r, y: H / 2 + Math.sin(a) * r });
-  });
-  // cheap force relaxation
-  for (let k = 0; k < 60; k++) {
-    const fr = new Map(nodes.map((nd) => [nd.id, { x: 0, y: 0 }]));
-    // repulsion
-    for (let i = 0; i < n; i++) {
-      for (let j = i + 1; j < n; j++) {
-        const a = pos.get(nodes[i].id);
-        const b = pos.get(nodes[j].id);
-        const dx = a.x - b.x;
-        const dy = a.y - b.y;
-        const d2 = Math.max(dx * dx + dy * dy, 1);
-        const f = 2400 / d2;
-        fr.get(nodes[i].id).x += (dx / Math.sqrt(d2)) * f;
-        fr.get(nodes[i].id).y += (dy / Math.sqrt(d2)) * f;
-        fr.get(nodes[j].id).x -= (dx / Math.sqrt(d2)) * f;
-        fr.get(nodes[j].id).y -= (dy / Math.sqrt(d2)) * f;
-      }
-    }
-    // springs
-    for (const e of edges) {
-      const a = pos.get(e.from);
-      const b = pos.get(e.to);
-      if (!a || !b) continue;
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const d = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
-      const f = (d - LG) * 0.06;
-      const ux = dx / d;
-      const uy = dy / d;
-      a.x += ux * f;
-      a.y += uy * f;
-      b.x -= ux * f;
-      b.y -= uy * f;
-    }
-    // centering
-    for (const p of pos.values()) {
-      p.x += (W / 2 - p.x) * 0.02;
-      p.y += (H / 2 - p.y) * 0.02;
-    }
+const browserSessionStorage = () => {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
   }
-  return pos;
-}
+};
 
 export function MemoryGraph({ nodes, edges, selected, onSelect }) {
   const svgRef = useRef(null);
@@ -90,13 +49,19 @@ export function MemoryGraph({ nodes, edges, selected, onSelect }) {
     from: `${edge.scope || 'project'}:${edge.from}`,
     to: `${edge.scope || 'project'}:${edge.to}`,
   })), [edges]);
-  const [pos, setPos] = useState(() => layout(graphNodes, graphEdges));
-  const [drag, setDrag] = useState(null);
+  const graphKey = useMemo(() => graphSignature(graphNodes, graphEdges), [graphNodes, graphEdges]);
+  const [pos, setPos] = useState(() => layoutGraph(graphNodes, graphEdges, readGraphPositions(browserSessionStorage(), graphNodes)));
+  const positionsRef = useRef(pos);
+  const dragRef = useRef(null);
   const nodesById = useMemo(() => new Map(graphNodes.map((n) => [n.id, n])), [graphNodes]);
 
   useEffect(() => {
-    setPos(layout(graphNodes, graphEdges));
-  }, [graphNodes, graphEdges]);
+    setPos((previous) => {
+      const next = layoutGraph(graphNodes, graphEdges, previous);
+      positionsRef.current = next;
+      return next;
+    });
+  }, [graphKey]);
 
   const neighbors = useMemo(() => {
     if (!selected) return { set: new Set(), list: [] };
@@ -119,39 +84,59 @@ export function MemoryGraph({ nodes, edges, selected, onSelect }) {
     const svg = svgRef.current;
     if (!svg) return;
     const pt = svg.createSVGPoint();
-    const rect = svg.getBoundingClientRect();
     const ctm = svg.getScreenCTM();
+    if (!ctm) return;
     const toSvg = (x, y) => {
       pt.x = x;
       pt.y = y;
       return pt.matrixTransform(ctm);
     };
     const start = pos.get(id);
+    if (!start) return;
     const m = toSvg(ev.clientX, ev.clientY);
-    setDrag({ id, dx: start.x - m.x, dy: start.y - m.y });
+    dragRef.current = { id, dx: start.x - m.x, dy: start.y - m.y, startX: ev.clientX, startY: ev.clientY, moved: false };
+    svg.setPointerCapture(ev.pointerId);
   };
 
   const onPointerMove = (ev) => {
-    if (!drag || !svgRef.current) return;
-    const pt = svgRef.current.createSVGPoint();
+    const drag = dragRef.current;
+    const svg = svgRef.current;
+    if (!drag || !svg) return;
+    if (Math.hypot(ev.clientX - drag.startX, ev.clientY - drag.startY) > 4) drag.moved = true;
+    if (!drag.moved) return;
+    const pt = svg.createSVGPoint();
     pt.x = ev.clientX;
     pt.y = ev.clientY;
-    const m = pt.matrixTransform(svgRef.current.getScreenCTM());
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return;
+    const m = pt.matrixTransform(ctm);
     setPos((prev) => {
       const next = new Map(prev);
-      next.set(drag.id, { x: m.x + drag.dx, y: m.y + drag.dy });
+      next.set(drag.id, {
+        x: Math.max(24, Math.min(W - 24, m.x + drag.dx)),
+        y: Math.max(28, Math.min(H - 28, m.y + drag.dy)),
+      });
+      positionsRef.current = next;
       return next;
     });
   };
 
-  const endDrag = () => setDrag(null);
+  const onPointerUp = () => {
+    const drag = dragRef.current;
+    if (drag && !drag.moved) onSelect(selected === drag.id ? null : drag.id);
+    if (drag?.moved) saveGraphPositions(browserSessionStorage(), positionsRef.current);
+    dragRef.current = null;
+  };
 
-  const onPointerUp = (id, ev) => {
-    // click (no meaningful drag) = select
-    if (drag && drag.id === id) {
-      onSelect(selected === id ? null : id);
-    }
-    endDrag();
+  const onPointerCancel = () => {
+    dragRef.current = null;
+  };
+
+  const resetLayout = () => {
+    const next = layoutGraph(graphNodes, graphEdges);
+    positionsRef.current = next;
+    setPos(next);
+    saveGraphPositions(browserSessionStorage(), next);
   };
 
   if (!graphNodes.length) return null;
@@ -168,12 +153,17 @@ export function MemoryGraph({ nodes, edges, selected, onSelect }) {
         <span className="mem-graph-scope-label"><span className="memory-scope memory-scope--project">project</span></span>
         <span className="mem-graph-scope-label"><span className="memory-scope memory-scope--global">global</span></span>
       </div>
+      <div className="mem-graph-toolbar">
+        <p className="mem-graph-help">Select a node to inspect it; drag to arrange. Positions stay put between refreshes.</p>
+        <button type="button" className="mem-graph-reset" onClick={resetLayout}>reset layout</button>
+      </div>
       <svg
         ref={svgRef}
         viewBox={`0 0 ${W} ${H}`}
         className="mem-graph-svg"
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
       >
         {graphEdges.map((e, i) => {
           const a = pos.get(e.from);
@@ -185,9 +175,11 @@ export function MemoryGraph({ nodes, edges, selected, onSelect }) {
           return (
             <g key={i} className={`mem-edge${active ? ' mem-edge--active' : ''}`}>
               <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
-              <text x={mx} y={my - 4} textAnchor="middle" className="mem-edge-label">
-                {e.rel}
-              </text>
+              {active && (
+                <text x={mx} y={my - 4} textAnchor="middle" className="mem-edge-label">
+                  {e.rel}
+                </text>
+              )}
               <title>
                 {nodesById.get(e.from)?.intent || e.from} —{e.rel}→ {nodesById.get(e.to)?.intent || e.to}:{' '}
                 {REL_DESC[e.rel]}
@@ -203,16 +195,29 @@ export function MemoryGraph({ nodes, edges, selected, onSelect }) {
             <g
               key={n.id}
               className={`mem-node${active ? ' mem-node--active' : ''}`}
+              role="button"
+              tabIndex={0}
+              aria-pressed={selected === n.id}
+              aria-label={`${n.scope || 'project'} ${n.type}: ${n.intent || n.memoryId || n.id}`}
               onPointerDown={(ev) => onPointerDown(n.id, ev)}
-              onPointerUp={(ev) => onPointerUp(n.id, ev)}
+              onKeyDown={(ev) => {
+                if (ev.key === 'Enter' || ev.key === ' ') {
+                  ev.preventDefault();
+                  onSelect(selected === n.id ? null : n.id);
+                }
+              }}
             >
               <circle cx={p.x} cy={p.y} r={12} className={TYPE_CLASS(n.type)} />
-              <text x={p.x} y={p.y - 16} textAnchor="middle" className="mem-node-text">
-                {n.type}
-              </text>
-              <text x={p.x} y={p.y + 24} textAnchor="middle" className={`mem-node-scope-text memory-scope--${n.scope || 'project'}`}>
-                {n.scope || 'project'}
-              </text>
+              {active && (
+                <>
+                  <text x={p.x} y={p.y - 18} textAnchor="middle" className="mem-node-text">
+                    {shortLabel(n.intent || n.type)}
+                  </text>
+                  <text x={p.x} y={p.y + 25} textAnchor="middle" className={`mem-node-scope-text memory-scope--${n.scope || 'project'}`}>
+                    {n.scope || 'project'}
+                  </text>
+                </>
+              )}
               <title>
                 {n.scope || 'project'} {n.type}: {n.intent || n.memoryId || n.id} — click to inspect
               </title>

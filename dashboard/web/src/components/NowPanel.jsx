@@ -46,18 +46,21 @@ export function buildResumePrompt(goal) {
 
 function CopyButton({ text }) {
   const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
+      setCopyFailed(false);
       setTimeout(() => setCopied(false), 1500);
     } catch {
-      /* clipboard unavailable */
+      setCopied(false);
+      setCopyFailed(true);
     }
   };
   return (
-    <button type="button" className="resume-copy" onClick={copy}>
-      <span aria-live="polite">{copied ? 'copied ✓' : 'copy resume prompt'}</span>
+      <button type="button" className={`resume-copy${copyFailed ? ' resume-copy--error' : ''}`} onClick={copy}>
+      <span aria-live="polite">{copied ? 'copied ✓' : copyFailed ? 'copy unavailable' : 'copy resume prompt'}</span>
     </button>
   );
 }

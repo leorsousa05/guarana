@@ -154,6 +154,8 @@ describe('GuaranaOrchestrator', () => {
     await duplicate['chat.message']({ sessionID: 's1' }, { parts: parts('Implement a dashboard filter') });
     const out = { system: [] };
     await api['experimental.chat.system.transform']({ sessionID: 's1' }, out);
+    // Separate plugin isolates do not share the in-memory cache. The durable claim must still suppress the second injection.
+    globalThis[Symbol.for('guarana.orchestrator.memory-injection-cache')].delete(`${path.resolve(tmpDir)}::s1`);
     const duplicateOut = { system: [] };
     await duplicate['experimental.chat.system.transform']({ sessionID: 's1' }, duplicateOut);
     assert.equal((out.system.join('\n').match(/guarana memory \(automatic context\)/g) || []).length, 1);

@@ -11,7 +11,7 @@ confirmed memory. Explicit `guarana:<skill>` commands remain an escape hatch.
 
 | Skill | Description | Trigger | Body |
 |---|---|---|---|
-| guarana:plan | Restore state, classify intent, dispatch with condition + budget | Starting any task; "where were we"; choosing next step | [skills/plan/SKILL.md](skills/plan/SKILL.md) |
+| guarana:plan | Restore state, discover consequential requirement gaps, ask targeted questions before coding, then dispatch | Starting any task; "where were we"; choosing next step | [skills/plan/SKILL.md](skills/plan/SKILL.md) |
 | guarana:build | Run lifecycle Frame/Run/Verify/Record, triggers, budgets, stop reasons | Starting or executing a run; run budgets; stop conditions | [skills/build/SKILL.md](skills/build/SKILL.md) |
 | guarana:code | Implementation: read-before-edit, minimal diff, diff + stop reason | Implementing, editing, writing code | [skills/code/SKILL.md](skills/code/SKILL.md) |
 | guarana:verify | Termination gate: 3 guards, pass/fail + proof, split enforcement | Checking work, acceptance, "is it done" | [skills/verify/SKILL.md](skills/verify/SKILL.md) |

@@ -79,6 +79,8 @@ export function buildSystemBlock(workflow) {
     '',
     'Rules:',
     '- Follow the active skill body appended below (it is injected every turn).',
+    '- Before code dispatch, inspect project evidence and ask about consequential requirement gaps; do not silently assume scope or acceptance for substantial/ambiguous work.',
+    '- Skip redundant questions for small, fully specified tasks; record material assumptions.',
     '- When the current step is done, call `workflow_tick` with the matching action',
     '  to advance the state machine (e.g. code_complete, verify_pass, verify_fail).',
     '- Use `workflow_get` to read the latest state.',

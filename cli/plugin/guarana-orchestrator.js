@@ -52,6 +52,97 @@ function storeSessionInjectionState(key, value) {
   }
 }
 
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function withPersistentInjectionState(directory, update) {
+  const telemetryDir = path.join(directory, '.specs', 'state', 'telemetry');
+  const stateFile = path.join(telemetryDir, 'memory-injection-state.json');
+  const lockFile = path.join(telemetryDir, 'memory-injection-state.lock');
+  fs.mkdirSync(telemetryDir, { recursive: true });
+
+  let lock;
+  const deadline = Date.now() + 2000;
+  while (lock == null && Date.now() < deadline) {
+    try {
+      lock = fs.openSync(lockFile, 'wx');
+    } catch (err) {
+      if (err.code !== 'EEXIST') throw err;
+      try {
+        if (Date.now() - fs.statSync(lockFile).mtimeMs > 10000) fs.unlinkSync(lockFile);
+      } catch {
+        // The owner may have released the lock between stat and unlink.
+      }
+      await wait(5);
+    }
+  }
+  if (lock == null) return null;
+
+  try {
+    let state;
+    try {
+      state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    } catch {
+      state = { sessions: {} };
+    }
+    if (!state.sessions || typeof state.sessions !== 'object') state.sessions = {};
+    const result = update(state);
+    const tempFile = `${stateFile}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
+    fs.writeFileSync(tempFile, JSON.stringify(state), 'utf8');
+    fs.renameSync(tempFile, stateFile);
+    return result;
+  } finally {
+    try { fs.closeSync(lock); } catch {}
+    try { fs.unlinkSync(lockFile); } catch {}
+  }
+}
+
+async function claimMemoryReferences(directory, sessionID, references, fallbackReason) {
+  return withPersistentInjectionState(directory, (state) => {
+    const previous = state.sessions[sessionID] || { seen: [], nextReason: fallbackReason || 'session-start' };
+    const seen = new Set(previous.seen || []);
+    const memories = references.filter((ref) => {
+      if (!ref || typeof ref.id !== 'string') return false;
+      const key = `${ref.scope === 'global' ? 'global' : 'project'}:${ref.id}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    const reason = previous.nextReason || fallbackReason || 'session-start';
+    delete state.sessions[sessionID];
+    state.sessions[sessionID] = {
+      seen: [...seen],
+      nextReason: memories.length ? 'new-memories' : reason,
+      updatedAt: Date.now(),
+    };
+    while (Object.keys(state.sessions).length > 128) {
+      delete state.sessions[Object.keys(state.sessions)[0]];
+    }
+    return { memories, reason };
+  });
+}
+
+async function resetPersistentMemoryReferences(directory, sessionID, reason) {
+  return withPersistentInjectionState(directory, (state) => {
+    delete state.sessions[sessionID];
+    state.sessions[sessionID] = { seen: [], nextReason: reason, updatedAt: Date.now() };
+    while (Object.keys(state.sessions).length > 128) {
+      delete state.sessions[Object.keys(state.sessions)[0]];
+    }
+    return true;
+  });
+}
+
+function contextForReferences(context, references) {
+  if (!context || !references.length) return null;
+  const keys = new Set(references.map((ref) => `${ref.scope === 'global' ? 'global' : 'project'}:${ref.id}`));
+  const selected = {};
+  for (const group of MEMORY_CONTEXT_GROUPS) {
+    selected[group] = (context[group] || []).filter((node) => keys.has(memoryNodeKey(node)));
+  }
+  selected.count = references.length;
+  return selected;
+}
+
 // Load the core engine from repo (plugin/ -> ../orchestrator) or bundle
 // (cli/plugin/ -> ../orchestrator). Same relative path covers both; ../../orchestrator
 // is a fallback for running the bundle in-repo.
@@ -361,7 +452,14 @@ export const GuaranaOrchestrator = async ({ directory }) => {
         const c = await core();
         if (!c) return;
         const wf = latest ? latest : c.state.load(directory);
-        const pendingMemory = selectUnseenMemory(memoryContext, new Set(seen));
+        const candidates = selectUnseenMemory(memoryContext, new Set(seen));
+        const claim = candidates.memories.length
+          ? await claimMemoryReferences(directory, sessionID, candidates.memories, sessionMemory.nextReason)
+          : { memories: [], reason: sessionMemory.nextReason };
+        const pendingMemory = {
+          memories: claim?.memories || [],
+          context: contextForReferences(candidates.context, claim?.memories || []),
+        };
         const injection = `${ORCHESTRATOR_INJECTION_MARKER}\n${c.prompt.buildInjection(wf, { memoryContext: pendingMemory.context, directory })}`;
         if (!Array.isArray(output.system)) output.system = [];
         if (output.system.length > 0) {
@@ -370,13 +468,13 @@ export const GuaranaOrchestrator = async ({ directory }) => {
           output.system.push(injection);
         }
         if (pendingMemory.memories.length) {
-          for (const node of pendingMemory.memories) seen.add(`${node.scope}:${node.id}`);
+          for (const node of pendingMemory.memories) seen.add(memoryNodeKey(node));
           append({
             ts: Date.now(),
             type: 'memory-injected',
             sessionID,
             workflowState: wf.state,
-            reason: sessionMemory.nextReason,
+            reason: claim.reason,
             memories: pendingMemory.memories,
           });
           sessionMemory.nextReason = 'new-memories';
@@ -388,13 +486,21 @@ export const GuaranaOrchestrator = async ({ directory }) => {
 
     'session.created': async (event) => {
       const sessionID = sessionIdFrom(event);
-      if (sessionID) storeSessionInjectionState(sessionCacheKey(sessionID), { seen: new Set(), nextReason: 'session-start' });
+      if (sessionID) {
+        storeSessionInjectionState(sessionCacheKey(sessionID), { seen: new Set(), nextReason: 'session-start' });
+        try {
+          await resetPersistentMemoryReferences(directory, sessionID, 'session-start');
+        } catch (err) {
+          append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
+        }
+      }
     },
 
     'session.compacted': async (event) => {
       const sessionID = sessionIdFrom(event) || activeSessionID || 'unknown';
       storeSessionInjectionState(sessionCacheKey(sessionID), { seen: new Set(), nextReason: 'compacted' });
       try {
+        await resetPersistentMemoryReferences(directory, sessionID, 'compacted');
         const c = await core();
         if (!c) return;
         const wf = c.state.load(directory);
