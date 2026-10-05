@@ -4,7 +4,7 @@ const { PLUGIN_NAME } = require('../constants.js');
 
 function targetDir(useProject) {
   return useProject
-    ? path.join(process.cwd(), 'skills', 'guarana')
+    ? path.join(process.cwd(), '.opencode', 'skills', 'guarana')
     : path.join(os.homedir(), '.agents', 'skills', 'guarana');
 }
 

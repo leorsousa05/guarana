@@ -2,21 +2,30 @@
   "name": "guarana",
   "version": "0.8.6",
   "description": "Install/uninstall/list/update the guarana skill suite for OpenCode",
+  "engines": {
+    "node": ">=22"
+  },
   "bin": {
     "guarana": "bin/guarana.js"
   },
   "files": [
     "bin",
-    "cli"
+    "cli",
+    "CHANGELOG.md",
+    "RELEASING.md",
+    "LICENSE"
   ],
   "scripts": {
     "test": "node --test orchestrator/*.test.js dashboard/server/lib/*.test.js dashboard/server/app.test.js dashboard/web/src/lib/memoryGraphLayout.test.js plugin/*.test.mjs cli/commands/*.test.js cli/lib/*.test.js memory/*.test.mjs",
     "test:all": "node --test '*/**/*.test.{js,mjs}'",
     "sync-cli": "node scripts/sync-cli-bundle.mjs",
     "check-cli": "node scripts/check-cli-bundle.mjs",
+    "smoke:pack": "node scripts/smoke-packed-cli.mjs",
+    "audit": "npm audit --prefix dashboard && npm audit --prefix dashboard/server",
     "specs:validate": "node bin/guarana.js specs validate",
     "build:dashboard": "cd dashboard && npm run build",
-    "build": "npm run build:dashboard && npm run sync-cli"
+    "build": "npm run build:dashboard && npm run sync-cli",
+    "prepack": "node scripts/check-cli-bundle.mjs 1>&2"
   },
   "license": "MIT"
 }

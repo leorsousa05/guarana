@@ -18,12 +18,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 //   orchestrator/prompt.js -> ../skills/guarana
 // The cli bundle layout is
 //   cli/orchestrator/prompt.js -> ../skills/guarana
-// A plugin-deployed layout may point at the project skills (../skills/guarana)
-// or the globally installed skills (~/.agents/skills/guarana). All covered by
+// A plugin-deployed layout may point at the project skills
+// (.opencode/skills/guarana) or the globally installed skills
+// (~/.agents/skills/guarana). All covered by
 // an explicit candidate list so injection never depends on cwd.
 function skillDirs(projectDir) {
   const candidates = [
-    projectDir ? path.join(projectDir, 'skills', 'guarana') : null,
+    projectDir ? path.join(projectDir, '.opencode', 'skills', 'guarana') : null,
     path.join(__dirname, '..', 'skills', 'guarana'),
     path.join(__dirname, '..', '..', 'skills', 'guarana'),
     path.join(__dirname, '..', '..', '..', 'skills', 'guarana'),
@@ -81,6 +82,7 @@ export function buildSystemBlock(workflow) {
     '- Follow the active skill body appended below (it is injected every turn).',
     '- Before code dispatch, inspect project evidence and ask about consequential requirement gaps; do not silently assume scope or acceptance for substantial/ambiguous work.',
     '- Skip redundant questions for small, fully specified tasks; record material assumptions.',
+    '- `.specs/state/workflow.json` is not the human-readable record: before advancing workflow steps, update `.specs/README.md`, `.specs/state/project-state.md`, and the active feature spec with task-specific requirements, current status, and verified proof; inspect that the writes landed.',
     '- When the current step is done, call `workflow_tick` with the matching action',
     '  to advance the state machine (e.g. code_complete, verify_pass, verify_fail).',
     '- Use `workflow_get` to read the latest state.',

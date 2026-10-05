@@ -23,7 +23,7 @@ Constraints:
 - Install is manual for now: copy/symlink into `.opencode/plugins/`. (CLI integration = future work.)
 
 ## Component B — dashboard (`dashboard/`)
-- `dashboard/server/` — Express API, Node 18+, serves on `localhost:4200` (env `GUARANA_DASH_PORT` overrides):
+- `dashboard/server/` — Express API, Node 22+, serves on `localhost:4200` (env `GUARANA_DASH_PORT` overrides):
   - `GET /api/telemetry/summary` — runs (sessions) with start/end, event counts, token totals
   - `GET /api/telemetry/events?session=<id>` — raw events for a run
   - `GET /api/specs/tracker` — parsed `.specs/README.md` tracker table + DONE/NEXT/BLOCKED

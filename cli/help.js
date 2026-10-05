@@ -27,7 +27,7 @@ Usage:
 
 Targets:
   default      ~/.agents/skills/guarana/
-  --project    ./skills/guarana/ (current working directory)
+  --project    ./.opencode/skills/guarana/ (current working directory)
 
 Plugin targets:
   default      ~/.config/opencode/plugins/{guarana-telemetry.js,guarana-memory.js,guarana-orchestrator.js}

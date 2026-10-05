@@ -6,6 +6,9 @@ Entry format: date · feature · what validated / failed / re-opened · proof pa
 
 ## Records
 
+### 2026-10-03 — explicit spec lifecycle writes
+- [Spec lifecycle writes](2026-10-03-spec-lifecycle-writes.md) — plan prompt requirements and installed skill synchronization; full suite 189/189, CLI bundle check PASS
+
 ### 2026-08-21 — suite build (7 skills)
 - [plan](2026-08-21-plan.md) · [cold-start](2026-08-21-plan-coldstart.md) · [cold-start v2](2026-08-21-plan-coldstart-v2.md)
 - [build](2026-08-21-build.md)
@@ -20,6 +23,9 @@ Entry format: date · feature · what validated / failed / re-opened · proof pa
 - [CLI](2026-08-21-cli.md)
 - [dashboard design](2026-08-21-dashboard-design.md) · [dashboard](2026-08-21-dashboard.md)
 - [dashboard bugfix](2026-08-22-dashboard-bugfix.md)
+
+### 2026-10-02 — release readiness
+- [1.0 release readiness](2026-10-02-release-readiness.md) — Node 22/24 support, reproducible npm package, OpenCode smoke, license, changelog, and known-issue cleanup
 
 ### 2026-08-30/31 — persistent memory
 - [Slice 1](../features/memory/memory.md) engine + CLI — [2026-08-30-memory-slice1.md](2026-08-30-memory-slice1.md)

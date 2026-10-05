@@ -9,7 +9,7 @@ A Node.js CLI named `guarana` that installs/uninstalls/lists/updates the guarana
 ## Commands
 - `guarana install [--project]` — install the skill suite and the automatic telemetry, memory, and orchestrator plugins with their engines.
   - Default (global): copy `skills/guarana/` → `~/.agents/skills/guarana/`.
-  - `--project`: copy into `./skills/guarana/` of the current working directory.
+  - `--project`: copy into `./.opencode/skills/guarana/` of the current working directory.
 - `guarana uninstall [--project]` — remove the installed suite and its automatic plugins/engines from the target.
 - `guarana list [--project]` — show installed skills and version at the target.
 - `guarana update [--project]` — re-install from the CLI's bundled skills (overwrites target).
@@ -51,6 +51,8 @@ A Node.js CLI named `guarana` that installs/uninstalls/lists/updates the guarana
 
 ## Constraints
 - Node.js, stdlib only (`fs`, `path`, `os`). No runtime dependencies.
+- Supported Node.js runtime is `>=22`; CI validates Node 22.x and 24.x.
+- OpenCode support targets the latest stable release and requires a recorded host smoke test for each release.
 - Single bin entry `guarana` via `package.json` (`bin` field).
 - Skills are bundled inside the CLI package (copied from repo `skills/` at publish/dev time, or referenced relative to the CLI source).
 - Idempotent install: safe to run twice; prints what it did.
@@ -60,7 +62,7 @@ A Node.js CLI named `guarana` that installs/uninstalls/lists/updates the guarana
 From a temp HOME:
 1. `node bin/guarana.js install` → `~/.agents/skills/guarana/SKILL.md` and all 7 sub-skill SKILL.md files exist; stamp file present.
 2. `guarana list` prints the 7 skills.
-3. `guarana install --project` in a temp dir → `./skills/guarana/` populated.
+3. `guarana install --project` in a temp dir → `./.opencode/skills/guarana/` populated and discoverable by OpenCode.
 4. `guarana uninstall` removes the global install cleanly.
 5. `guarana update` re-installs without error.
 6. `--help` and `--version` work.
@@ -76,3 +78,13 @@ From a temp HOME:
 21. `--json` output parses as JSON without diagnostic text mixed into stdout.
 22. The current repository passes the validator through both `guarana specs validate` and `npm run specs:validate`.
 23. `guarana:verify` runs the structural validator before checking implementation acceptance criteria.
+
+## Addendum 2026-10-02: reproducible package and runtime support
+- The generated CLI bundle excludes `node_modules`; the web command installs its locked production dependencies only when needed.
+- The npm tarball contains no environment-local dependency directories and can be installed into an isolated prefix before exercising CLI install/list/plugin status/uninstall flows.
+- `prepack` verifies canonical/bundled source parity. CI runs unit tests, production dashboard build, bundle verification, specs validation, and the packed CLI smoke test on Node 22.x and 24.x.
+
+### Acceptance
+24. `npm pack --dry-run --json` contains no path segment named `node_modules` and includes the license and release notes.
+25. `npm run smoke:pack` installs the generated tarball in an isolated prefix and verifies the CLI install, list, plugin health, and uninstall lifecycle.
+26. `npm run check-cli` passes when the canonical source contains ignored local `node_modules` but the distributable bundle does not.

@@ -2,10 +2,10 @@
   "version": 1,
   "state": "completed",
   "skill": null,
-  "activeTask": "Verification complete: all five planning discovery criteria pass; requested commands pass. No files were edited intentionally.",
-  "goal": "Verification complete: all five planning discovery criteria pass; requested commands pass. No files were edited intentionally.",
-  "condition": "Report evidence-based verification outcome and command results.",
-  "updatedAt": 1790798394280,
+  "activeTask": "Independent read-only release-readiness verification for Guarana 1.0",
+  "goal": "Independent read-only release-readiness verification for Guarana 1.0",
+  "condition": "All six requested criteria pass with inspectable configuration, documentation, package smoke, test/build/audit outputs; provider-backed session remains explicitly documented as a pre-publish gate.",
+  "updatedAt": 1790959988932,
   "history": [
     {
       "ts": 1788711769257,
@@ -2022,6 +2022,97 @@
       "from": "verifying",
       "to": "completed",
       "note": "All five acceptance criteria are supported by source/spec/test evidence; all requested commands passed."
+    },
+    {
+      "ts": 1790957309600,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "Análise ampla, sem pedido de implementação."
+    },
+    {
+      "ts": 1790957516551,
+      "event": "abort",
+      "from": "planning",
+      "to": "idle",
+      "note": "Análise somente; encerra o ciclo de implementação sem alterações de produto."
+    },
+    {
+      "ts": 1790957601505,
+      "event": "new_task",
+      "from": "idle",
+      "to": "planning",
+      "note": "Seguir as lacunas priorizadas na resposta anterior; preservar alterações preexistentes."
+    },
+    {
+      "ts": 1790957968636,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Política OpenCode: suportar a versão estável corrente e registrar a versão validada em cada release; ambiente disponível 1.18.34."
+    },
+    {
+      "ts": 1790957979896,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Run limitado a empacotamento, suporte, release docs, licença e known issues."
+    },
+    {
+      "ts": 1790958366004,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "O smoke identificou que os paths dos assets em cli/constants.js apontam para arquivos canônicos fora do pacote npm."
+    },
+    {
+      "ts": 1790958371272,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "npm pack instala, mas guarana install --project falha procurando <prefix>/node_modules/guarana/skills/guarana; resolver assets relativamente ao bundle cli/."
+    },
+    {
+      "ts": 1790958378232,
+      "event": "fix_start",
+      "from": "debugging",
+      "to": "coding",
+      "note": "As constantes devem apontar para cli/skills, cli/plugin, cli/memory, cli/orchestrator e cli/dashboard no pacote npm."
+    },
+    {
+      "ts": 1790959686156,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Implementação inclui correção de paths detectada pelo smoke, projeto skills em .opencode/skills, CI e toolchain Vite corrigida."
+    },
+    {
+      "ts": 1790959696899,
+      "event": "new_task",
+      "from": "verifying",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1790959696962,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1790959782015,
+      "event": "force",
+      "from": "planning",
+      "to": "verifying",
+      "note": "Routing directly to the explicit verification gate; the changed implementation predates this verifier context."
+    },
+    {
+      "ts": 1790959988932,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "All six criteria pass; local Node 24.20.0 checks are green, OpenCode automated smoke is 1.18.34. Provider-backed fresh-session smoke remains required on the 1.0.0 candidate."
     }
   ]
 }

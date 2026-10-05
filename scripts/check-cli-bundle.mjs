@@ -28,7 +28,7 @@ let ok = true;
 for (const [from, to] of pairs) {
   const res = spawnSync(
     'diff',
-    ['-ruq', path.join(root, from), path.join(root, to)],
+    ['-ruq', '--exclude=node_modules', path.join(root, from), path.join(root, to)],
     { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
   );
   if (res.status !== 0) {

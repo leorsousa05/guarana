@@ -63,6 +63,7 @@ Verification failure (`verify_fail`) auto-moves to debugging/correction (`fix_st
 6. **Persisted source of truth.** State survives a restart from `.specs/state/workflow.json`; corrupt/missing file degrades to idle, never throws.
 7. **Progressive disclosure (ponytail-style injection).** The always-on block is small; bounded relevant confirmed memory and the **active** skill's full body are injected every turn; non-active skill bodies are not in context. Proof: `buildInjection` includes the memory marker and `guarana:<skill> (injected)` + `# guarana:<skill>` when context exists.
 8. **Bundle + dashboard.** `npm test`, `check-cli` PASS; orchestrator plugin + engine deployable via `guarana plugin install`; `/api/workflow/current` returns live state.
+9. **Human-readable spec lifecycle.** Planning replaces generic bootstrap content with a task-specific slug, known requirements, assumptions, scope, and falsifiable acceptance criteria before `plan_complete`; each workflow stage updates project-state and feature status; successful verification records exact proof and updates tracker status. Workflow JSON alone does not satisfy this criterion.
 
 ## Definition of done
 All criteria have written proofs (unit + plugin + dashboard tests), `npm test` green, `check-cli` PASS, and the change is recorded in `.specs/changes/`.

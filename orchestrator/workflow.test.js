@@ -213,7 +213,9 @@ test('resultFailed detects errors', () => {
   assert.ok(resultFailed('{"error":"boom"}'));
   assert.ok(!resultFailed('+ Failed checks lead to debugging'));
   assert.ok(!resultFailed('The report explains why a test failed.'));
+  assert.ok(!resultFailed(''));
   assert.ok(!resultFailed({ output: 'all good' }));
+  assert.ok(!resultFailed({ output: '' }));
   assert.ok(!resultFailed(null));
 });
 
@@ -231,6 +233,8 @@ test('system block is always-on and names the skill', () => {
   assert.match(block, /guarana:plan/);
   assert.match(block, /ask about consequential requirement gaps/i);
   assert.match(block, /Skip redundant questions for small, fully specified tasks/i);
+  assert.match(block, /workflow\.json.*not the human-readable record/i);
+  assert.match(block, /active feature spec/i);
 });
 
 test('planning injection asks about consequential unknowns before code dispatch', () => {
@@ -240,6 +244,8 @@ test('planning injection asks about consequential unknowns before code dispatch'
   assert.match(injection, /Do not dispatch worker-code or begin implementation while a critical unknown/i);
   assert.match(injection, /up to five per\s+round/i);
   assert.match(injection, /acceptance condition/i);
+  assert.match(injection, /System-of-record writes \(mandatory\)/i);
+  assert.match(injection, /before `plan_complete`/i);
 });
 
 test('resolveSkillBody returns the plan SKILL.md body', () => {

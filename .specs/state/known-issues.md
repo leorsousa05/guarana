@@ -2,6 +2,30 @@
 
 Open problems and material failures from the build. Entry format: title / symptom / reproduction trigger / effective or possible mitigation / status.
 
+## 2026-10-02 — npm pack JSON output polluted by prepack output
+- **Symptom:** The packed-CLI smoke test could not parse `npm pack --json` because the prepack bundle-check message was written to stdout before the JSON document.
+- **Reproduction trigger:** Run `npm run smoke:pack` with a prepack script that writes status output to stdout.
+- **Mitigation:** Send the prepack check's human-readable output to stderr; keep stdout machine-readable for npm's JSON result.
+- **Status:** Resolved (2026-10-02); `npm run smoke:pack` passes and parses the pack manifest.
+
+## 2026-10-02 — packed CLI resolved install assets outside the npm package
+- **Symptom:** `guarana install --project` from an installed npm tarball failed with ENOENT for `<prefix>/node_modules/guarana/skills/guarana`.
+- **Reproduction trigger:** Install the npm tarball into an isolated prefix, then run `guarana install --project`.
+- **Mitigation:** Resolve skills, plugins, engines, and dashboard assets relative to the bundled `cli/` directory.
+- **Status:** Resolved (2026-10-02); `npm run smoke:pack` installs from the actual tarball and completes install/list/plugin health/uninstall.
+
+## 2026-10-02 — project install path was not discovered by OpenCode
+- **Symptom:** `opencode debug skill` did not list Guarana skills after `guarana install --project` placed them under `./skills/guarana/`.
+- **Reproduction trigger:** Install the packed CLI into a temporary project and inspect OpenCode's resolved project skills.
+- **Mitigation:** Install project skills under `./.opencode/skills/guarana/`, the directory recognized by OpenCode.
+- **Status:** Resolved (2026-10-02); the OpenCode host smoke check confirms `guarana:plan` is discoverable.
+
+## 2026-10-02 — dashboard dependencies had published advisories
+- **Symptom:** `npm audit` reported one high Vite/esbuild advisory and moderate `qs` advisories in Express dependencies.
+- **Reproduction trigger:** Run `npm audit --prefix dashboard` and `npm audit --prefix dashboard/server`.
+- **Mitigation:** Upgrade the dashboard build toolchain to patched Vite 6.4.3/plugin-react 4.7.0 and refresh both lockfiles with safe audit fixes.
+- **Status:** Resolved (2026-10-02); both dashboard audits report zero vulnerabilities.
+
 ## 2026-08-22 — dashboard: token totals absent, NOW goal hidden, specs missing goal field
 - **Symptom:** Telemetry summary always reported `tokens: 0`; the NOW panel never showed the open goal; newly scaffolded project-state lacked a `Goal:` checkpoint line.
 - **Reproduction trigger:** Run the dashboard with real telemetry produced by `plugin/guarana-telemetry.js` (writes `tokens` as an object), or view the NOW panel with no runs / a freshly scaffolded `.specs/`.
@@ -38,35 +62,35 @@ Open problems and material failures from the build. Entry format: title / sympto
 ## 2026-09-27 — workflow entered debugging after successful verification command
 - **Symptom:** Workflow transitioned from `verifying` to `debugging` after a successful `git diff --check`; attempting `verify_pass` was then rejected as an illegal transition.
 - **Reproduction trigger:** Run `git diff --check` during verification when the tool returns no output.
-- **Mitigation:** Re-read persisted workflow state before applying transitions; investigate workflow auto-routing if reproducible.
-- **Status:** Unclassified; no implementation/test failure observed (`node --test orchestrator/workflow.test.js` passed 29/29).
+- **Mitigation:** `resultFailed` treats empty tool output as success and only recognizes explicit error-shaped output; capture the actual hook payload if the report recurs.
+- **Status:** Closed as not reproduced (2026-10-02); empty-string and empty-output regressions are covered by `orchestrator/workflow.test.js`.
 
 ## 2026-09-27 — completion-memory removal initially missed workflow_tick call site
 - **Symptom:** The orchestrator determinism test failed because `workflow_tick` still called the removed `saveCompletionMemory` helper.
 - **Reproduction trigger:** Remove the helper and chat-driven completion call while leaving the workflow-tool completion call.
 - **Mitigation:** Remove both completion call sites; regression test now asserts workflow completion leaves existing memory unchanged.
-- **Status:** Unclassified and fixed; `plugin/guarana-orchestrator.test.mjs` and full `npm test` both pass after removing both completion call sites.
+- **Status:** Resolved (2026-09-27); both completion call sites were removed and regression coverage passes in `plugin/guarana-orchestrator.test.mjs` and the full suite.
 
 ## 2026-09-28 — memory tool test read the real user's global preference vault
 - **Symptom:** The context-size assertion saw two extra user preference nodes when `memory_get_context_for_task` defaulted to both scopes.
 - **Reproduction trigger:** Run the scoped memory tool tests with the real `HOME`; the global vault contains durable preferences used by production retrieval.
 - **Mitigation:** Give the test suite a temporary home directory and restore `HOME` after each test; count all typed context groups.
-- **Status:** Unclassified and fixed; full `npm test` passes after isolating test HOME.
+- **Status:** Resolved (2026-09-28); tests use a temporary HOME and the full `npm test` suite passes.
 
 ## 2026-09-28 — API test fixture omitted isolated HOME declarations
 - **Symptom:** The memory API test setup referenced `oldHome` and `projectMemory` without declaring them.
 - **Reproduction trigger:** Run `node --test dashboard/server/app.test.js` after adding the injection fixture.
 - **Mitigation:** Declare fixture-scoped bindings, isolate HOME for the global vault, and restore it in teardown.
-- **Status:** Unclassified and fixed; `dashboard/server/app.test.js` passes 7/7.
+- **Status:** Resolved (2026-09-28); the fixture isolates HOME and `dashboard/server/app.test.js` passes.
 
 ## 2026-09-28 — specs validator self-test used the parent directory as project root
 - **Symptom:** The current-repository validator test reported all required `.specs` paths missing.
 - **Reproduction trigger:** Resolve the repository root with one extra `..` from `cli/commands/specs.test.js`.
 - **Mitigation:** Resolve the project root as two parent directories from the test file.
-- **Status:** Unclassified and fixed; full `npm test` passes 179/179.
+- **Status:** Resolved (2026-09-28); the project-root calculation is corrected and `npm run specs:validate` passes.
 
 ## 2026-09-28 — global graph test assumed reversed project edge direction
 - **Symptom:** The scope graph test expected the seeded project edge to originate at the selected decision, but the fixture stores it as an incoming dependency.
 - **Reproduction trigger:** Run `node --test dashboard/server/lib/memory.test.js` after adding global graph coverage.
 - **Mitigation:** Assert that the expected project node is either endpoint of the correctly scoped edge.
-- **Status:** Unclassified and fixed; focused graph test rerun pending.
+- **Status:** Resolved (2026-10-02); focused `dashboard/server/lib/memory.test.js` and the full suite pass.

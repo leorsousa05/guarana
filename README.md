@@ -13,7 +13,7 @@
   <br>
   <a href="https://opencode.ai/"><img src="https://img.shields.io/badge/runtime-OpenCode-111827?style=for-the-badge" alt="OpenCode runtime"></a>
   <a href="https://github.com/leorsousa05/guarana/commits/main"><img src="https://img.shields.io/github/last-commit/leorsousa05/guarana?style=for-the-badge&color=7c3aed" alt="Last commit"></a>
-  <a href="https://github.com/leorsousa05/guarana/blob/main/package.json"><img src="https://img.shields.io/badge/node-18%2B-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node.js 18 or newer"></a>
+  <a href="https://github.com/leorsousa05/guarana/blob/main/package.json"><img src="https://img.shields.io/badge/node-22%2B-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node.js 22 or newer"></a>
 </p>
 
 <p align="center">
@@ -61,6 +61,13 @@ only the active skill into the current turn.
 | Prompts become bloated | Progressive disclosure injects only the active skill |
 
 ## Quick Start
+
+### Requirements and support
+
+- **Node.js 22 or newer.** CI validates Node 22.x and 24.x.
+- **OpenCode:** Guarana targets OpenCode's plugin API. Each release is smoke-tested
+  against the latest stable OpenCode version; older versions are not in the
+  support contract unless separately validated. See [release checks](RELEASING.md).
 
 Install Guarana globally:
 
@@ -222,6 +229,8 @@ npm run build
 - [Memory model](docs/reference/memory.md)
 - [Feature specifications](.specs/features/overview.md)
 - [Human validation record](human-gate-validation.md)
+- [Release process and 1.0 gate](RELEASING.md)
+- [Changelog](CHANGELOG.md)
 
 ## Status
 

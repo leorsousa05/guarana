@@ -28,6 +28,33 @@ and no project-specific ADR is fabricated. The plan worker fills in the
 acceptance condition and asks only for contract facts that cannot be inferred.
 Only after `.specs/` exists on disk does "disk is truth" (ADR-004) apply.
 
+## System-of-record writes (mandatory)
+
+The workflow JSON is operational state, not a substitute for the human-readable
+`.specs/` record. Read and write both. A task is not planned until the files on
+disk reflect the task; calling `workflow_tick` alone never completes planning.
+
+1. **During planning, before `plan_complete`:** replace bootstrap placeholders
+   with the real task. Give the feature directory/file a task-specific slug;
+   update its goal, known requirements, explicit assumptions/open questions,
+   scope boundaries, and observable acceptance criteria. Criteria must be
+   specific enough to distinguish a correct result from a plausible but wrong
+   one; do not leave text such as "implement requested behavior". Update
+   `.specs/README.md` (`NEXT` and tracker row) and
+   `.specs/state/project-state.md` (goal, acceptance condition, current step,
+   and pending writes). Preserve unrelated project records and existing ADRs.
+2. **At each lifecycle transition:** update project-state checkpoint and pending
+   writes to match the active step. Keep the feature spec status in sync (planned,
+   implemented, validated); do not claim validation before independent checks.
+3. **After verification:** write the exact checks and outcomes as proof in the
+   feature spec, mark the tracker `VALIDATED` (and `SHIPPED` only when actually
+   shipped), update `DONE`/`NEXT`/`BLOCKED` and project-state, then inspect the
+   resulting diff to confirm the records were actually changed.
+4. If an existing spec is missing, stale, or uses a generic bootstrap, repair it
+   in place before proceeding. Never overwrite unrelated content or fabricate
+   proof. If a write fails, report the blocker and do not describe the task as
+   fully recorded.
+
 ## Requirements discovery gate (before any code dispatch)
 
 Do not treat a user's first sentence as a complete specification for a substantial
@@ -85,4 +112,4 @@ Before a worker-code dispatch, confirm the requirements discovery gate above is
 closed and the feature spec contains a checkable acceptance condition.
 
 ## 4. Stop
-After dispatch, wait for the worker summary. Do not hold worker detail in the main thread; durable facts go to disk, not summaries.
+After dispatch, wait for the worker summary. Do not hold worker detail in the main thread; durable facts go to disk, not summaries. Before leaving planning, verify that the feature spec contains the concrete acceptance condition and that `.specs/README.md` and `state/project-state.md` point to this task.
