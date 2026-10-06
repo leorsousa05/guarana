@@ -45,6 +45,7 @@ const mappings = [
   { from: 'dashboard/server', to: 'cli/dashboard/server' },
   { from: 'dashboard/web/dist', to: 'cli/dashboard/web/dist' },
   { from: 'memory', to: 'cli/memory' },
+  { from: 'skill-engine', to: 'cli/skill-engine' },
 ];
 
 for (const { from, to } of mappings) {

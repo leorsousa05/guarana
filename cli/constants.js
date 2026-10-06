@@ -17,6 +17,7 @@ module.exports = {
   MEMORY_ENGINE_NAME: 'memory',
   ORCHESTRATOR_ENGINE_SOURCE: path.join(__dirname, 'orchestrator'),
   ORCHESTRATOR_ENGINE_NAME: 'orchestrator',
+  SKILL_ENGINE_SOURCE: path.join(__dirname, 'skill-engine'),
   DASH_SERVER_DIR: path.join(__dirname, 'dashboard', 'server'),
   DASH_DEFAULT_PORT: 4200,
 };

@@ -59,7 +59,7 @@ function run(args) {
     process.exit(signal ? 1 : (code ?? 0));
   });
 
-  if (!noOpen) openBrowser(`http://localhost:${port}`);
+  if (!noOpen) openBrowser(`http://127.0.0.1:${port}`);
 }
 
 module.exports = { run };

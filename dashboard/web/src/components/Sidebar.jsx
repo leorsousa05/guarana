@@ -5,6 +5,7 @@ const SECTIONS = [
   ['specs', 'Specs'],
   ['workflow', 'Workflow'],
   ['memory', 'Memory'],
+  ['skills', 'Skills'],
 ];
 
 export function Sidebar({ active, onSelect }) {

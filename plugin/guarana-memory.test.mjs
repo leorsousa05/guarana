@@ -57,6 +57,11 @@ describe('GuaranaMemory', () => {
     assert.match(output.system.join('\n'), /scope: "global"/);
     assert.match(output.system.join('\n'), /scope: "project"/);
     assert.match(output.system.join('\n'), /ordinary task requests/);
+    assert.match(output.system.join('\n'), /Guarana automatic skills/);
+    assert.match(output.system.join('\n'), /skill_list/);
+    assert.match(output.system.join('\n'), /one-off task is not enough/i);
+    assert.match(output.system.join('\n'), /Choose `project`/);
+    assert.match(output.system.join('\n'), /Choose `global`/);
   });
 
   it('keeps normal tool activity out of the memory vault', async () => {
@@ -133,5 +138,75 @@ describe('GuaranaMemory', () => {
       if (oldHome === undefined) delete process.env.HOME;
       else process.env.HOME = oldHome;
     }
+  });
+
+  it('creates a reusable project skill and lists it without a filesystem path', async () => {
+    const result = JSON.parse(await api.tool.skill_create.execute({
+      name: 'node-red-review',
+      description: 'Review and validate Node-RED flows.',
+      scope: 'project',
+      content: '# Node-RED review\n\nInspect flow nodes, validate wiring, then run the focused checks.',
+    }));
+    assert.equal(result.created, true);
+    assert.equal(result.scope, 'project');
+    assert.ok(fs.existsSync(path.join(tmpDir, '.opencode', 'skills', 'node-red-review', 'SKILL.md')));
+
+    const listing = JSON.parse(await api.tool.skill_list.execute({}));
+    assert.deepEqual(listing.project.map((skill) => skill.name), ['node-red-review']);
+    assert.equal(JSON.stringify(listing).includes(tmpDir), false);
+  });
+
+  it('stores portable skills globally and keeps them out of the project scope', async () => {
+    const oldHome = process.env.HOME;
+    const fakeHome = path.join(tmpDir, 'user-home');
+    fs.mkdirSync(fakeHome, { recursive: true });
+    process.env.HOME = fakeHome;
+    try {
+      const result = JSON.parse(await api.tool.skill_create.execute({
+        name: 'clear-technical-explanations',
+        description: 'Explain technical changes clearly to a non-specialist.',
+        scope: 'global',
+        content: '# Clear explanations\n\nState the result first, then describe the relevant technical details in plain language.',
+      }));
+      assert.equal(result.scope, 'global');
+      const file = path.join(fakeHome, '.agents', 'skills', 'clear-technical-explanations', 'SKILL.md');
+      assert.ok(fs.existsSync(file));
+      const listing = JSON.parse(await api.tool.skill_list.execute({ scope: 'global' }));
+      assert.deepEqual(listing.global.map((skill) => skill.name), ['clear-technical-explanations']);
+      assert.equal('project' in listing, false);
+    } finally {
+      if (oldHome === undefined) delete process.env.HOME;
+      else process.env.HOME = oldHome;
+    }
+  });
+
+  it('does not overwrite a same-named skill and rejects secrets and invalid scopes', async () => {
+    const name = 'safe-review';
+    const file = path.join(tmpDir, '.opencode', 'skills', name, 'SKILL.md');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, 'user-authored skill');
+    const duplicate = JSON.parse(await api.tool.skill_create.execute({
+      name,
+      description: 'A reviewed skill.',
+      scope: 'global',
+      content: '# Review\n\nFollow the stable review steps.',
+    }));
+    assert.match(duplicate.error, /already exists in project scope/);
+    assert.equal(fs.readFileSync(file, 'utf8'), 'user-authored skill');
+
+    const secret = JSON.parse(await api.tool.skill_create.execute({
+      name: 'credential-handling',
+      description: 'Handle credentials.',
+      scope: 'project',
+      content: '# Credentials\n\nAPI key: ghp_abcdefgh12345678',
+    }));
+    assert.match(secret.error, /secret/);
+    const invalidScope = JSON.parse(await api.tool.skill_create.execute({
+      name: 'another-skill',
+      description: 'A valid description.',
+      scope: '../../outside',
+      content: '# Safe\n\nThis is a valid body.',
+    }));
+    assert.match(invalidScope.error, /scope/);
   });
 });

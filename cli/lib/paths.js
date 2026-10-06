@@ -26,4 +26,9 @@ function orchestratorEngineTarget(useProject) {
   return path.join(pluginsParent, 'orchestrator');
 }
 
-module.exports = { targetDir, pluginTarget, memoryEngineTarget, orchestratorEngineTarget };
+function skillEngineTarget(useProject) {
+  const pluginsParent = path.dirname(path.dirname(pluginTarget(useProject)));
+  return path.join(pluginsParent, 'skill-engine');
+}
+
+module.exports = { targetDir, pluginTarget, memoryEngineTarget, orchestratorEngineTarget, skillEngineTarget };

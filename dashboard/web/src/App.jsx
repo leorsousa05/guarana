@@ -11,8 +11,9 @@ import { Specs } from './components/Specs.jsx';
 import { Memory } from './components/Memory.jsx';
 import { Workflow } from './components/Workflow.jsx';
 import { Overview } from './components/Overview.jsx';
+import { Skills } from './components/Skills.jsx';
 
-const VIEWS = ['overview', 'now', 'runs', 'specs', 'workflow', 'memory'];
+const VIEWS = ['overview', 'now', 'runs', 'specs', 'workflow', 'memory', 'skills'];
 
 // Read the active view from the URL hash (#/runs -> 'runs'), defaulting to
 // 'now'. Keeps the selected section deep-linkable and shareable.
@@ -103,6 +104,7 @@ export default function App() {
           {active === 'specs' && <Specs tracker={tracker.data} state={state.data} tick={liveTick} />}
           {active === 'workflow' && <Workflow data={workflow.data} />}
           {active === 'memory' && <Memory />}
+          {active === 'skills' && <Skills />}
         </div>
       </div>
     </main>

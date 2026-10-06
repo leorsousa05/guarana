@@ -22,6 +22,7 @@ const pairs = [
   ['dashboard/server', 'cli/dashboard/server'],
   ['dashboard/web/dist', 'cli/dashboard/web/dist'],
   ['memory', 'cli/memory'],
+  ['skill-engine', 'cli/skill-engine'],
 ];
 
 let ok = true;

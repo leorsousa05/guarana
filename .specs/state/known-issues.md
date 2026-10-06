@@ -2,6 +2,18 @@
 
 Open problems and material failures from the build. Entry format: title / symptom / reproduction trigger / effective or possible mitigation / status.
 
+## 2026-10-05 — release-readiness feature proof was not recorded before verification
+- **Symptom:** The independent verifier passed the implementation checks but failed acceptance criterion 8 because exact command outcomes were absent from the feature spec and tracker status remained IMPLEMENTED.
+- **Reproduction trigger:** Finish implementation checks without writing them to the task-specific feature proof before requesting independent verification.
+- **Mitigation:** Record the verifier's exact results and host-smoke boundary in the feature spec, then recheck the proof before marking the tracker VALIDATED.
+- **Status:** Resolved (2026-10-05); exact command outcomes were recorded and independent verification confirmed criterion 8 and the final status/link consistency.
+
+## 2026-10-05 — npm pack JSON manifest shape varies by npm version
+- **Symptom:** The packed-CLI smoke expected `npm pack --json` to return an array, but the installed npm returned an object keyed by package name, so the smoke could not read the archive manifest.
+- **Reproduction trigger:** Run `npm run smoke:pack` with an npm version that emits a keyed-object pack manifest.
+- **Mitigation:** Normalize array and keyed-object manifests before validating and installing the archive.
+- **Status:** Resolved (2026-10-05); the smoke parses the installed npm's manifest shape and then exercises the packed CLI.
+
 ## 2026-10-02 — npm pack JSON output polluted by prepack output
 - **Symptom:** The packed-CLI smoke test could not parse `npm pack --json` because the prepack bundle-check message was written to stdout before the JSON document.
 - **Reproduction trigger:** Run `npm run smoke:pack` with a prepack script that writes status output to stdout.

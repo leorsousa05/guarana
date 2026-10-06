@@ -6,6 +6,12 @@ Entry format: date · feature · what validated / failed / re-opened · proof pa
 
 ## Records
 
+### 2026-10-05 — automatic skill creation
+- [Automatic skill creation and dashboard inventory](2026-10-05-automatic-skill-creation.md) — global/project skill capture, protected native storage, dashboard tabs, and independent verification PASS
+
+### 2026-10-05 — dashboard skill-scope counts
+- [Dashboard skill-scope counts](2026-10-05-dashboard-skill-scope-counts.md) — API-backed Global/Project tab counts, preserved keyboard/responsive ledger behavior, synchronized bundles, and independent verification PASS
+
 ### 2026-10-03 — explicit spec lifecycle writes
 - [Spec lifecycle writes](2026-10-03-spec-lifecycle-writes.md) — plan prompt requirements and installed skill synchronization; full suite 189/189, CLI bundle check PASS
 

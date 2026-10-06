@@ -6,6 +6,7 @@ import os from 'node:os';
 import fs from 'node:fs';
 import { initVault, initUserVault } from '../../memory/vault.js';
 import { createNode } from '../../memory/graph.js';
+import { createSkill } from '../../skill-engine/index.js';
 
 describe('GET /api/telemetry/stream (SSE)', () => {
   let tmp;
@@ -248,5 +249,60 @@ describe('GET/POST /api/memory', () => {
     });
     assert.equal(reviewRes.status, 400);
     assert.ok((await reviewRes.json()).error);
+  });
+});
+
+describe('GET /api/skills', () => {
+  let tmp;
+  let oldHome;
+  let server;
+  let base;
+
+  beforeEach(async () => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-skills-api-'));
+    oldHome = process.env.HOME;
+    process.env.HOME = path.join(tmp, 'home');
+    const app = createApp({ root: tmp, distDir: path.join(tmp, 'dist') });
+    await new Promise((resolve) => {
+      server = app.listen(0, () => resolve());
+    });
+    base = `http://localhost:${server.address().port}`;
+  });
+
+  afterEach(async () => {
+    await new Promise((resolve) => server.close(resolve));
+    if (oldHome === undefined) delete process.env.HOME;
+    else process.env.HOME = oldHome;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('returns generated global/project skills but excludes manual skills and filesystem paths', async () => {
+    const shared = {
+      projectDir: tmp,
+      homeDir: process.env.HOME,
+      name: 'review-release-candidate',
+      description: 'Review a release candidate before publishing.',
+      content: '# Release review\n\nRun checks, inspect the archive, and record the host smoke result.',
+    };
+    createSkill({ ...shared, scope: 'global' });
+    createSkill({ ...shared, name: 'project-build-review', scope: 'project' });
+    const manualDir = path.join(tmp, '.opencode', 'skills', 'manual-skill');
+    fs.mkdirSync(manualDir, { recursive: true });
+    fs.writeFileSync(path.join(manualDir, 'SKILL.md'), 'user-authored content');
+
+    const response = await fetch(`${base}/api/skills`);
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.deepEqual(body.global.map((skill) => skill.name), ['review-release-candidate']);
+    assert.deepEqual(body.project.map((skill) => skill.name), ['project-build-review']);
+    assert.equal(body.project[0].content, shared.content);
+    assert.equal(JSON.stringify(body).includes(tmp), false);
+    assert.equal(JSON.stringify(body).includes('manual-skill'), false);
+  });
+
+  it('returns empty scope lists when no generated skills exist', async () => {
+    const response = await fetch(`${base}/api/skills`);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { global: [], project: [] });
   });
 });

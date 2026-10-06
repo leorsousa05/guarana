@@ -2,10 +2,10 @@
   "version": 1,
   "state": "completed",
   "skill": null,
-  "activeTask": "Independent read-only release-readiness verification for Guarana 1.0",
-  "goal": "Independent read-only release-readiness verification for Guarana 1.0",
-  "condition": "All six requested criteria pass with inspectable configuration, documentation, package smoke, test/build/audit outputs; provider-backed session remains explicitly documented as a pre-publish gate.",
-  "updatedAt": 1790959988932,
+  "activeTask": "Independently verify dashboard skill-scope counts and generated bundle.",
+  "goal": "Independently verify dashboard skill-scope counts and generated bundle.",
+  "condition": "All six criteria pass with source/test/API/style/skill proof and ordered focused test, npm test, build, CLI-sync, and specs validation commands successful.",
+  "updatedAt": 1791233735323,
   "history": [
     {
       "ts": 1788711769257,
@@ -2113,6 +2113,223 @@
       "from": "verifying",
       "to": "completed",
       "note": "All six criteria pass; local Node 24.20.0 checks are green, OpenCode automated smoke is 1.18.34. Provider-backed fresh-session smoke remains required on the 1.0.0 candidate."
+    },
+    {
+      "ts": 1791228558804,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "new task detected"
+    },
+    {
+      "ts": 1791228558843,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1791228821520,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "Requirements inferred from the request and existing memory/dashboard architecture; skills are model-created without extra approval when clearly reusable."
+    },
+    {
+      "ts": 1791228957555,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Requirements, reversible assumptions, ADR-019, and task-specific acceptance are recorded in .specs."
+    },
+    {
+      "ts": 1791228987701,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Beginning the goal-driven run within ADR-005's default 32k-token/15-minute budget."
+    },
+    {
+      "ts": 1791230204567,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Engine, plugin tools/policy, CLI deployment, dashboard API/UI, and generated-skill smoke are implemented; 201 tests, build, bundle/spec checks, and packed OpenCode discovery smoke pass."
+    },
+    {
+      "ts": 1791230243054,
+      "event": "new_task",
+      "from": "verifying",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1791230243109,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1791230656472,
+      "event": "force",
+      "from": "planning",
+      "to": "verifying",
+      "note": "Restore the feature verification phase after the delegated verifier started a separate planning task in shared workflow state; the feature implementation is unchanged."
+    },
+    {
+      "ts": 1791230671517,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "Independent verifier found criterion 8 missing exact results in the feature proof/tracker; code and automated checks passed."
+    },
+    {
+      "ts": 1791230731247,
+      "event": "fix_start",
+      "from": "debugging",
+      "to": "coding",
+      "note": "Fix is documentation-only: record exact check outcomes and the initial missing-proof finding before independent recheck."
+    },
+    {
+      "ts": 1791230767083,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Exact command outputs and host-smoke limitation are recorded in the feature spec; post-record specs validation is green. Independent recheck remains."
+    },
+    {
+      "ts": 1791230786166,
+      "event": "new_task",
+      "from": "verifying",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1791230786215,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1791230894394,
+      "event": "force",
+      "from": "planning",
+      "to": "verifying",
+      "note": "Restore feature verification after the delegated criterion-8 proof recheck; all eight criteria now have independent PASS evidence."
+    },
+    {
+      "ts": 1791231017497,
+      "event": "new_task",
+      "from": "verifying",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1791231017546,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1791231062379,
+      "event": "force",
+      "from": "planning",
+      "to": "verifying",
+      "note": "Restore the feature verification phase after the delegated final documentation recheck; criterion 8 and overall AND are PASS."
+    },
+    {
+      "ts": 1791231070646,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "Independent verifier: criteria 1–8 PASS, overall AND PASS. Fresh specs validation: 100 Markdown, 14 feature specs, 19 ADRs, 143 links. Provider-backed candidate smoke remains a pre-publish gate."
+    },
+    {
+      "ts": 1791232839009,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "new task detected"
+    },
+    {
+      "ts": 1791232839045,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1791233176446,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "Requirements captured in .specs/features/dashboard/skill-scope-counts.md; scoped UX change inferred from the user's request for a real dashboard alteration."
+    },
+    {
+      "ts": 1791233181768,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Planejamento concluído: visualização e contrato da API foram inspecionados; escopo foi fixado como contagens derivadas dos dados já existentes, sem alterar contrato."
+    },
+    {
+      "ts": 1791233220064,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Goal-driven implementation run started; single condition is derived per-scope counts in tab labels without changing existing API or tab behavior."
+    },
+    {
+      "ts": 1791233246308,
+      "event": "force",
+      "from": "coding",
+      "to": "coding",
+      "note": "explicit guarana:code"
+    },
+    {
+      "ts": 1791233246377,
+      "event": "force",
+      "from": "coding",
+      "to": "coding",
+      "note": "explicit guarana:code"
+    },
+    {
+      "ts": 1791233505005,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Worker implementation exposes API-backed scope counts, suppresses them on loading/errors, and adds focused regression assertions; independent verification pending."
+    },
+    {
+      "ts": 1791233534420,
+      "event": "new_task",
+      "from": "verifying",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1791233534491,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1791233570769,
+      "event": "force",
+      "from": "planning",
+      "to": "verifying",
+      "note": "Task explicitly requests worker-verify; planning records already contain task-specific acceptance and pending proof. User forbids editing specs."
+    },
+    {
+      "ts": 1791233735323,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "PASS: focused test 1/1; full test 201/201; dashboard/CLI build synced; check-cli and specs validator pass. No app source/tests/spec records edited."
     }
   ]
 }

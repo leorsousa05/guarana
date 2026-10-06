@@ -18,6 +18,15 @@ const MEMORY_POLICY = [
   '- Do this automatically when the intent is clear; do not wait for a memory command. Check for duplicates first and use `supersedes` when updating an existing preference.',
   '- Save a concise, reusable statement, link only real relationships, and do not save ordinary task requests, temporary instructions, inferred personal facts, or sensitive data.',
   '- Global preferences are injected at session start and after context compaction; project memories are task-relevant. Do not claim a save succeeded unless the memory tool succeeds.',
+  '',
+  '## Guarana automatic skills',
+  'After each human message, assess whether it establishes a specialized procedure that is reusable in future conversations.',
+  '- Create a skill only for a clear, repeatable workflow or set of instructions that materially helps future work; technical specificity alone or a one-off task is not enough.',
+  '- Memories preserve decisions and preferences; skills explain how to perform a reusable procedure. Keep ordinary requests and raw tool activity out of skills.',
+  '- When the reusable procedure is clear, call `skill_list` to check both scopes, then call `skill_create` with concise, complete OpenCode skill instructions. Do not wait for a special command or extra approval, and never claim creation unless the tool succeeds.',
+  '- Choose `project` for repository-specific conventions, tools, or architecture. Choose `global` for portable procedures that apply across projects or the user’s general workflow.',
+  '- Never copy secrets, credentials, private data, or raw conversation transcripts into a skill. If the skill already exists, improve the existing procedure in conversation rather than overwriting it.',
+  '- A new skill is saved in an OpenCode-discoverable directory and will be available through normal skill discovery on later turns/sessions.',
 ].join('\n');
 
 // Engine lives at repo-root memory/ (repo layout: plugin/ -> ../memory/)
@@ -39,7 +48,11 @@ async function loadEngine() {
           ? import(pathToFileURL(path.join(dir, "tools.js")).href)
           : Promise.resolve(null),
       ]);
-      return { vault, tools };
+      const skillEngineDir = path.join(pluginDir, '..', 'skill-engine');
+      const skills = fs.existsSync(path.join(skillEngineDir, 'index.js'))
+        ? await import(pathToFileURL(path.join(skillEngineDir, 'index.js')).href)
+        : null;
+      return { vault, tools, skills };
     }
   }
   return null;
@@ -193,7 +206,43 @@ export const GuaranaMemory = async ({ directory }) => {
     }
   };
 
+  const runSkillTool = (handlerName) => async (args) => {
+    try {
+      const e = await engine();
+      if (!e || !e.skills) return JSON.stringify({ error: 'skill engine not available' });
+      const options = args || {};
+      if (handlerName === 'skillList') {
+        const scope = options.scope || 'both';
+        if (!['project', 'global', 'both'].includes(scope))
+          return JSON.stringify({ error: 'scope must be project, global, or both' });
+        const skills = e.skills.listSkills({ projectDir: directory });
+        return JSON.stringify(scope === 'both' ? skills : { [scope]: skills[scope] });
+      }
+      return JSON.stringify(e.skills.createSkill({ ...options, projectDir: directory }));
+    } catch (err) {
+      try { recordError(err); } catch { /* swallow */ }
+      return JSON.stringify({ error: String(err && err.message ? err.message : err) });
+    }
+  };
+
   const memoryTools = {
+    skill_list: {
+      description: 'List Guarana-generated OpenCode skills by scope before creating a new one; does not expose filesystem paths.',
+      args: {
+        scope: { type: 'string', enum: ['project', 'global', 'both'], description: 'scope filter (default both)' },
+      },
+      execute: runSkillTool('skillList'),
+    },
+    skill_create: {
+      description: 'Create a reusable OpenCode skill when the human message establishes a clear specialized procedure. Never use for a one-off task; inspect skill_list first.',
+      args: {
+        name: { type: 'string', description: 'lowercase kebab-case skill name' },
+        description: { type: 'string', description: 'one-line OpenCode skill description' },
+        scope: { type: 'string', enum: ['project', 'global'], description: 'project for repository-specific procedures; global for portable procedures' },
+        content: { type: 'string', description: 'complete Markdown procedure for the SKILL.md body, without frontmatter' },
+      },
+      execute: runSkillTool('skillCreate'),
+    },
     memory_search: {
       description:
         "Search the guarana memory vault (confirmed nodes only). Structural filters first, then TF-IDF ranking.",

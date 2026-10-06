@@ -90,7 +90,10 @@ async function smokeDashboard(binary, cwd, env) {
 }
 
 try {
-  const packed = JSON.parse(run(npm, ['pack', '--pack-destination', packDirectory, '--json'], root))[0];
+  const packManifest = JSON.parse(run(npm, ['pack', '--pack-destination', packDirectory, '--json'], root));
+  const packed = Array.isArray(packManifest)
+    ? packManifest[0]
+    : Object.values(packManifest || {}).find((entry) => entry && typeof entry.filename === 'string');
   assert.ok(packed, 'npm pack should describe the generated archive');
   assert.equal(
     packed.files.some(({ path: file }) => /(^|\/)node_modules(\/|$)/.test(file)),
@@ -130,6 +133,18 @@ try {
   await smokeDashboard(binary, project, env);
 
   if (process.env.GUARANA_OPENCODE_SMOKE === '1') {
+    const generatedSkill = {
+      name: 'guarana-generated-smoke',
+      description: 'Verify discovery of a Guarana-generated skill.',
+      metadata: '  guarana-generated: "true"\n  guarana-scope: project',
+    };
+    const projectSkillDir = path.join(project, '.opencode', 'skills', generatedSkill.name);
+    fs.mkdirSync(projectSkillDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(projectSkillDir, 'SKILL.md'),
+      `---\nname: ${generatedSkill.name}\ndescription: "${generatedSkill.description}"\nmetadata:\n${generatedSkill.metadata}\n---\n\n# Generated skill smoke\n\nThis verifies OpenCode discovers generated skills.\n`,
+      'utf8',
+    );
     const hostVersion = run('opencode', ['--version'], project, env).trim();
     const resolvedConfig = run('opencode', ['debug', 'config'], project, env);
     for (const plugin of ['guarana-telemetry', 'guarana-memory', 'guarana-orchestrator']) {
@@ -137,6 +152,7 @@ try {
     }
     const discoveredSkills = run('opencode', ['debug', 'skill'], project, env);
     assert.ok(discoveredSkills.includes('guarana:plan'), `OpenCode ${hostVersion} must discover guarana:plan`);
+    assert.ok(discoveredSkills.includes(generatedSkill.name), `OpenCode ${hostVersion} must discover ${generatedSkill.name}`);
     console.log(`OpenCode host smoke passed: ${hostVersion}.`);
   }
 

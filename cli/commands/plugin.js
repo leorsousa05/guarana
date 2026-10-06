@@ -7,9 +7,10 @@ const {
   ORCHESTRATOR_PLUGIN_BUNDLE, ORCHESTRATOR_PLUGIN_NAME,
   MEMORY_ENGINE_SOURCE, MEMORY_ENGINE_NAME,
   ORCHESTRATOR_ENGINE_SOURCE, ORCHESTRATOR_ENGINE_NAME,
+  SKILL_ENGINE_SOURCE, SKILL_ENGINE_NAME,
 } = require('../constants.js');
 const { pluginIsOurs, PLUGIN_MARKER, MEMORY_PLUGIN_MARKER, ORCHESTRATOR_PLUGIN_MARKER } = require('../lib/guard.js');
-const { pluginTarget, memoryEngineTarget, orchestratorEngineTarget } = require('../lib/paths.js');
+const { pluginTarget, memoryEngineTarget, orchestratorEngineTarget, skillEngineTarget } = require('../lib/paths.js');
 
 const PLUGINS = [
   { name: PLUGIN_NAME, bundle: PLUGIN_BUNDLE, marker: PLUGIN_MARKER },
@@ -46,6 +47,9 @@ function pluginInstall(useProject) {
   const orchTarget = orchestratorEngineTarget(useProject);
   copyDir(ORCHESTRATOR_ENGINE_SOURCE, orchTarget);
   console.log(`${fs.existsSync(path.join(orchTarget, 'state.js')) ? 'updated' : 'installed'} orchestrator engine -> ${orchTarget}`);
+  const skillsTarget = skillEngineTarget(useProject);
+  copyDir(SKILL_ENGINE_SOURCE, skillsTarget);
+  console.log(`${fs.existsSync(path.join(skillsTarget, 'index.js')) ? 'updated' : 'installed'} skill engine -> ${skillsTarget}`);
 }
 
 function pluginUninstall(useProject) {
@@ -71,6 +75,11 @@ function pluginUninstall(useProject) {
   if (fs.existsSync(orchTarget)) {
     fs.rmSync(orchTarget, { recursive: true, force: true });
     console.log(`uninstalled orchestrator engine from ${orchTarget}`);
+  }
+  const skillsTarget = skillEngineTarget(useProject);
+  if (fs.existsSync(skillsTarget)) {
+    fs.rmSync(skillsTarget, { recursive: true, force: true });
+    console.log(`uninstalled skill engine from ${skillsTarget}`);
   }
 }
 
@@ -126,6 +135,9 @@ async function pluginStatus(useProject) {
     fs.existsSync(path.join(orchTarget, 'decide.js')) &&
     fs.existsSync(path.join(orchTarget, 'prompt.js'));
   console.log(`- orchestrator engine (${orchTarget}): ${hasOrch ? 'deployed' : 'not deployed (re-run: guarana plugin install)'}`);
+  const skillsTarget = skillEngineTarget(useProject);
+  const hasSkills = fs.existsSync(path.join(skillsTarget, 'index.js'));
+  console.log(`- skill engine (${skillsTarget}): ${hasSkills ? 'deployed' : 'not deployed (re-run: guarana plugin install)'}`);
 }
 
 async function run(args, { useProject }) {

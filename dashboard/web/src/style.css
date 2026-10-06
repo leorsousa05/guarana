@@ -1003,6 +1003,67 @@ table.ledger {
   }
 }
 
+/* ---------- generated skills view ---------- */
+
+.skill-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.skill-entry {
+  display: grid;
+  grid-template-columns: minmax(9rem, 0.32fr) minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 0.8rem;
+  width: 100%;
+  padding: 0.7rem 0.2rem;
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.skill-entry:hover {
+  background: var(--hover);
+}
+
+.skill-entry-name {
+  font-family: var(--mono);
+  font-size: 0.86rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.skill-entry-description {
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.skill-entry-action {
+  color: var(--guarana);
+  font-family: var(--display);
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .skill-entry {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.3rem 0.8rem;
+  }
+
+  .skill-entry-description {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
 /* ---------- memory view ---------- */
 
 .mem-summary {
