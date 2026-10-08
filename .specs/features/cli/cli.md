@@ -3,6 +3,8 @@
 **Status:** SHIPPED (human final gate accepted 2026-08-21)
 **Date:** 2026-08-21
 
+**Follow-up status:** Update presentation validated (2026-10-08; independent worker-verify PASS).
+
 ## Goal
 A Node.js CLI named `guarana` that installs/uninstalls/lists/updates the guarana skill suite for OpenCode.
 
@@ -88,3 +90,13 @@ From a temp HOME:
 24. `npm pack --dry-run --json` contains no path segment named `node_modules` and includes the license and release notes.
 25. `npm run smoke:pack` installs the generated tarball in an isolated prefix and verifies the CLI install, list, plugin health, and uninstall lifecycle.
 26. `npm run check-cli` passes when the canonical source contains ignored local `node_modules` but the distributable bundle does not.
+
+## Addendum 2026-10-08: update command presentation
+- `guarana update [--project]` prints a concise, visually structured completion summary including version transition when available, target scope/path, refreshed skill/runtime components, and next action.
+- ANSI color is used only for interactive terminals that support it; non-TTY output and `NO_COLOR` remain free of escape sequences.
+- The update command continues to refresh the skill suite, plugins, engines, and worker-agent profiles using the existing safety guards.
+
+### Acceptance
+27. A project update prints a structured success summary with project target, current version and refreshed component groups; a re-update includes the prior-to-current version transition.
+28. In non-TTY output and with `NO_COLOR`, update output contains no ANSI escape codes.
+29. Global and project update continue deploying skills, all bundled plugins/engines, and worker-agent profiles; foreign content remains protected by the existing guards.

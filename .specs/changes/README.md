@@ -6,6 +6,10 @@ Entry format: date · feature · what validated / failed / re-opened · proof pa
 
 ## Records
 
+### 2026-10-08 — CLI and coding-skill refinements
+- [CLI update presentation](2026-10-08-cli-update-presentation.md) — terminal-aware completion summary, project/global runtime refresh tests, and independent verification PASS (3/3)
+- [Code design/refactoring guidance](2026-10-08-code-design-guidance.md) — context-driven design-pattern selection and bounded refactoring; independent verification PASS (5/5)
+
 ### 2026-10-07 — 1.0.0 release candidate
 - [1.0.0 release candidate](2026-10-07-release-candidate-1.0.0.md) — local version metadata, audit-clean dashboard locks, packed CLI and provider-backed OpenCode 1.18.35 smoke; unpublished and untagged
 

@@ -4,17 +4,19 @@ const { copyDir } = require('../lib/fs.js');
 const { assertGuard, STAMP } = require('../lib/guard.js');
 const { SOURCE, VERSION, SKILLS } = require('../constants.js');
 
-function run(args, { useProject }) {
+function run(args, { useProject, quiet = false }) {
   const target = require('../lib/paths.js').targetDir(useProject);
   const existed = fs.existsSync(target);
   assertGuard(target, 'install');
   copyDir(SOURCE, target);
   fs.writeFileSync(path.join(target, STAMP), VERSION + '\n');
-  console.log(`${existed ? 'updated' : 'installed'} guarana ${VERSION} -> ${target}`);
-  console.log(`skills: ${SKILLS.map((s) => 'guarana:' + s).join(', ')}`);
+  if (!quiet) {
+    console.log(`${existed ? 'updated' : 'installed'} guarana ${VERSION} -> ${target}`);
+    console.log(`skills: ${SKILLS.map((s) => 'guarana:' + s).join(', ')}`);
+  }
   // The orchestrator and memory hooks are part of automatic operation, not a
   // second opt-in installation step.
-  require('./plugin.js').install(useProject);
+  require('./plugin.js').install(useProject, { quiet });
 }
 
 module.exports = { run };

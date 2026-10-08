@@ -30,7 +30,7 @@ function copyDir(src, dest) {
   }
 }
 
-function pluginInstall(useProject) {
+function pluginInstall(useProject, { quiet = false } = {}) {
   try {
     agents.assertInstallable(useProject);
   } catch (err) {
@@ -46,19 +46,19 @@ function pluginInstall(useProject) {
     const existed = fs.existsSync(target);
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.copyFileSync(bundle, target);
-    console.log(`${existed ? 'updated' : 'installed'} plugin ${name.replace(/\.js$/, '')} -> ${target}`);
+    if (!quiet) console.log(`${existed ? 'updated' : 'installed'} plugin ${name.replace(/\.js$/, '')} -> ${target}`);
   }
   const engineTarget = memoryEngineTarget(useProject);
   copyDir(MEMORY_ENGINE_SOURCE, engineTarget);
-  console.log(`${fs.existsSync(path.join(engineTarget, 'capture.js')) ? 'updated' : 'installed'} memory engine -> ${engineTarget}`);
+  if (!quiet) console.log(`${fs.existsSync(path.join(engineTarget, 'capture.js')) ? 'updated' : 'installed'} memory engine -> ${engineTarget}`);
   const orchTarget = orchestratorEngineTarget(useProject);
   copyDir(ORCHESTRATOR_ENGINE_SOURCE, orchTarget);
-  console.log(`${fs.existsSync(path.join(orchTarget, 'state.js')) ? 'updated' : 'installed'} orchestrator engine -> ${orchTarget}`);
+  if (!quiet) console.log(`${fs.existsSync(path.join(orchTarget, 'state.js')) ? 'updated' : 'installed'} orchestrator engine -> ${orchTarget}`);
   const skillsTarget = skillEngineTarget(useProject);
   copyDir(SKILL_ENGINE_SOURCE, skillsTarget);
-  console.log(`${fs.existsSync(path.join(skillsTarget, 'index.js')) ? 'updated' : 'installed'} skill engine -> ${skillsTarget}`);
+  if (!quiet) console.log(`${fs.existsSync(path.join(skillsTarget, 'index.js')) ? 'updated' : 'installed'} skill engine -> ${skillsTarget}`);
   for (const { name, target } of agents.installWorkerAgents(useProject)) {
-    console.log(`installed/updated subagent ${name} -> ${target}`);
+    if (!quiet) console.log(`installed/updated subagent ${name} -> ${target}`);
   }
 }
 

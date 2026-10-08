@@ -2,10 +2,10 @@
   "version": 1,
   "state": "completed",
   "skill": null,
-  "activeTask": "Prepare and validate a local, unpublished Guarana 1.0.0 release candidate",
-  "goal": "Prepare and validate a local, unpublished Guarana 1.0.0 release candidate",
-  "condition": "Package/docs/changelog agree on 1.0.0; full release gate and final packed-candidate provider smoke pass; independent worker-verify confirms all five criteria; final specs and JSONL records validate; no package publish or Git tag occurs.",
-  "updatedAt": 1791417284788,
+  "activeTask": "A saída do `guarana update` foi redesenhada e validada em instalação de projeto e global.",
+  "goal": "A saída do `guarana update` foi redesenhada e validada em instalação de projeto e global.",
+  "condition": "Update mostra resumo estruturado com mudança de versão quando disponível, alvo/scope e grupos refrescados; cores ANSI só em TTY compatível, nunca com NO_COLOR; instalação continua incluindo skills/plugins/engines/workers e mantendo guards; testes focados, sync do bundle, specs validation e verificação independente passam.",
+  "updatedAt": 1791429605832,
   "history": [
     {
       "ts": 1788711769257,
@@ -2589,6 +2589,76 @@
       "from": "verifying",
       "to": "completed",
       "note": "worker-verify ses_ee737f1aaffeL1oEwBUZ1AeEs8 passed all five release criteria and reran the gate; independent record-only worker-verify ses_ee736126bffe4DsGuwmqwwrXQQ also passed. Final specs validation and diff check pass."
+    },
+    {
+      "ts": 1791428347485,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "new task detected"
+    },
+    {
+      "ts": 1791428666704,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Escopo e aceite registrados em .specs/features/guarana/code.md, tracker e project-state; fonte canônica é skills/guarana/skills/code/SKILL.md e cli/ é cópia gerada."
+    },
+    {
+      "ts": 1791428671568,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Planejamento registrado; início da implementação focada na skill e seus registros."
+    },
+    {
+      "ts": 1791428732583,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "npm run check-cli PASS; npm run specs:validate PASS (109 Markdown, 17 specs, 20 ADRs, 163 links); cmp da skill canônica e cópia CLI PASS. Prova e verificação independente pendentes."
+    },
+    {
+      "ts": 1791428826048,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "worker-verify independente PASS 5/5; check-cli PASS; specs validate PASS (110 Markdown, 17 specs, 20 ADRs, 164 links); cmp de cópia e git diff --check PASS. Provas/change/state escritos."
+    },
+    {
+      "ts": 1791429123011,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "new task detected"
+    },
+    {
+      "ts": 1791429227237,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Inspecionados update.js (alias de install), install.js e plugin.js. Critérios objetivos e escopo escritos na spec CLI e project-state; assume-se uma apresentação compacta, legível e adaptativa ao terminal, sem dependência externa."
+    },
+    {
+      "ts": 1791429245629,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Planejamento aceito; iniciar implementação CLI com estilo adaptativo e sem novas dependências."
+    },
+    {
+      "ts": 1791429487073,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Testes focados 5/5, npm run check-cli PASS, specs validate PASS e git diff --check PASS; encaminhando para revisão independente."
+    },
+    {
+      "ts": 1791429605832,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "worker-verify PASS (3/3), testes direcionados PASS (5/5), check-cli PASS, specs validate PASS (111 Markdown, 17 specs, 20 ADRs, 167 links), git diff --check PASS. Registros e change ledger atualizados."
     }
   ]
 }

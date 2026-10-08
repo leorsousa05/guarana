@@ -1,18 +1,18 @@
 # Project State
 
-Last updated: 2026-10-07 (1.0.0 candidate revalidation after fresh-project bootstrap finding)
+Last updated: 2026-10-08 (`guarana update` CLI presentation)
 
 ## Per-skill status
 | Skill | Status |
 |---|---|
 | guarana:plan | SHIPPED |
 | guarana:build | SHIPPED |
-| guarana:code | SHIPPED |
+| guarana:code | VALIDATED — design/refactoring guidance update |
 | guarana:verify | SHIPPED |
 | guarana:remember | SHIPPED |
 | guarana:debug | SHIPPED (optional, trigger-only) |
 | guarana:measure | SHIPPED (optional, trigger-only) |
-| guarana CLI | SHIPPED |
+| guarana CLI | VALIDATED — update output polish |
 | guarana dashboard | VALIDATED |
 | guarana memory | **FINAL GATE PASSED** + hardening batch applied |
 | guarana orchestrator | **SPECIFIED → IMPLEMENTED → VALIDATED** |
@@ -23,17 +23,22 @@ Last updated: 2026-10-07 (1.0.0 candidate revalidation after fresh-project boots
 | Guarana skill routing clarity | **VALIDATED** |
 
 ## Current step
-**1.0.0 candidate preparation (2026-10-07) — VALIDATED.** The initial final-candidate smoke exposed a missing `## Master tracker` heading in fresh-project bootstrap; the fix and shipped-validator regression test are included. The post-fix full release gate, final 1.0.0 archive, provider-backed smoke, plugin/status/dashboard checks, and uninstall all passed. Independent worker-verify `ses_ee737f1aaffeL1oEwBUZ1AeEs8` passed all five release criteria. Candidate remains local, unpublished, and untagged.
+**`guarana update` CLI presentation (2026-10-08) — VALIDATED.** The update prints a boxed summary with version transition, target, refreshed components, and restart guidance. It suppresses nested install logs and uses ANSI only on an interactive color-capable terminal. Independent worker-verify `ses_ee67b4010ffeJhDGph4ujFWRba` passed all three criteria.
 
-**Pending:** Maintainer decision to publish/tag; no publish or tag has occurred.
+**Pending:** None for update presentation. Maintainer release decision remains separate; no package release action occurred.
+
+## Previous checkpoint — Guarana 1.0.0 candidate (2026-10-07)
+Validated before this task: the post-bootstrap-fix release gate, final archive, provider-backed smoke, plugin/status/dashboard checks, and uninstall passed. Independent worker-verify `ses_ee737f1aaffeL1oEwBUZ1AeEs8` passed five release criteria. Candidate remains local, unpublished, and untagged. Detailed evidence is in `.specs/features/release/release-candidate-1.0.0-smoke.jsonl` and `.specs/changes/2026-10-07-release-candidate-1.0.0.md`.
 
 ## Checkpoint
-- Goal: Prepare the Guarana 1.0.0 release candidate and verify the packed artifact and fresh OpenCode integration.
-- Acceptance: package version, README version/status, and changelog agree on 1.0.0; every command in `RELEASING.md` passes; the packed 1.0.0 tarball installs and passes fresh-session plugin/skill/Task workflow smoke on the recorded current stable OpenCode; exact evidence is recorded; no publish/tag occurs.
-- Latest packed candidate before fix: `8e994a275319fe58e7861ea33a5e3154a2f53215`, 181859 bytes, 88 files, zero `node_modules` paths. This artifact predates the bootstrap fix and must be replaced.
-- Final post-fix proof is recorded in `.specs/features/release/release-candidate-1.0.0-smoke.jsonl` and `.specs/changes/2026-10-07-release-candidate-1.0.0.md`.
-- Independent final verification: worker-verify PASS (5/5), session `ses_ee737f1aaffeL1oEwBUZ1AeEs8`; verifier reran the automated gate and checked final archive inventory, smoke, and records.
-- Pending writes: none for candidate preparation.
+- Goal: Make `guarana update` output easier to scan and visually polished while preserving behavior.
+- Acceptance: update reports completion with a clear visual hierarchy, old/new version when available, target scope/path, and refreshed components; ANSI styling is enabled only for suitable terminals and disabled by `NO_COLOR`/non-TTY; update continues to refresh skills, plugins, engines, and worker agents; focused tests pass; CLI bundle parity, specs validation, and independent verification pass.
+- Scope: update/install/plugin CLI output formatting, focused CLI tests, `.specs/features/cli/cli.md`, append-only proof/change records, tracker/state, and generated CLI bundle. No package release.
+- Implemented: `cli/commands/update.js`, quiet internal deployment output in `install.js` and `plugin.js`, and `cli/commands/update.test.js`.
+- Checks: `node --test cli/commands/update.test.js cli/commands/plugin.test.js` PASS (5/5); `npm run check-cli` PASS; `npm run specs:validate` PASS (110 Markdown, 17 feature specs, 20 ADRs, 164 links); `git diff --check` PASS.
+- Proof: `.specs/changes/2026-10-08-cli-update-presentation.md`.
+- Checks: `node --test cli/commands/update.test.js cli/commands/plugin.test.js` PASS (5/5); `npm run check-cli` PASS; final `npm run specs:validate` PASS (111 Markdown, 17 feature specs, 20 ADRs, 167 links); `git diff --check` PASS; independent worker-verify PASS (3/3), session `ses_ee67b4010ffeJhDGph4ujFWRba`.
+- Pending writes: none.
 - Budget: ADR-005 defaults.
 
 ## Proofs that exist
