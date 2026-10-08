@@ -1,6 +1,6 @@
 {
   "name": "guarana",
-  "version": "0.8.6",
+  "version": "1.0.0",
   "description": "Install/uninstall/list/update the guarana skill suite for OpenCode",
   "engines": {
     "node": ">=22"

@@ -5,7 +5,9 @@ description: OPTIONAL — use ONLY when a test fails or a run misbehaves (runawa
 
 # guarana:debug
 
-Trigger-only skill. If nothing failed, you should not be here.
+Trigger-only skill, executed by the `worker-debug` OpenCode Task subagent after
+an observed verification failure or concrete run misbehavior. If nothing failed,
+you should not be here.
 
 ## Failure-mode matrix
 | Mode | Symptom | Detection signal | Defusal |

@@ -9,10 +9,10 @@ memory to the active skill.
 
 - **No manual entry.** A natural request like *"Implement OAuth authentication"*
   auto-enters the loop: `idle → planning → building → coding → verifying → completed`.
-- **Skills are still the engine.** The orchestrator only decides *what* to run; the
-  chosen skill's body (loaded via the `skill` tool) decides *how*. Skill bodies are
-  not duplicated in the orchestrator and stay out of the always-on context
-  (progressive disclosure).
+- **Skills are still the engine.** The plugin decides *what* to run and injects
+  primary-context skills for planning/building. For code, verification, and
+  failure diagnosis, the model calls OpenCode's native Task tool; installed
+  worker profiles carry the canonical skill procedure into separate contexts.
 - **Explicit commands still work.** `guarana:plan`, `guarana:code`, `guarana:verify`,
   … force that exact step from any state — an escape hatch that always wins.
 - **Disk is the source of truth.** Workflow state lives at
@@ -46,12 +46,16 @@ rejected — the machine cannot wedge.
 ## How the loop runs
 
 1. `chat.message` → restore persisted workflow → `decide` → apply transition → persist.
-2. `experimental.chat.system.transform` injects a small always-on block, relevant
-   confirmed memory, and the active skill's full SKILL.md body (ponytail-style).
-   The model follows the injected skill directly — no `skill` tool call needed.
-3. The model advances deterministically with `workflow_tick(action)` (e.g.
-   `code_complete`, `verify_pass`, `verify_fail`).
-4. `tool.execute.after` provides the automatic verify-fail nudge.
+2. `experimental.chat.system.transform` injects the small always-on block,
+   relevant confirmed memory, and the active primary-context skill body. Worker
+   procedure bodies are loaded into their generated Task agent profiles instead.
+3. The primary model dispatches `worker-code`, `worker-verify`, or failure-only
+   `worker-debug` with the condition, budget, and state pointers, then waits for
+   the worker contract.
+4. The primary advances deterministically with `workflow_tick(action)` (e.g.
+   `code_complete`, `verify_pass`, `verify_fail`); child workers never advance the
+   parent's workflow.
+5. `tool.execute.after` provides the automatic verify-fail nudge.
 
 ## Host integration
 

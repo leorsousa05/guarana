@@ -5,7 +5,8 @@ description: Use when checking work, judging pass/fail, running acceptance, or d
 
 # guarana:verify
 
-The termination skill, loaded by worker-verify in a SEPARATE context from whoever produced the work.
+The termination procedure loaded into the separate OpenCode Task subagent
+`worker-verify`, always in a context distinct from whoever produced the work.
 
 ## The three guards (the only legitimate ways a run stops)
 1. **Hard caps** — machine-enforced ceilings (tokens, iterations, wall-clock). Prevents runaway execution.

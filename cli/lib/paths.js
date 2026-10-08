@@ -31,4 +31,10 @@ function skillEngineTarget(useProject) {
   return path.join(pluginsParent, 'skill-engine');
 }
 
-module.exports = { targetDir, pluginTarget, memoryEngineTarget, orchestratorEngineTarget, skillEngineTarget };
+function workerAgentsTarget(useProject) {
+  return useProject
+    ? path.join(process.cwd(), '.opencode', 'agents')
+    : path.join(os.homedir(), '.config', 'opencode', 'agents');
+}
+
+module.exports = { targetDir, pluginTarget, memoryEngineTarget, orchestratorEngineTarget, skillEngineTarget, workerAgentsTarget };

@@ -1,6 +1,30 @@
 # Known Issues
 
+## 2026-10-07 — fresh-project specs bootstrap omitted required tracker heading
+- **Symptom:** A provider-backed smoke in an isolated fresh project failed `guarana specs validate` because generated `.specs/README.md` lacked `## Master tracker`; this prevented the independent verification from passing and the workflow from completing.
+- **Reproduction trigger:** Start a task in a project with no `.specs/` directory, then run `guarana specs validate <project> --json`.
+- **Mitigation:** Add the required heading and goal fields to `ensureSpecs()` output, keep the shipped CLI mirror synchronized, and test the generated scaffold using the shipped validator.
+- **Status:** Fix implemented; regression test passed. Final packed-candidate validation pending.
+
+## 2026-10-07 — overlapping npm ci targets raced in nested dashboard workspaces
+- **Symptom:** `npm ci --prefix dashboard` exited with ENOTEMPTY while `npm ci --prefix dashboard/server` was running concurrently; the server workspace is nested beneath the dashboard workspace.
+- **Reproduction trigger:** Start both release-gate `npm ci` commands at the same time.
+- **Mitigation:** Run the parent and nested workspace installs sequentially, then rerun the parent install if the failed operation left partial `node_modules` cleanup.
+- **Status:** Resolved (2026-10-07); running `npm ci --prefix dashboard` and then `npm ci --prefix dashboard/server` sequentially passed.
+
+## 2026-10-07 — dashboard release audit found newer advisories
+- **Symptom:** After clean dashboard workspace installs, audit reported critical `proxy-addr` 2.0.7 and high `source-map-js` 1.2.1 advisories.
+- **Reproduction trigger:** Run the release-gate `npm run audit` against the current dashboard and standalone server lockfiles.
+- **Mitigation:** Apply non-forced `npm audit fix`; lockfiles now resolve `proxy-addr` 2.0.8 and `source-map-js` 1.2.2.
+- **Status:** Resolved (2026-10-07); both dashboard workspaces now audit with zero vulnerabilities after the lockfile patch updates.
+
 Open problems and material failures from the build. Entry format: title / symptom / reproduction trigger / effective or possible mitigation / status.
+
+## 2026-10-05 — automatic skill policy omitted simple-task non-signal
+- **Symptom:** The policy excluded one-off deliverables and technical complexity alone but did not explicitly name a simple task; focused tests did not pin each create/no-create signal.
+- **Reproduction trigger:** Review the trigger-guidance acceptance criteria against the always-on policy and its assertions.
+- **Mitigation:** Name simple tasks as non-signals and assert each positive trigger, negative signal, and ambiguous-no-create boundary.
+- **Status:** Resolved (2026-10-05); independent verification confirmed the explicit non-signal and focused assertions.
 
 ## 2026-10-05 — release-readiness feature proof was not recorded before verification
 - **Symptom:** The independent verifier passed the implementation checks but failed acceptance criterion 8 because exact command outcomes were absent from the feature spec and tracker status remained IMPLEMENTED.

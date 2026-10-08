@@ -2,10 +2,10 @@
   "version": 1,
   "state": "completed",
   "skill": null,
-  "activeTask": "Independently verify dashboard skill-scope counts and generated bundle.",
-  "goal": "Independently verify dashboard skill-scope counts and generated bundle.",
-  "condition": "All six criteria pass with source/test/API/style/skill proof and ordered focused test, npm test, build, CLI-sync, and specs validation commands successful.",
-  "updatedAt": 1791233735323,
+  "activeTask": "Prepare and validate a local, unpublished Guarana 1.0.0 release candidate",
+  "goal": "Prepare and validate a local, unpublished Guarana 1.0.0 release candidate",
+  "condition": "Package/docs/changelog agree on 1.0.0; full release gate and final packed-candidate provider smoke pass; independent worker-verify confirms all five criteria; final specs and JSONL records validate; no package publish or Git tag occurs.",
+  "updatedAt": 1791417284788,
   "history": [
     {
       "ts": 1788711769257,
@@ -2330,6 +2330,265 @@
       "from": "verifying",
       "to": "completed",
       "note": "PASS: focused test 1/1; full test 201/201; dashboard/CLI build synced; check-cli and specs validator pass. No app source/tests/spec records edited."
+    },
+    {
+      "ts": 1791406923987,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "General audit requested; existing intent-driven skill feature is validated and will be checked for trigger clarity."
+    },
+    {
+      "ts": 1791406981737,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "Existing automatic capture references are present; this follow-up sharpens the trigger boundary and records it in the feature spec."
+    },
+    {
+      "ts": 1791407044247,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Task-specific acceptance is recorded in the existing skill feature spec; no product architecture or user threshold changes are planned."
+    },
+    {
+      "ts": 1791407065888,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Starting a narrow prompt/documentation refinement within the default budget; existing scope and storage behavior remain unchanged."
+    },
+    {
+      "ts": 1791407166025,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Policy, memory-skill documentation, focused assertions, CLI sync, full suite, build, check-cli, and specs validation are green; independent review pending."
+    },
+    {
+      "ts": 1791407178877,
+      "event": "new_task",
+      "from": "verifying",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1791407178935,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1791407374850,
+      "event": "force",
+      "from": "planning",
+      "to": "verifying",
+      "note": "Restore the feature verification phase after the delegated reviewer created a separate task in shared workflow state."
+    },
+    {
+      "ts": 1791407380114,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "Independent reviewer found criterion 2 missing the explicit simple-task non-signal and criterion 4 lacking regression assertions for individual trigger details."
+    },
+    {
+      "ts": 1791407407536,
+      "event": "fix_start",
+      "from": "debugging",
+      "to": "coding",
+      "note": "Independent review identified a missing explicit non-signal and insufficiently specific policy assertions; fix is limited to prompt copy and regression tests."
+    },
+    {
+      "ts": 1791407514455,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Explicit create/no-create cases and targeted assertions are in place; `npm test` 201/201, build, check-cli, and specs validation pass. Independent review pending."
+    },
+    {
+      "ts": 1791407524421,
+      "event": "new_task",
+      "from": "verifying",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1791407524486,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1791407590374,
+      "event": "force",
+      "from": "planning",
+      "to": "verifying",
+      "note": "Restore the feature verification phase after the delegated follow-up verifier; all four criteria now independently pass."
+    },
+    {
+      "ts": 1791407705543,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "natural-language completion signal for verifying"
+    },
+    {
+      "ts": 1791407705581,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "new task detected"
+    },
+    {
+      "ts": 1791407773030,
+      "event": "force",
+      "from": "planning",
+      "to": "verifying",
+      "note": "Restore the feature verification phase after the final delegated proof-record check; the record check passed."
+    },
+    {
+      "ts": 1791407779768,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "Independent trigger-policy review and final record check both PASS; fresh checks: 201 tests, build, CLI bundle parity, and specs validation (103 Markdown, 15 feature specs, 19 ADRs, 148 links)."
+    },
+    {
+      "ts": 1791407899547,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "new task detected"
+    },
+    {
+      "ts": 1791407899599,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1791408017789,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1791408017822,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1791408359985,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Scope and acceptance are recorded in the skill follow-up spec, tracker, and project-state; no unresolved requirement gap."
+    },
+    {
+      "ts": 1791408371011,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Frame complete; proceeding with bounded implementation and runtime checks."
+    },
+    {
+      "ts": 1791408599783,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Implementation is synchronized, full tests/build/bundle checks and five model-routing scenarios pass; independent verification remains."
+    },
+    {
+      "ts": 1791408717650,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "Independent review passed all five criteria after exact OpenCode outputs and prose-change rationale were added; final specs validation, CLI parity, and diff whitespace checks pass."
+    },
+    {
+      "ts": 1791409752260,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "new task detected"
+    },
+    {
+      "ts": 1791409752275,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1791409992506,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "User selected native Task dispatch. ADR-020 and a task-specific acceptance spec record the mechanism, profile/install behavior, state ownership, and failure condition."
+    },
+    {
+      "ts": 1791410004755,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Planning recorded and accepted; implementation begins within the scoped worker-dispatch feature."
+    },
+    {
+      "ts": 1791412921438,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Implementation and all requested test/build/smoke evidence are recorded; independent worker-verify passed all six criteria."
+    },
+    {
+      "ts": 1791412927219,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "Independent worker-verify returned PASS on all 6 criteria. Final specs validation, CLI parity, diff check and retained JSONL Task evidence pass."
+    },
+    {
+      "ts": 1791413834699,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "Planning evidence is recorded in release-candidate-1.0.0.md; user authorized candidate preparation and no publish/tag."
+    },
+    {
+      "ts": 1791413846186,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Task-specific requirements and non-publish boundary are recorded; no unresolved requirement gaps."
+    },
+    {
+      "ts": 1791413857321,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Planning complete; starting local candidate preparation and release gate, without publish/tag."
+    },
+    {
+      "ts": 1791416770027,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "A final-candidate smoke exposed a fresh .specs bootstrap validator gap. Worker-code added the master tracker/goal fields and regression test; 35/35 workflow tests, CLI parity, and diff check passed. Release records now mark final gate and smoke verification pending."
+    },
+    {
+      "ts": 1791417284788,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "worker-verify ses_ee737f1aaffeL1oEwBUZ1AeEs8 passed all five release criteria and reran the gate; independent record-only worker-verify ses_ee736126bffe4DsGuwmqwwrXQQ also passed. Final specs validation and diff check pass."
     }
   ]
 }

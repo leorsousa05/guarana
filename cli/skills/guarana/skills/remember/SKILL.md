@@ -1,11 +1,11 @@
 ---
 name: guarana:remember
-description: Use for state, memory, session resume ("where were we"), persistence, or context loss. Disk-only memory with a fixed restore order, mandatory write triggers, and silent-truncation recovery.
+description: Use when restoring or recording project workflow state, resuming work after context loss, or recovering a checkpoint. Follows the fixed `.specs/` restore order and persists task progress to disk.
 ---
 
 # guarana:remember
 
-Memory is on disk, not in context (hard truth 3, ADR-004). **Anything that exists only in a context window is treated as nonexistent.**
+Project workflow state is on disk, not in context (hard truth 3, ADR-004). **Anything that exists only in a context window is treated as nonexistent.**
 
 ## Restore sequence (cold start, every run — no other order)
 1. `.specs/README.md`

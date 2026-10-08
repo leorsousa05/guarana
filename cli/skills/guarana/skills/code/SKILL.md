@@ -5,7 +5,9 @@ description: Use when implementing, editing, or writing code as a dispatched wor
 
 # guarana:code
 
-The implementation skill, loaded by worker-code. You never approve your own work (ADR-003).
+The implementation procedure loaded into the separate OpenCode Task subagent
+`worker-code`. The primary context delegates; this worker never approves its own
+work (ADR-003).
 
 ## Intake
 From guarana:plan's dispatch: ONE verifiable condition, budget (default 8k tokens), state pointers. If the condition is missing or unfalsifiable, return `stop_reason: error` — do not start.

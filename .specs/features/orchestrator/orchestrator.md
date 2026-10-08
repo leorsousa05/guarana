@@ -9,7 +9,7 @@ Turn Guarana from a manually-driven skill workflow into an automatic engineering
 ## Design principles (contract from brief)
 1. **Existing skills remain the capabilities.** The orchestrator never re-implements plan/build/code/verify/etc. It selects a skill and tells the model to load it via the `skill` tool; the skill body is the authority on *how* to perform the step.
 2. **Thin host adapter, reusable core.** All state-machine and decision logic lives in a host-independent ESM core (`orchestrator/`). The opencode plugin (`plugin/guarana-orchestrator.js`) is a thin shell wiring lifecycle hooks to that core.
-3. **Progressive disclosure preserved.** Only the **active** skill's full body and bounded relevant memory are injected; the always-on block is small and names the state/skill. Non-active skill bodies stay out of context (ponytail-style: the active skill is appended every turn).
+3. **Progressive disclosure preserved.** The always-on block is small and names state/skill. Primary-context procedures and bounded relevant memory are injected as needed; worker procedures are carried by generated Task profiles so code/verify/debug do not execute in the primary context.
 4. **Disk is the source of truth.** Workflow state persists to `.specs/state/workflow.json`; the loop resumes an unfinished workflow across turns/sessions from that file (ADR-004).
 5. **Explicit `guarana:*` commands remain an escape hatch** that force a specific step.
 
@@ -17,11 +17,11 @@ Turn Guarana from a manually-driven skill workflow into an automatic engineering
 - **`orchestrator/`** (new root dir, source of truth, ESM, zero deps) — host-independent core:
   - `state.js` — state machine: 7 states, transition table, `apply`, `canTransition`, skill↔state mapping, `load`/`save` (`.specs/state/workflow.json`).
   - `decide.js` — intent classification: user text + workflow + previous tool result → `{ event, state, skill, note }`. Includes explicit `guarana:*` detection, continuation detection (no needless re-plan), new-task detection, natural-language step completion, and auto verify-fail on a failed tool result.
-  - `prompt.js` — builds the always-on orchestration block and resolves the active skill's full SKILL.md body plus bounded memory context for injection (`buildInjection`).
+   - `prompt.js` — builds the always-on orchestration block and resolves the active primary-context skill body plus bounded memory context for injection (`buildInjection`); worker states receive Task-dispatch guidance.
   - `specs.js` — idempotently scaffolds missing `.specs/` files and a task feature spec.
 - **`plugin/guarana-orchestrator.js`** — opencode plugin (ESM, zero deps, marker header `// guarana orchestrator plugin`, never throws):
   - `chat.message` → restore workflow, decide, bootstrap specs/memory, retrieve context, apply transition, persist, stage directive.
-  - `experimental.chat.system.transform` → inject always-on block + relevant memory + the active skill's **full SKILL.md body** (ponytail mechanism — no `skill` tool call needed).
+   - `experimental.chat.system.transform` → inject always-on block + relevant memory + primary-context skill body. Coding, verification, and debugging states direct the model to native Task subagents.
   - `tool.execute.after` → observe results; an error during `verifying` auto-moves to `debugging`.
   - custom tools `workflow_get` (read state) and `workflow_tick` (advance state machine deterministically).
 - **Bundle**: `orchestrator/` and `plugin/guarana-orchestrator.js` added to `scripts/sync-cli-bundle.mjs` / `check-cli-bundle.mjs`; CLI `plugin install/status` deploys the plugin + orchestrator engine.
@@ -48,8 +48,8 @@ Verification failure (`verify_fail`) auto-moves to debugging/correction (`fix_st
 ## How the loop drives itself
 1. User: *"Implement OAuth authentication"* → `chat.message` → `decide` → `new_task` → `planning`.
 2. `system.transform` injects the block + **full `guarana:plan` body**. Model follows plan, calls `workflow_tick(plan_complete)` → `building`.
-3. → `run_start` → `coding` → injects `guarana:code` body; model codes, `code_complete` → `verifying`.
-4. Injects `guarana:verify`; model runs tests. On failure: `workflow_tick(verify_fail)` **or** `tool.execute.after` sees an errored tool result → auto `debugging`. Fix → `fix_start` → coding → re-verify → `verify_pass` → `completed`.
+3. → `run_start` → `coding`; the primary calls native Task with `worker-code`, waits for its diff/stop reason, and advances `code_complete` → `verifying`.
+4. The primary calls native Task with `worker-verify` in a fresh context. On failure: `workflow_tick(verify_fail)` **or** `tool.execute.after` sees an errored tool result → auto `debugging`; the primary invokes `worker-debug` only then. A fix returns through `fix_start` → coding → re-verify → `verify_pass` → `completed`.
 
 ## Explicit commands (escape hatch)
 `guarana:<skill>` in a user message forces that step regardless of current state (e.g. `guarana:verify` → `verifying`, load `guarana:verify`). This is unchanged by the orchestrator and always wins over automatic routing. `guarana:plan` still works; it is simply no longer required.
@@ -61,8 +61,8 @@ Verification failure (`verify_fail`) auto-moves to debugging/correction (`fix_st
 4. **Resume without re-plan.** An unfinished workflow recognized on a later turn and continued (no spurious `new_task`). 
 5. **Explicit command forces a step.** `guarana:verify` → `verifying` even from `idle`.
 6. **Persisted source of truth.** State survives a restart from `.specs/state/workflow.json`; corrupt/missing file degrades to idle, never throws.
-7. **Progressive disclosure (ponytail-style injection).** The always-on block is small; bounded relevant confirmed memory and the **active** skill's full body are injected every turn; non-active skill bodies are not in context. Proof: `buildInjection` includes the memory marker and `guarana:<skill> (injected)` + `# guarana:<skill>` when context exists.
-8. **Bundle + dashboard.** `npm test`, `check-cli` PASS; orchestrator plugin + engine deployable via `guarana plugin install`; `/api/workflow/current` returns live state.
+7. **Progressive disclosure and worker split.** The always-on block is small; primary-context skills and bounded relevant confirmed memory are injected as appropriate. Code/verify/debug procedures are present in installed Task profiles; worker states dispatch those profiles and keep their full bodies out of the primary prompt.
+8. **Bundle + dashboard.** `npm test`, `check-cli` PASS; orchestrator plugin + engine and Task worker profiles deployable via `guarana plugin install`; `/api/workflow/current` returns live state.
 9. **Human-readable spec lifecycle.** Planning replaces generic bootstrap content with a task-specific slug, known requirements, assumptions, scope, and falsifiable acceptance criteria before `plan_complete`; each workflow stage updates project-state and feature status; successful verification records exact proof and updates tracker status. Workflow JSON alone does not satisfy this criterion.
 
 ## Definition of done

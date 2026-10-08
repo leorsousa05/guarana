@@ -66,6 +66,17 @@ describe('GuaranaOrchestrator', () => {
     assert.equal(evs[0].event, 'new_task');
   });
 
+  it('same user message is processed once when global and project plugin instances are both loaded', async () => {
+    const duplicate = await GuaranaOrchestrator({ directory: tmpDir });
+    const input = { sessionID: 's1', messageID: 'same-user-message', agent: 'build' };
+    const output = { message: { id: 'same-user-message', agent: 'build' }, parts: parts('Implement one exact task') };
+    await api['chat.message'](input, output);
+    await duplicate['chat.message'](input, output);
+
+    assert.equal(workflow().state, 'planning');
+    assert.equal(workflow().history.filter((entry) => entry.event === 'new_task').length, 1);
+  });
+
   it('new tasks bootstrap specs and the memory vault automatically', async () => {
     await chat('Implement OAuth authentication');
     assert.ok(fs.existsSync(path.join(tmpDir, '.specs', 'README.md')));
@@ -208,6 +219,57 @@ describe('GuaranaOrchestrator', () => {
     assert.equal(r4.state, 'verifying');
     const r5 = await tick('verify_pass');
     assert.equal(r5.state, 'completed');
+  });
+
+  it('Task child sessions cannot re-plan, inject the parent workflow, or advance its state', async () => {
+    const tick = async (action) => JSON.parse(await api.tool.workflow_tick.execute({ action }));
+    await chat('Implement OAuth authentication');
+    await tick('plan_complete');
+    await tick('run_start');
+    assert.equal(workflow().state, 'coding');
+
+    await api.event({ event: { type: 'session.created', properties: { sessionID: 'worker-code-1', info: { id: 'worker-code-1', parentID: 's1', agent: 'worker-code' } } } });
+    await api['chat.message'](
+      { sessionID: 'worker-code-1', agent: 'worker-code' },
+      { parts: parts('Implement the delegated condition') },
+    );
+    assert.equal(workflow().state, 'coding');
+
+    const childSystem = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID: 'worker-code-1' }, childSystem);
+    assert.deepEqual(childSystem.system, []);
+
+    const childTick = JSON.parse(await api.tool.workflow_tick.execute(
+      { action: 'code_complete' },
+      { sessionID: 'worker-code-1', agent: 'worker-code' },
+    ));
+    assert.equal(childTick.ok, false);
+    assert.match(childTick.error, /cannot advance the parent workflow/i);
+    assert.equal(workflow().state, 'coding');
+
+    await tick('code_complete');
+    assert.equal(workflow().state, 'verifying');
+    await api.event({ event: { type: 'session.created', properties: { sessionID: 'worker-verify-1', info: { id: 'worker-verify-1', parentID: 's1', agent: 'worker-verify' } } } });
+    await api['tool.execute.after'](
+      { tool: 'bash', sessionID: 'worker-verify-1', callID: 'verify-child' },
+      { output: 'Error: assertion failed' },
+    );
+    assert.equal(workflow().state, 'verifying');
+  });
+
+  it('generic OpenCode session events register child-session metadata', async () => {
+    await api.event({
+      event: {
+        type: 'session.created',
+        properties: {
+          sessionID: 'event-worker',
+          info: { id: 'event-worker', parentID: 's1', agent: 'worker-code' },
+        },
+      },
+    });
+    const output = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID: 'event-worker' }, output);
+    assert.deepEqual(output.system, []);
   });
 
   it('workflow_tick refreshes the active skill injection', async () => {

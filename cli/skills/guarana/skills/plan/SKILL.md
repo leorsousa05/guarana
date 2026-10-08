@@ -104,9 +104,14 @@ Ambiguous intent → ASK the human (Rule 0). Never guess a route. Never load deb
 
 ## 3. Dispatch template (every dispatch, no exceptions)
 - **Worker:** worker-code | worker-verify | worker-debug
+- **Mechanism:** invoke that named OpenCode subagent through the native Task tool; do not relabel same-context work as a worker dispatch.
 - **Verifiable condition:** the exact checkable predicate defining done
 - **Budget:** per ADR-005 (code 8k / verify 4k / debug 6k tokens)
 - **State pointers:** which `.specs/` files the worker reads and may append to
+
+The primary context passes the dispatch contract, waits for the Task return, and
+advances workflow state. If Task is unavailable or denied, report the blocker
+instead of doing the worker's procedure in the primary context.
 
 Before a worker-code dispatch, confirm the requirements discovery gate above is
 closed and the feature spec contains a checkable acceptance condition.

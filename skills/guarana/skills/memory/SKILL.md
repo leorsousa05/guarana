@@ -1,6 +1,6 @@
 ---
 name: guarana:memory
-description: Use when using or querying the memory vault — recovering prior decisions/bugs, saving a decision, or searching confirmed memory. The orchestrator supplies bounded confirmed context automatically.
+description: Use when searching, reviewing, or saving durable knowledge in the Guarana memory graph, including decisions, bugs, solutions, refactors, and standing preferences. The orchestrator supplies bounded confirmed context automatically.
 ---
 
 # guarana:memory
@@ -25,6 +25,8 @@ user states durable knowledge. Tool/file activity itself is telemetry, not memor
 | `memory_save_decision({intent,decision,rejectedAlternatives?,tags?,author?})` | Backward-compatible project decision save. |
 | `memory_save_node({type,scope,intent,summary,relatedTo?,tags?,author?})` | Save a confirmed `decision`, `bug`, `solution`, `refactor`, or `preference`; use `global` for standing user preferences and `project` for current-project knowledge. |
 | `memory_review_draft({id,action:"confirm"\|"discard",edits?})` | Migrating or discarding legacy draft atoms from older versions. |
+| `skill_list({scope?})` | Check Guarana-generated skills in project/global scopes before proposing a new reusable procedure. |
+| `skill_create({name,description,scope,content})` | Persist a clear reusable procedure as a native OpenCode skill; the tool never overwrites an existing name. |
 
 ## Explicit memory lifecycle
 When a user sets a lasting preference or makes a durable project decision, save
@@ -36,6 +38,20 @@ edits do not create memory nodes. `memory_save_decision` remains for explicit
 decision saves.
 Legacy draft atoms from older versions are never retrieved automatically; use
 `memory_review_draft` only to migrate or discard them.
+
+## Skill capture boundary
+
+The memory plugin also injects an automatic skill-capture policy on every turn.
+Create a skill when the user gives a repeatable specialized procedure, recurring
+checks, or a correction intended to guide similar future work. One message is
+enough when future reuse is clear. For example, a repo-specific dashboard review
+sequence is a project skill; rewriting one paragraph in bullets is a one-off and
+should not create a skill. A technically complex request, temporary acceptance
+criteria, generic best practices, or a simple task are not triggers by themselves.
+If reuse is ambiguous, do not create one. Preferences and decisions remain
+memories; skills capture how to perform a repeatable method. Use project scope
+for repository conventions and global scope for portable procedures. The plugin's
+always-on policy remains the runtime authority.
 
 ## Automatic retrieval boundary
 Relevant project nodes and up to three current global preferences are injected

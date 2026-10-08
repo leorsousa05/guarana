@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import {
   STATES, STATE_SKILL, isState, isEvent, skillForState, stateForSkill,
   canTransition, apply, createWorkflow, load, save, workflowFile,
@@ -65,6 +66,46 @@ test('verification failure routes to debugging, then back to verification', () =
   assert.equal(w.skill, 'debug');
   w = apply(w, 'debug_complete');
   assert.equal(w.state, 'verifying');
+});
+
+test('debug Task delegation occurs after a verification failure, not on a green result', () => {
+  const failed = decide({ userText: 'the test failed', workflow: toVerifying() });
+  assert.equal(failed.event, 'verify_fail');
+  assert.equal(failed.skill, 'debug');
+  const debugging = apply(toVerifying(), failed.event, { skill: failed.skill });
+  const debugInjection = buildInjection(debugging);
+  assert.match(debugInjection, /native Task tool with subagent `worker-debug`/);
+  assert.doesNotMatch(debugInjection, /guarana:debug \(injected\)/);
+
+  const green = decide({ userText: 'all good', workflow: toVerifying() });
+  assert.equal(green.state, 'completed');
+  const completed = apply(toVerifying(), green.event);
+  const greenInjection = buildInjection(completed);
+  assert.doesNotMatch(greenInjection, /guarana:(?:debug|measure) \(injected\)/);
+});
+
+test('remember and memory descriptions route state recovery separately from graph knowledge', () => {
+  const index = fs.readFileSync(path.resolve('skills/guarana/SKILL.md'), 'utf8');
+  const remember = fs.readFileSync(path.resolve('skills/guarana/skills/remember/SKILL.md'), 'utf8');
+  const memory = fs.readFileSync(path.resolve('skills/guarana/skills/memory/SKILL.md'), 'utf8');
+
+  assert.match(index, /the linked skill body owns its procedure/i);
+  assert.match(index, /Resuming project work; restoring state after context loss/i);
+  assert.match(index, /Searching\/reviewing decisions, bugs, or solutions/i);
+  assert.match(remember.split('---')[1], /restoring or recording project workflow state/i);
+  assert.match(memory.split('---')[1], /searching, reviewing, or saving durable knowledge/i);
+  assert.match(remember.split('---')[1], /checkpoint/i);
+  assert.match(memory.split('---')[1], /memory graph/i);
+});
+
+test('measure is discoverable for telemetry/cost work and remains outside workflow states', () => {
+  const index = fs.readFileSync(path.resolve('skills/guarana/SKILL.md'), 'utf8');
+  const measure = fs.readFileSync(path.resolve('skills/guarana/skills/measure/SKILL.md'), 'utf8');
+  assert.match(index, /guarana:measure.*OPTIONAL.*telemetry, stop-reason logs, budget health.*ONLY when tuning cost or reading telemetry/i);
+  assert.match(measure.split('---')[1], /ONLY when tuning cost or reading telemetry/i);
+  assert.equal(stateForSkill('measure'), null);
+  assert.equal(decide({ userText: 'hello', workflow: createWorkflow() }).skill, null);
+  assert.doesNotMatch(buildInjection(createWorkflow()), /guarana:(?:debug|measure) \(injected\)/);
 });
 
 test('correction path: debugging -> coding -> verifying', () => {
@@ -155,6 +196,18 @@ test('automatic specs bootstrap uses a generic spec path and is idempotent', () 
   assert.match(spec, /## Planning required/);
   assert.match(spec, /## Request context\nImplement OAuth authentication/);
   assert.doesNotMatch(spec, /^# Feature spec: Implement OAuth authentication/m);
+});
+
+test('fresh automatic specs bootstrap passes the shipped specs validator', () => {
+  const dir = tmp();
+  ensureSpecs(dir, 'Implement OAuth authentication', 0);
+  const bin = path.resolve('bin/guarana.js');
+  const result = spawnSync(process.execPath, [bin, 'specs', 'validate', dir, '--json'], {
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(JSON.parse(result.stdout).ok, true);
 });
 
 test('automatic specs bootstrap preserves multiline task Markdown', () => {
@@ -269,6 +322,30 @@ test('injection includes the active skill full body (ponytail mechanism)', () =>
   assert.match(inj, /guarana:plan \(injected\)/);
   assert.match(inj, /# guarana:plan/);
   assert.match(inj, /plan_complete/);
+});
+
+test('coding, verification, and debugging delegate to native Task workers without injecting worker bodies in the parent', () => {
+  let workflow = createWorkflow();
+  for (const event of ['new_task', 'plan_complete', 'run_start']) workflow = apply(workflow, event);
+  const codeInjection = buildInjection(workflow);
+  assert.match(codeInjection, /native Task tool with subagent `worker-code`/);
+  assert.match(codeInjection, /wait for its diff\/stop-reason return/);
+  assert.doesNotMatch(codeInjection, /guarana:code \(injected\)/);
+  assert.match(codeInjection, /worker subagents never call workflow_tick/);
+
+  workflow = apply(workflow, 'code_complete');
+  const verifyInjection = buildInjection(workflow);
+  assert.match(verifyInjection, /native Task tool with subagent `worker-verify` in a fresh context/);
+  assert.match(verifyInjection, /criterion-level verdict\/proofs/);
+  assert.doesNotMatch(verifyInjection, /guarana:verify \(injected\)/);
+
+  workflow = apply(workflow, 'verify_fail');
+  const debugInjection = buildInjection(workflow);
+  assert.match(debugInjection, /After a confirmed failure, call the native Task tool with subagent `worker-debug`/);
+  assert.doesNotMatch(debugInjection, /guarana:debug \(injected\)/);
+
+  const blocked = buildSystemBlock(workflow);
+  assert.match(blocked, /If Task is unavailable or denied, report the blocker and stop/);
 });
 
 test('injection includes automatic memory context when supplied', () => {

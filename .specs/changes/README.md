@@ -6,8 +6,18 @@ Entry format: date · feature · what validated / failed / re-opened · proof pa
 
 ## Records
 
+### 2026-10-07 — 1.0.0 release candidate
+- [1.0.0 release candidate](2026-10-07-release-candidate-1.0.0.md) — local version metadata, audit-clean dashboard locks, packed CLI and provider-backed OpenCode 1.18.35 smoke; unpublished and untagged
+
+### 2026-10-07 — native Task worker dispatch
+- [Native Task worker dispatch](2026-10-07-native-task-worker-dispatch.md) — installed worker-code/verify/debug profiles, retained Task event/session evidence, parent-state isolation, project/global safety; independent verification PASS (6/6)
+
+### 2026-10-07 — skill routing clarity
+- [Skill routing clarity](2026-10-07-skill-routing-clarity.md) — distinct state-resume/memory-graph triggers, active-body and optional-skill routing regression coverage, OpenCode model behavior smoke; independent verification PASS (5/5 criteria)
+
 ### 2026-10-05 — automatic skill creation
 - [Automatic skill creation and dashboard inventory](2026-10-05-automatic-skill-creation.md) — global/project skill capture, protected native storage, dashboard tabs, and independent verification PASS
+- [Skill trigger guidance](2026-10-05-skill-trigger-guidance.md) — explicit reusable-procedure signals, no-create boundaries, memory distinction, and focused regression assertions
 
 ### 2026-10-05 — dashboard skill-scope counts
 - [Dashboard skill-scope counts](2026-10-05-dashboard-skill-scope-counts.md) — API-backed Global/Project tab counts, preserved keyboard/responsive ledger behavior, synchronized bundles, and independent verification PASS

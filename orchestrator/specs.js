@@ -51,6 +51,7 @@ export function ensureSpecs(projectDir, task, now = Date.now()) {
   writeIfMissing(
     path.join(specsDir, 'README.md'),
     `# .specs - Guarana System of Record\n\n` +
+      `## Master tracker\n` +
       `Status pipeline: SPECIFIED -> TASKED -> IMPLEMENTED -> VALIDATED -> SHIPPED\n\n` +
       `| Name | Status | Proof | Change |\n|---|---|---|---|\n` +
       `| Initial task | SPECIFIED | | |\n\n` +
@@ -65,6 +66,7 @@ export function ensureSpecs(projectDir, task, now = Date.now()) {
       `## Current step\n` +
       `Automatic guarana workflow.\n\n` +
       `## Checkpoint\n` +
+      `- Goal: ${markdown}\n` +
       `- Request context: ${markdown}\n` +
       `- Pending writes: planning\n`
   );
@@ -72,7 +74,8 @@ export function ensureSpecs(projectDir, task, now = Date.now()) {
     featureFile,
     `# Feature spec: ${title}\n\n` +
       `**Status:** SPECIFIED\n` +
-      `**Date:** ${new Date(now).toISOString().slice(0, 10)}\n\n` +
+    `**Date:** ${new Date(now).toISOString().slice(0, 10)}\n\n` +
+      `## Goal\n${markdown}\n\n` +
       `## Planning required\nInterpret the incoming request and define a concise goal and acceptance criteria.\n\n` +
       `## Request context\n${markdown}\n\n` +
       `## Acceptance criteria\n` +

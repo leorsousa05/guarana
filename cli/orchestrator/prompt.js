@@ -61,9 +61,19 @@ const SKILL_LINES = Object.entries(STATE_SKILL)
   .map(([state, s]) => `- ${state} -> \`guarana:${s}\``)
   .join('\n');
 
+const TASK_STATES = new Set(['coding', 'verifying', 'debugging']);
+
 // Always-resident orchestration block: state overview + how the loop advances.
 export function buildSystemBlock(workflow) {
   const skill = skillForState(workflow.state);
+  const delegated = TASK_STATES.has(workflow.state);
+  const delegationRule = workflow.state === 'coding'
+    ? '- Call the native Task tool with subagent `worker-code`; pass the exact condition, budget, and state pointers, wait for its diff/stop-reason return, then advance with `code_complete`.'
+    : workflow.state === 'verifying'
+      ? '- Call the native Task tool with subagent `worker-verify` in a fresh context; pass the condition, evidence, and state pointers, wait for criterion-level verdict/proofs, then advance with `verify_pass` or `verify_fail`.'
+      : workflow.state === 'debugging'
+        ? '- After a confirmed failure, call the native Task tool with subagent `worker-debug`; pass the failure and state pointers, wait for root cause/mitigation, then decide whether to start a code fix or re-verify.'
+        : '';
   return [
     '## Guarana workflow (automatic engineering loop)',
     '',
@@ -79,7 +89,14 @@ export function buildSystemBlock(workflow) {
     SKILL_LINES,
     '',
     'Rules:',
-    '- Follow the active skill body appended below (it is injected every turn).',
+    delegated
+      ? '- Delegate worker procedures to separate native Task subagents; the installed agent profile contains the active skill procedure.'
+      : '- Follow the active skill body appended below (it is injected every turn).',
+    ...(delegationRule ? [delegationRule] : []),
+    ...(delegated ? [
+      '- The primary context owns workflow transitions and advances only after inspecting the Task result; worker subagents never call workflow_tick.',
+      '- If Task is unavailable or denied, report the blocker and stop without doing the worker procedure in this context.',
+    ] : []),
     '- Before code dispatch, inspect project evidence and ask about consequential requirement gaps; do not silently assume scope or acceptance for substantial/ambiguous work.',
     '- Skip redundant questions for small, fully specified tasks; record material assumptions.',
     '- `.specs/state/workflow.json` is not the human-readable record: before advancing workflow steps, update `.specs/README.md`, `.specs/state/project-state.md`, and the active feature spec with task-specific requirements, current status, and verified proof; inspect that the writes landed.',
@@ -89,7 +106,9 @@ export function buildSystemBlock(workflow) {
     '- A user typing `guarana:<skill>` forces that step (escape hatch).',
     '',
     skill
-      ? `Active skill: \`guarana:${skill}\` — its full body follows.`
+      ? delegated
+        ? `Active skill: \`guarana:${skill}\` — execute it through the designated Task subagent; its profile carries the full procedure.`
+        : `Active skill: \`guarana:${skill}\` — its full body follows.`
       : 'Idle: await a task, or a `guarana:<skill>` command.',
   ].join('\n');
 }
@@ -113,7 +132,7 @@ export function buildInjection(workflow, { memoryContext, directory } = {}) {
   const memory = memoryContext && memoryContext.count > 0
     ? `\n\n<!-- guarana memory (automatic context) -->\n${JSON.stringify(memoryContext)}\n<!-- end guarana memory -->`
     : '';
-  if (!skill) return block + memory;
+  if (!skill || TASK_STATES.has(workflow.state)) return block + memory;
   const body = resolveSkillBody(skill, directory);
   const action = completionAction(workflow.state);
   const close = action

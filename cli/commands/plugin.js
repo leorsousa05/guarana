@@ -10,7 +10,8 @@ const {
   SKILL_ENGINE_SOURCE, SKILL_ENGINE_NAME,
 } = require('../constants.js');
 const { pluginIsOurs, PLUGIN_MARKER, MEMORY_PLUGIN_MARKER, ORCHESTRATOR_PLUGIN_MARKER } = require('../lib/guard.js');
-const { pluginTarget, memoryEngineTarget, orchestratorEngineTarget, skillEngineTarget } = require('../lib/paths.js');
+const { pluginTarget, memoryEngineTarget, orchestratorEngineTarget, skillEngineTarget, workerAgentsTarget } = require('../lib/paths.js');
+const agents = require('../lib/agents.js');
 
 const PLUGINS = [
   { name: PLUGIN_NAME, bundle: PLUGIN_BUNDLE, marker: PLUGIN_MARKER },
@@ -30,6 +31,12 @@ function copyDir(src, dest) {
 }
 
 function pluginInstall(useProject) {
+  try {
+    agents.assertInstallable(useProject);
+  } catch (err) {
+    console.error(err.message);
+    process.exit(1);
+  }
   for (const { name, bundle, marker } of PLUGINS) {
     const target = pluginTarget(useProject, name);
     if (fs.existsSync(target) && !pluginIsOurs(target, bundle, marker)) {
@@ -50,6 +57,9 @@ function pluginInstall(useProject) {
   const skillsTarget = skillEngineTarget(useProject);
   copyDir(SKILL_ENGINE_SOURCE, skillsTarget);
   console.log(`${fs.existsSync(path.join(skillsTarget, 'index.js')) ? 'updated' : 'installed'} skill engine -> ${skillsTarget}`);
+  for (const { name, target } of agents.installWorkerAgents(useProject)) {
+    console.log(`installed/updated subagent ${name} -> ${target}`);
+  }
 }
 
 function pluginUninstall(useProject) {
@@ -81,6 +91,9 @@ function pluginUninstall(useProject) {
     fs.rmSync(skillsTarget, { recursive: true, force: true });
     console.log(`uninstalled skill engine from ${skillsTarget}`);
   }
+  const workerAgents = agents.uninstallWorkerAgents(useProject);
+  for (const target of workerAgents.removed) console.log(`removed Guarana worker agent -> ${target}`);
+  for (const target of workerAgents.preserved) console.log(`preserved foreign worker agent -> ${target}`);
 }
 
 function filesEqual(a, b) {
@@ -138,6 +151,9 @@ async function pluginStatus(useProject) {
   const skillsTarget = skillEngineTarget(useProject);
   const hasSkills = fs.existsSync(path.join(skillsTarget, 'index.js'));
   console.log(`- skill engine (${skillsTarget}): ${hasSkills ? 'deployed' : 'not deployed (re-run: guarana plugin install)'}`);
+  for (const profile of agents.workerAgentStatus(useProject)) {
+    console.log(`- subagent ${profile.name} (${profile.target}): ${profile.status}`);
+  }
 }
 
 async function run(args, { useProject }) {

@@ -14,11 +14,26 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const pluginDir = path.dirname(fileURLToPath(import.meta.url));
 const ORCHESTRATOR_INJECTION_MARKER = '<!-- guarana orchestrator injection -->';
 const MEMORY_CONTEXT_GROUPS = ['decisions', 'bugs', 'solutions', 'refactors', 'preferences', 'superseded', 'atoms'];
+const WORKER_AGENT_NAMES = new Set(['worker-code', 'worker-verify', 'worker-debug']);
 const INJECTION_CACHE_SYMBOL = Symbol.for('guarana.orchestrator.memory-injection-cache');
 const injectedMemoryBySession = globalThis[INJECTION_CACHE_SYMBOL] || new Map();
 globalThis[INJECTION_CACHE_SYMBOL] = injectedMemoryBySession;
+const WORKFLOW_MESSAGE_CACHE_SYMBOL = Symbol.for('guarana.orchestrator.workflow-message-cache');
+const processedWorkflowMessages = globalThis[WORKFLOW_MESSAGE_CACHE_SYMBOL] || new Map();
+globalThis[WORKFLOW_MESSAGE_CACHE_SYMBOL] = processedWorkflowMessages;
 
 const memoryNodeKey = (node) => `${node.scope === 'global' ? 'global' : 'project'}:${node.id}`;
+
+function claimWorkflowMessage(directory, sessionID, messageID) {
+  if (!sessionID || !messageID) return true;
+  const key = `${path.resolve(directory)}::${sessionID}::${messageID}`;
+  if (processedWorkflowMessages.has(key)) return false;
+  processedWorkflowMessages.set(key, Date.now());
+  while (processedWorkflowMessages.size > 512) {
+    processedWorkflowMessages.delete(processedWorkflowMessages.keys().next().value);
+  }
+  return true;
+}
 
 function selectUnseenMemory(context, seen) {
   const selected = {};
@@ -42,6 +57,11 @@ function sessionIdFrom(event) {
   const props = (event && event.properties) || event || {};
   const info = props.info || props.session || props;
   return (info && info.id) || props.sessionID || (event && event.sessionID) || null;
+}
+
+function sessionInfoFrom(event) {
+  const props = (event && event.properties) || event || {};
+  return props.info || props.session || props;
 }
 
 function storeSessionInjectionState(key, value) {
@@ -250,7 +270,47 @@ export const GuaranaOrchestrator = async ({ directory }) => {
   let memoryContext = null;
   let memoryPromise = null;
   let activeSessionID = null;
+  const childSessions = new Set();
+  const markChildSession = (sessionID) => {
+    if (!sessionID) return;
+    childSessions.delete(sessionID);
+    childSessions.add(sessionID);
+    while (childSessions.size > 256) childSessions.delete(childSessions.values().next().value);
+  };
+  const isWorkerContext = (sessionID, agent) => childSessions.has(sessionID) || WORKER_AGENT_NAMES.has(agent);
   const sessionCacheKey = (sessionID) => `${path.resolve(directory)}::${sessionID}`;
+
+  const handleSessionCreated = async (event) => {
+    const sessionID = sessionIdFrom(event);
+    if (!sessionID) return;
+    const info = sessionInfoFrom(event);
+    if (info?.parentID || WORKER_AGENT_NAMES.has(info?.agent)) {
+      markChildSession(sessionID);
+      return;
+    }
+    storeSessionInjectionState(sessionCacheKey(sessionID), { seen: new Set(), nextReason: 'session-start' });
+    try {
+      await resetPersistentMemoryReferences(directory, sessionID, 'session-start');
+    } catch (err) {
+      append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
+    }
+  };
+
+  const handleSessionCompacted = async (event) => {
+    const sessionID = sessionIdFrom(event) || activeSessionID || 'unknown';
+    if (childSessions.has(sessionID)) return;
+    storeSessionInjectionState(sessionCacheKey(sessionID), { seen: new Set(), nextReason: 'compacted' });
+    try {
+      await resetPersistentMemoryReferences(directory, sessionID, 'compacted');
+      const c = await core();
+      if (!c) return;
+      const wf = c.state.load(directory);
+      memoryContext = await loadContext(wf.goal || wf.activeTask || '');
+      latest = wf;
+    } catch (err) {
+      append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
+    }
+  };
 
   const loadContext = async (task) => {
     if (!memoryPromise) {
@@ -381,55 +441,72 @@ export const GuaranaOrchestrator = async ({ directory }) => {
         skill: { type: 'string', description: 'skill name when action=force' },
         note: { type: 'string', description: 'optional human note' },
       },
-      execute: runTool(async (c, args) => {
-        const action = args.action;
-        if (!action || !c.state.isEvent(action)) {
-          return { ok: false, error: `unknown action: ${action}`, state: c.state.load(directory).state };
+      execute: async (args, context = {}) => {
+        if (isWorkerContext(context.sessionID, context.agent)) {
+          return JSON.stringify({ ok: false, error: 'Task workers cannot advance the parent workflow; return the worker contract to the primary context.' });
         }
-        const wf = c.state.load(directory);
-        const applied = c.state.apply(wf, action, {
-          skill: args.skill || undefined,
-          goal: args.goal != null ? args.goal : wf.goal,
-          condition: args.condition != null ? args.condition : wf.condition,
-          activeTask: args.goal != null ? args.goal : wf.activeTask,
-          note: args.note || '',
-        });
-        if (!applied) {
-          return { ok: false, error: `illegal transition ${action} from ${wf.state}`, state: wf.state };
-        }
-        c.state.save(directory, applied);
-        if (action === 'new_task' && args.goal) {
-          try {
-            c.specs.ensureSpecs(directory, args.goal);
-          } catch (err) {
-            append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
+        return runTool(async (c, args) => {
+          const action = args.action;
+          if (!action || !c.state.isEvent(action)) {
+            return { ok: false, error: `unknown action: ${action}`, state: c.state.load(directory).state };
           }
-        }
-        latest = applied;
-        memoryContext = await loadContext(applied.goal || applied.activeTask || '');
-        append({
-          ts: Date.now(),
-          type: 'workflow',
-          event: action,
-          from: wf.state,
-          to: applied.state,
-          skill: applied.skill,
-          note: args.note || '',
-        });
-        return { ok: true, state: applied.state, skill: applied.skill, goal: applied.goal };
-      }),
+          const wf = c.state.load(directory);
+          const applied = c.state.apply(wf, action, {
+            skill: args.skill || undefined,
+            goal: args.goal != null ? args.goal : wf.goal,
+            condition: args.condition != null ? args.condition : wf.condition,
+            activeTask: args.goal != null ? args.goal : wf.activeTask,
+            note: args.note || '',
+          });
+          if (!applied) {
+            return { ok: false, error: `illegal transition ${action} from ${wf.state}`, state: wf.state };
+          }
+          c.state.save(directory, applied);
+          if (action === 'new_task' && args.goal) {
+            try {
+              c.specs.ensureSpecs(directory, args.goal);
+            } catch (err) {
+              append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
+            }
+          }
+          latest = applied;
+          memoryContext = await loadContext(applied.goal || applied.activeTask || '');
+          append({
+            ts: Date.now(),
+            type: 'workflow',
+            event: action,
+            from: wf.state,
+            to: applied.state,
+            skill: applied.skill,
+            note: args.note || '',
+          });
+          return { ok: true, state: applied.state, skill: applied.skill, goal: applied.goal };
+        })(args);
+      },
     },
   };
 
   return {
     tool: workflowTools,
 
+    // Session lifecycle arrives through OpenCode's generic event hook.
+    event: async ({ event } = {}) => {
+      if (event?.type === 'session.created') await handleSessionCreated(event);
+      if (event?.type === 'session.compacted') await handleSessionCompacted(event);
+    },
+
     // Observe every user prompt: restore the persisted workflow, decide the
     // next skill/transition, persist, and stage the directive for injection.
     'chat.message': async (input, output) => {
       try {
+        const sessionID = input?.sessionID || output?.sessionID;
+        const agent = input?.agent || output?.message?.agent;
+        if (WORKER_AGENT_NAMES.has(agent)) markChildSession(sessionID);
+        if (isWorkerContext(sessionID, agent)) return;
+        const messageID = input?.messageID || output?.message?.id;
+        if (!claimWorkflowMessage(directory, sessionID, messageID)) return;
         const text = userText((output && output.parts) || (input && input.parts));
-        await syncDecision(text, null, input?.sessionID || output?.sessionID);
+        await syncDecision(text, null, sessionID);
       } catch (err) {
         append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
       }
@@ -439,6 +516,7 @@ export const GuaranaOrchestrator = async ({ directory }) => {
     'experimental.chat.system.transform': async (input, output) => {
       try {
         const sessionID = input?.sessionID || sessionIdFrom(input) || activeSessionID || 'unknown';
+        if (childSessions.has(sessionID)) return;
         const cacheKey = sessionCacheKey(sessionID);
         let sessionMemory = injectedMemoryBySession.get(cacheKey);
         if (!sessionMemory) {
@@ -485,36 +563,18 @@ export const GuaranaOrchestrator = async ({ directory }) => {
     },
 
     'session.created': async (event) => {
-      const sessionID = sessionIdFrom(event);
-      if (sessionID) {
-        storeSessionInjectionState(sessionCacheKey(sessionID), { seen: new Set(), nextReason: 'session-start' });
-        try {
-          await resetPersistentMemoryReferences(directory, sessionID, 'session-start');
-        } catch (err) {
-          append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
-        }
-      }
+      await handleSessionCreated(event);
     },
 
     'session.compacted': async (event) => {
-      const sessionID = sessionIdFrom(event) || activeSessionID || 'unknown';
-      storeSessionInjectionState(sessionCacheKey(sessionID), { seen: new Set(), nextReason: 'compacted' });
-      try {
-        await resetPersistentMemoryReferences(directory, sessionID, 'compacted');
-        const c = await core();
-        if (!c) return;
-        const wf = c.state.load(directory);
-        memoryContext = await loadContext(wf.goal || wf.activeTask || '');
-        latest = wf;
-      } catch (err) {
-        append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
-      }
+      await handleSessionCompacted(event);
     },
 
     // Observe tool results: an error during verification automatically moves
     // the workflow toward debugging/correction (requirement: verify fail -> debug).
     'tool.execute.after': async (input, output) => {
       try {
+        if (childSessions.has(input?.sessionID)) return;
         const c = await core();
         if (!c) return;
         const wf = c.state.load(directory);
