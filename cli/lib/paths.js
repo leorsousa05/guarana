@@ -2,6 +2,10 @@ const os = require('os');
 const path = require('path');
 const { PLUGIN_NAME } = require('../constants.js');
 
+function opencodeConfigDir() {
+  return path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'opencode');
+}
+
 function targetDir(useProject) {
   return useProject
     ? path.join(process.cwd(), '.opencode', 'skills', 'guarana')
@@ -11,7 +15,7 @@ function targetDir(useProject) {
 function pluginTarget(useProject, name = PLUGIN_NAME) {
   return useProject
     ? path.join(process.cwd(), '.opencode', 'plugins', name)
-    : path.join(os.homedir(), '.config', 'opencode', 'plugins', name);
+    : path.join(opencodeConfigDir(), 'plugins', name);
 }
 
 function memoryEngineTarget(useProject) {
@@ -31,10 +35,48 @@ function skillEngineTarget(useProject) {
   return path.join(pluginsParent, 'skill-engine');
 }
 
-function workerAgentsTarget(useProject) {
+function workerAgentsTarget(useProject, projectRoot = process.cwd()) {
   return useProject
-    ? path.join(process.cwd(), '.opencode', 'agents')
-    : path.join(os.homedir(), '.config', 'opencode', 'agents');
+    ? path.join(projectRoot, '.opencode', 'agents')
+    : path.join(opencodeConfigDir(), 'agents');
 }
 
-module.exports = { targetDir, pluginTarget, memoryEngineTarget, orchestratorEngineTarget, skillEngineTarget, workerAgentsTarget };
+function advisorSettingsTarget(useProject, projectRoot = process.cwd()) {
+  return useProject
+    ? path.join(projectRoot, '.guarana', 'advisor.json')
+    : path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'guarana', 'advisor.json');
+}
+
+function advisorCommandTarget(useProject, projectRoot = process.cwd()) {
+  const root = useProject
+    ? path.join(projectRoot, '.opencode')
+    : opencodeConfigDir();
+  return path.join(root, 'commands', 'guarana-advisor.md');
+}
+
+function advisorAgentsTarget(useProject, projectRoot = process.cwd()) {
+  return path.join(workerAgentsTarget(useProject, projectRoot), 'guarana.md');
+}
+
+function legacyAdvisorAgentsTarget(useProject, projectRoot = process.cwd()) {
+  return path.join(workerAgentsTarget(useProject, projectRoot), 'guarana-advisor-primary.md');
+}
+
+function advisorSubagentTarget(useProject, projectRoot = process.cwd()) {
+  return path.join(workerAgentsTarget(useProject, projectRoot), 'guarana-advisor.md');
+}
+
+module.exports = {
+  targetDir,
+  opencodeConfigDir,
+  pluginTarget,
+  memoryEngineTarget,
+  orchestratorEngineTarget,
+  skillEngineTarget,
+  workerAgentsTarget,
+  advisorSettingsTarget,
+  advisorCommandTarget,
+  advisorAgentsTarget,
+  legacyAdvisorAgentsTarget,
+  advisorSubagentTarget,
+};

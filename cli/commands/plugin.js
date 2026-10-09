@@ -12,6 +12,7 @@ const {
 const { pluginIsOurs, PLUGIN_MARKER, MEMORY_PLUGIN_MARKER, ORCHESTRATOR_PLUGIN_MARKER } = require('../lib/guard.js');
 const { pluginTarget, memoryEngineTarget, orchestratorEngineTarget, skillEngineTarget, workerAgentsTarget } = require('../lib/paths.js');
 const agents = require('../lib/agents.js');
+const advisorProfiles = require('../lib/advisor-profiles.js');
 
 const PLUGINS = [
   { name: PLUGIN_NAME, bundle: PLUGIN_BUNDLE, marker: PLUGIN_MARKER },
@@ -33,6 +34,7 @@ function copyDir(src, dest) {
 function pluginInstall(useProject, { quiet = false } = {}) {
   try {
     agents.assertInstallable(useProject);
+    advisorProfiles.assertInstallable(useProject);
   } catch (err) {
     console.error(err.message);
     process.exit(1);
@@ -60,6 +62,11 @@ function pluginInstall(useProject, { quiet = false } = {}) {
   for (const { name, target } of agents.installWorkerAgents(useProject)) {
     if (!quiet) console.log(`installed/updated subagent ${name} -> ${target}`);
   }
+  const advisor = advisorProfiles.installAdvisorArtifacts(useProject);
+  for (const { name, target } of advisor.installed) {
+    if (!quiet) console.log(`installed/updated ${name} -> ${target}`);
+  }
+  if (!quiet && advisor.setupOnly) console.log(`advisor setup-only command installed; model profiles unavailable: ${advisor.skipped}`);
 }
 
 function pluginUninstall(useProject) {
@@ -94,6 +101,9 @@ function pluginUninstall(useProject) {
   const workerAgents = agents.uninstallWorkerAgents(useProject);
   for (const target of workerAgents.removed) console.log(`removed Guarana worker agent -> ${target}`);
   for (const target of workerAgents.preserved) console.log(`preserved foreign worker agent -> ${target}`);
+  const advisor = advisorProfiles.uninstallAdvisorArtifacts(useProject);
+  for (const target of advisor.removed) console.log(`removed Guarana advisor artifact -> ${target}`);
+  for (const target of advisor.preserved) console.log(`preserved foreign advisor artifact -> ${target}`);
 }
 
 function filesEqual(a, b) {
@@ -122,7 +132,8 @@ async function engineHealthy(engineTarget) {
 
 async function pluginStatus(useProject) {
   console.log('guarana plugin status');
-  console.log(`target: ${useProject ? 'project (.opencode/)' : 'global (~/.config/opencode/)'}`);
+  const globalOpenCodeRoot = path.dirname(path.dirname(pluginTarget(false)));
+  console.log(`target: ${useProject ? 'project (.opencode/)' : `global (${globalOpenCodeRoot}/)`}`);
   for (const { name, bundle, marker } of PLUGINS) {
     const target = pluginTarget(useProject, name);
     const installed = fs.existsSync(target);
@@ -153,6 +164,9 @@ async function pluginStatus(useProject) {
   console.log(`- skill engine (${skillsTarget}): ${hasSkills ? 'deployed' : 'not deployed (re-run: guarana plugin install)'}`);
   for (const profile of agents.workerAgentStatus(useProject)) {
     console.log(`- subagent ${profile.name} (${profile.target}): ${profile.status}`);
+  }
+  for (const artifact of advisorProfiles.advisorArtifactStatus(useProject)) {
+    console.log(`- advisor ${artifact.name} (${artifact.target}): ${artifact.status}`);
   }
 }
 

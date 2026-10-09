@@ -1,6 +1,7 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { GuaranaOrchestrator } from './guarana-orchestrator.js';
+import { GuaranaOrchestrator as BundledOrchestrator } from '../cli/plugin/guarana-orchestrator.js';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
@@ -13,11 +14,14 @@ describe('GuaranaOrchestrator', () => {
   let eventsFile;
   let api;
   let oldHome;
+  let oldXdg;
 
   beforeEach(async () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-orch-plugin-'));
     oldHome = process.env.HOME;
+    oldXdg = process.env.XDG_CONFIG_HOME;
     process.env.HOME = path.join(tmpDir, 'home');
+    process.env.XDG_CONFIG_HOME = path.join(tmpDir, 'xdg');
     api = await GuaranaOrchestrator({ directory: tmpDir });
     eventsFile = path.join(tmpDir, '.specs', 'state', 'telemetry', 'events.jsonl');
   });
@@ -25,6 +29,8 @@ describe('GuaranaOrchestrator', () => {
   afterEach(() => {
     if (oldHome === undefined) delete process.env.HOME;
     else process.env.HOME = oldHome;
+    if (oldXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = oldXdg;
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
@@ -43,6 +49,86 @@ describe('GuaranaOrchestrator', () => {
   function parts(text) {
     return [{ type: 'text', text }];
   }
+
+  function writeSettings(scope, settings) {
+    const file = scope === 'project'
+      ? path.join(tmpDir, '.guarana', 'advisor.json')
+      : path.join(process.env.XDG_CONFIG_HOME, 'guarana', 'advisor.json');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(settings));
+  }
+
+  function writePrimaryProfile(scope) {
+    const file = scope === 'project'
+      ? path.join(tmpDir, '.opencode', 'agents', 'guarana.md')
+      : path.join(process.env.XDG_CONFIG_HOME, 'opencode', 'agents', 'guarana.md');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, '<!-- guarana-managed-advisor-artifact -->');
+  }
+
+  it('canonical and bundled plugins leave conflicting session model/variant selections untouched', async () => {
+    writeSettings('global', { primary: { provider: 'openai', model: 'gpt-6-luna', variant: 'xhigh' } });
+    writeSettings('project', { primary: { variant: 'low' } });
+    writePrimaryProfile('project');
+    for (const plugin of [GuaranaOrchestrator, BundledOrchestrator]) {
+      const hooks = await plugin({ directory: tmpDir });
+      assert.equal(Object.hasOwn(hooks, 'chat.params'), false);
+      for (const id of ['gpt-6-luna', 'session-selected-model']) {
+        const input = {
+          sessionID: `session-${plugin === GuaranaOrchestrator ? 'canonical' : 'bundled'}-${id}`,
+          messageID: 'session-selection', agent: 'guarana', variant: 'xhigh',
+          model: { providerID: 'openai', id, variants: { low: { reasoningEffort: 'low' }, xhigh: { reasoningEffort: 'xhigh' } } },
+        };
+        const output = {
+          message: { id: input.messageID, agent: 'guarana', model: { providerID: 'openai', modelID: id, variant: 'xhigh' } },
+          parts: parts('Implement session-selected work'),
+          options: { reasoningEffort: 'xhigh', temperature: 0.4 },
+        };
+        const originalInput = structuredClone(input);
+        const originalOutput = structuredClone(output);
+        await hooks['chat.message'](input, output);
+        assert.deepEqual(input, originalInput);
+        assert.deepEqual(output, originalOutput);
+      }
+    }
+  });
+
+  it('defaults to Guarana for configured managed Primary profiles in either scope, without leaking settings', async () => {
+    for (const scope of ['project', 'global']) {
+      writeSettings(scope, { primary: { provider: 'private-provider', model: 'private-model' } });
+      writePrimaryProfile(scope);
+      const cfg = {};
+      await api.config(cfg);
+      assert.equal(cfg.default_agent, 'guarana');
+    }
+  });
+
+  it('uses project-over-global Primary settings and preserves explicit custom defaults', async () => {
+    writeSettings('global', { primary: { provider: 'global', model: 'global-model' } });
+    writeSettings('project', { primary: { provider: 'project', model: 'project-model' } });
+    writePrimaryProfile('project');
+    const cfg = { default_agent: 'build' };
+    await api.config(cfg);
+    assert.equal(cfg.default_agent, 'guarana');
+    const custom = { default_agent: 'my-agent' };
+    await api.config(custom);
+    assert.equal(custom.default_agent, 'my-agent');
+  });
+
+  it('leaves default unchanged when Primary configuration or managed profile is missing', async () => {
+    const cfg = {};
+    await api.config(cfg);
+    assert.deepEqual(cfg, {});
+    writeSettings('project', { primary: { provider: 'provider', model: 'model' } });
+    await api.config(cfg);
+    assert.deepEqual(cfg, {});
+    writeSettings('project', { primary: { provider: 'provider', model: 'model' } });
+    writePrimaryProfile('project');
+    const missingModel = { default_agent: 'build' };
+    writeSettings('project', { primary: { provider: 'provider' } });
+    await api.config(missingModel);
+    assert.equal(missingModel.default_agent, 'build');
+  });
 
   async function chat(text) {
     await api['chat.message']({ sessionID: 's1' }, { parts: parts(text) });
@@ -255,6 +341,136 @@ describe('GuaranaOrchestrator', () => {
       { output: 'Error: assertion failed' },
     );
     assert.equal(workflow().state, 'verifying');
+  });
+
+  it('worker-specs is recognized as an isolated Task child', async () => {
+    await chat('Implement OAuth authentication');
+    assert.equal(workflow().state, 'planning');
+    await api.event({ event: { type: 'session.created', properties: {
+      sessionID: 'worker-specs-1', info: { id: 'worker-specs-1', parentID: 's1', agent: 'worker-specs' },
+    } } });
+    await api['chat.message'](
+      { sessionID: 'worker-specs-1', agent: 'worker-specs' },
+      { parts: parts('Do not start another task') },
+    );
+    assert.equal(workflow().state, 'planning');
+
+    const childSystem = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID: 'worker-specs-1' }, childSystem);
+    assert.deepEqual(childSystem.system, []);
+
+    const childTick = JSON.parse(await api.tool.workflow_tick.execute(
+      { action: 'plan_complete' }, { sessionID: 'worker-specs-1', agent: 'worker-specs' },
+    ));
+    assert.equal(childTick.ok, false);
+    assert.match(childTick.error, /cannot advance the parent workflow/i);
+    assert.equal(workflow().state, 'planning');
+  });
+
+  it('advisor Task child is isolated from parent prompts, workflow ticks, and tool-error transitions', async () => {
+    for (const action of ['new_task', 'plan_complete', 'run_start', 'code_complete']) {
+      await api.tool.workflow_tick.execute({ action });
+    }
+    assert.equal(workflow().state, 'verifying');
+
+    await api.event({ event: { type: 'session.created', properties: {
+      sessionID: 'advisor-child', info: { id: 'advisor-child', parentID: 's1', agent: 'guarana-advisor' },
+    } } });
+    await api['chat.message'](
+      { sessionID: 'advisor-child', agent: 'guarana-advisor' },
+      { parts: parts('Start a different task') },
+    );
+    assert.equal(workflow().state, 'verifying');
+
+    const childSystem = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID: 'advisor-child' }, childSystem);
+    assert.deepEqual(childSystem.system, []);
+
+    const childTick = JSON.parse(await api.tool.workflow_tick.execute(
+      { action: 'verify_fail' }, { sessionID: 'advisor-child', agent: 'guarana-advisor' },
+    ));
+    assert.equal(childTick.ok, false);
+    assert.match(childTick.error, /cannot advance the parent workflow/i);
+
+    await api['tool.execute.after'](
+      { tool: 'bash', sessionID: 'advisor-child', agent: 'guarana-advisor', callID: 'advisor-failure' },
+      { output: 'Error: advisor-side failure' },
+    );
+    assert.equal(workflow().state, 'verifying');
+  });
+
+  it('runtime advisor Task gate blocks repeated unchanged context across plugin copies and resets on new evidence or opt-in', async () => {
+    writeSettings('project', { advisor: { enabled: true, provider: 'advisor-provider', model: 'advisor-model' } });
+    const globalPlugin = await BundledOrchestrator({ directory: tmpDir });
+    const parentSession = 'advisor-guard-parent';
+    const originalArgs = {
+      description: 'Diagnose blocked implementation',
+      subagent_type: 'guarana-advisor',
+      prompt: 'The primary is blocked: repeated test run fails with Error: missing export. Suggest next steps only.',
+    };
+    const runBefore = (plugin, sessionID, args, tool = 'task', callID) => plugin['tool.execute.before'](
+      { tool, sessionID, callID },
+      { args },
+    );
+
+    await runBefore(api, parentSession, originalArgs, 'task', 'call-advisor-first');
+    // Both globally and project-loaded plugin instances see the same native call.
+    await runBefore(globalPlugin, parentSession, originalArgs, 'task', 'call-advisor-first');
+    await assert.rejects(
+      runBefore(globalPlugin, parentSession, { ...originalArgs, description: 'A different label only' }, 'task', 'call-advisor-repeat'),
+      /unchanged blocker has already used its advisor consultation/i,
+    );
+
+    const changedBlocker = {
+      ...originalArgs,
+      prompt: 'New evidence: after fixing the missing export, the test now fails with Error: invalid state transition. Suggest next steps only.',
+    };
+    await runBefore(globalPlugin, parentSession, changedBlocker, 'task', 'call-advisor-changed');
+    await assert.rejects(
+      runBefore(api, parentSession, changedBlocker, 'task', 'call-advisor-changed-repeat'),
+      /unchanged blocker has already used its advisor consultation/i,
+    );
+
+    // Ordinary Task workers and non-Task tools do not consume or hit this guard.
+    await runBefore(api, parentSession, { ...originalArgs, subagent_type: 'worker-code' }, 'task', 'call-worker');
+    await runBefore(api, parentSession, originalArgs, 'bash', 'call-bash');
+
+    // A Task in an advisor child has its own session budget, not the parent's.
+    await api.event({ event: { type: 'session.created', properties: {
+      sessionID: 'advisor-guard-child', info: { id: 'advisor-guard-child', parentID: parentSession, agent: 'guarana-advisor' },
+    } } });
+    await runBefore(globalPlugin, 'advisor-guard-child', originalArgs, 'task', 'call-advisor-child');
+
+    // The generated opt-in marker resets the consultation budget for a new command.
+    await api['chat.message'](
+      { sessionID: parentSession },
+      { parts: parts('<!-- guarana-advisor-opt-in -->\nStart the new opt-in task') },
+    );
+    await runBefore(globalPlugin, parentSession, originalArgs, 'task', 'call-advisor-new-opt-in');
+    await assert.rejects(
+      runBefore(api, parentSession, originalArgs, 'task', 'call-advisor-after-opt-in-repeat'),
+      /unchanged blocker has already used its advisor consultation/i,
+    );
+  });
+
+  it('refuses Advisor Task dispatch when disabled or not configured, and accepts enabled configured dispatch', async () => {
+    const args = { subagent_type: 'guarana-advisor', prompt: 'New blocker evidence' };
+    const dispatch = () => api['tool.execute.before']({ tool: 'task', sessionID: 'advisor-gate' }, { args });
+    await assert.rejects(dispatch(), /Advisor consultation is disabled/i);
+    writeSettings('project', { advisor: { enabled: true } });
+    await assert.rejects(dispatch(), /Advisor is not configured/i);
+    writeSettings('project', { advisor: { enabled: true, provider: 'provider', model: 'model' } });
+    await dispatch();
+  });
+
+  it('uses project Advisor settings in preference to global settings', async () => {
+    writeSettings('global', { advisor: { enabled: true, provider: 'provider', model: 'model' } });
+    writeSettings('project', { advisor: { enabled: false } });
+    const dispatch = () => api['tool.execute.before'](
+      { tool: 'task', sessionID: 'advisor-precedence' },
+      { args: { subagent_type: 'guarana-advisor', prompt: 'A blocker' } },
+    );
+    await assert.rejects(dispatch(), /Advisor consultation is disabled/i);
   });
 
   it('generic OpenCode session events register child-session metadata', async () => {

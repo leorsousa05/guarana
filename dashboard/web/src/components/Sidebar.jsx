@@ -1,11 +1,12 @@
 const SECTIONS = [
   ['overview', 'Overview'],
-  ['now', 'Now'],
+  ['now', 'Activity'],
   ['runs', 'Runs'],
   ['specs', 'Specs'],
   ['workflow', 'Workflow'],
   ['memory', 'Memory'],
   ['skills', 'Skills'],
+  ['models', 'Models'],
 ];
 
 export function Sidebar({ active, onSelect }) {

@@ -1,6 +1,6 @@
 {
   "name": "guarana",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Install/uninstall/list/update the guarana skill suite for OpenCode",
   "engines": {
     "node": ">=22"
@@ -16,7 +16,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test orchestrator/*.test.js dashboard/server/lib/*.test.js dashboard/server/app.test.js dashboard/web/src/lib/memoryGraphLayout.test.js dashboard/web/src/components/Skills.test.mjs plugin/*.test.mjs cli/commands/*.test.js cli/lib/*.test.js memory/*.test.mjs skill-engine/*.test.js",
+    "test": "node --test orchestrator/*.test.js dashboard/server/lib/*.test.js dashboard/server/app.test.js dashboard/web/src/lib/memoryGraphLayout.test.js dashboard/web/src/components/Skills.test.mjs dashboard/web/src/components/Models.test.mjs plugin/*.test.mjs cli/commands/*.test.js cli/lib/*.test.js memory/*.test.mjs skill-engine/*.test.js",
     "test:all": "node --test '*/**/*.test.{js,mjs}'",
     "sync-cli": "node scripts/sync-cli-bundle.mjs",
     "check-cli": "node scripts/check-cli-bundle.mjs",

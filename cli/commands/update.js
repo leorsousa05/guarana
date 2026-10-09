@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const install = require('./install.js');
-const { VERSION, SKILLS } = require('../constants.js');
+const { VERSION, SKILLS, WORKER_AGENTS } = require('../constants.js');
 const { STAMP } = require('../lib/guard.js');
 const { targetDir } = require('../lib/paths.js');
 
@@ -22,7 +22,7 @@ function formatSummary({ target, useProject, previousVersion, useColor = false }
     paint('✓ Update complete', '32;1', useColor),
     `Version    ${version}`,
     `Target     ${useProject ? 'Project' : 'Global'} · ${target}`,
-    `Refreshed  ${SKILLS.length} skills · 3 plugins · 3 engines · 3 worker profiles`,
+    `Refreshed  ${SKILLS.length} skills · 3 plugins · 3 engines · ${WORKER_AGENTS.length} worker profiles`,
     'Next       Restart OpenCode to load the updated skills',
   ];
   const width = Math.max(38, ...lines.map((line) => line.replace(/\u001b\[[0-9;]*m/g, '').length));

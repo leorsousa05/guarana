@@ -9,6 +9,13 @@ Entry format: date · feature · what validated / failed / re-opened · proof pa
 ### 2026-10-08 — CLI and coding-skill refinements
 - [CLI update presentation](2026-10-08-cli-update-presentation.md) — terminal-aware completion summary, project/global runtime refresh tests, and independent verification PASS (3/3)
 - [Code design/refactoring guidance](2026-10-08-code-design-guidance.md) — context-driven design-pattern selection and bounded refactoring; independent verification PASS (5/5)
+- [Optional model advisor flow](2026-10-08-optional-model-advisor-flow.md) — CLI/dashboard model settings, opt-in primary/advisor command, bounded read-only Task handoff, XDG-aware artifacts, and independent verification PASS (7/7)
+- [OpenCode connected-model catalog](2026-10-08-connected-model-catalog.md) — authenticated provider/model discovery in advisor CLI/dashboard; actual OpenCode auth output, canonical/mirrored APIs, and independent verification PASS
+- [Advisor Models variant listbox](2026-10-08-advisor-models-variant-listbox.md) — searchable provider/model controls, one accessible selectable variant input per role, blank/default and custom values, responsive proof; independent criteria 11–14 PASS
+- [Advisor runtime execution proof](2026-10-08-advisor-runtime-proof.md) — sanitized child-message provider/model/variant telemetry, parent correlation, and configured-versus-observed Dashboard Models display; source/API/UI verified, fresh loaded-plugin smoke pending
+- [Live Activity view](2026-10-08-live-activity-view.md) — current root/Advisor work areas, workflow and injected memory, safe live activity, accessible Advisor history modal; independent 375px browser and full suite PASS
+- [Activity root-session selection](2026-10-08-activity-root-selection.md) — prefers the observed busy root over newer-start idle helper sessions and scopes Advisor status by parent; independent regression browser and full suite PASS
+- [Advisor consultation reason](2026-10-08-advisor-consultation-reason.md) — bounded Task-description reason in Activity/history; source/tests/full suite and live reason capture PASS
 
 ### 2026-10-07 — 1.0.0 release candidate
 - [1.0.0 release candidate](2026-10-07-release-candidate-1.0.0.md) — local version metadata, audit-clean dashboard locks, packed CLI and provider-backed OpenCode 1.18.35 smoke; unpublished and untagged

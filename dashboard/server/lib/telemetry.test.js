@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { readJsonl, summarize } from './telemetry.js';
+import { readJsonl, summarize, advisorHistory } from './telemetry.js';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
@@ -65,5 +65,49 @@ describe('summarize', () => {
   it('ignores events without sessionID', () => {
     const runs = summarize([{ type: 'tool', ts: 1, ok: true }]);
     assert.equal(runs.length, 0);
+  });
+
+  it('preserves observed session status, parent, and agent metadata', () => {
+    const [run] = summarize([
+      { type: 'session', status: 'created', sessionID: 'child', parentSessionID: 'root', agent: 'worker-code', ts: 1 },
+      { type: 'session', status: 'busy', sessionID: 'child', ts: 2 },
+    ]);
+    assert.equal(run.parentSessionID, 'root');
+    assert.equal(run.agent, 'worker-code');
+    assert.equal(run.status, 'busy');
+  });
+});
+
+describe('advisorHistory', () => {
+  it('joins dispatch and execution events, collapses child turns, and exposes only safe fields', () => {
+    const history = advisorHistory([
+      { ts: 1, type: 'advisor-dispatch', status: 'dispatched', callID: 'call-1', parentSessionID: 'root', reason: 'Compare failed retry options' },
+      { ts: 3, type: 'advisor-execution', status: 'completed', childSessionID: 'child', parentSessionID: 'root', providerID: 'old-provider', modelID: 'old-model', prompt: 'SECRET', reason: 'sk-legacysecret' },
+      { ts: 4, type: 'advisor-execution', status: 'error', childSessionID: 'child', parentSessionID: 'root', providerID: 'new-provider', modelID: 'new-model', variant: 'low', output: 'SECRET', credential: 'SECRET' },
+      { ts: 5, type: 'advisor-dispatch', status: 'completed', callID: 'call-1', parentSessionID: 'root', childSessionID: 'child' },
+    ]);
+    assert.deepEqual(history, [{
+      ts: 1, status: 'error', callID: 'call-1', parentSessionID: 'root', childSessionID: 'child',
+      providerID: 'new-provider', modelID: 'new-model', variant: 'low', reason: 'Compare failed retry options',
+    }]);
+    assert.doesNotMatch(JSON.stringify(history), /SECRET|prompt|output|credential/i);
+  });
+
+  it('omits secret-shaped legacy dispatch reasons', () => {
+    const history = advisorHistory([
+      { ts: 1, type: 'advisor-dispatch', status: 'dispatched', callID: 'unsafe-call', reason: 'ghp_privatevalue' },
+      { ts: 2, type: 'advisor-dispatch', status: 'completed', callID: 'unsafe-call', reason: 'api_key=privatevalue' },
+    ]);
+    assert.deepEqual(history, [{ ts: 1, status: 'completed', callID: 'unsafe-call' }]);
+    assert.doesNotMatch(JSON.stringify(history), /privatevalue|reason/i);
+  });
+
+  it('bounds the requested history and reports observed running Advisor sessions', () => {
+    const rows = advisorHistory([
+      { ts: 10, type: 'session', status: 'busy', sessionID: 'child', parentSessionID: 'root', agent: 'guarana-advisor' },
+      ...Array.from({ length: 5 }, (_, index) => ({ ts: index + 2, type: 'advisor-dispatch', status: 'completed', callID: `call-${index}` })),
+    ], 2);
+    assert.equal(rows.length, 2);
+    assert.ok(rows.some((row) => row.status === 'running'));
   });
 });

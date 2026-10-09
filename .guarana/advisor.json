@@ -1,0 +1,12 @@
+{
+  "primary": {
+    "provider": "openai",
+    "model": "gpt-6-luna",
+    "variant": "high"
+  },
+  "advisor": {
+    "provider": "openai",
+    "model": "gpt-6-sol",
+    "variant": "xhigh"
+  }
+}

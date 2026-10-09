@@ -287,7 +287,12 @@ test('system block is always-on and names the skill', () => {
   assert.match(block, /ask about consequential requirement gaps/i);
   assert.match(block, /Skip redundant questions for small, fully specified tasks/i);
   assert.match(block, /workflow\.json.*not the human-readable record/i);
-  assert.match(block, /active feature spec/i);
+  assert.match(block, /primary owns requirements discovery, acceptance decisions, independent verification, and workflow transitions/i);
+  assert.match(block, /Do not read whole human-readable `.specs` records or edit them/i);
+  assert.match(block, /worker-specs.*task goal.*known requirements.*assumptions\/open questions.*boundaries.*observable acceptance criteria/i);
+  assert.match(block, /factual milestone\/status delta/i);
+  assert.match(block, /exact proof and outcomes to `worker-specs`/i);
+  assert.match(block, /guarana specs validate \. --json/);
 });
 
 test('planning injection asks about consequential unknowns before code dispatch', () => {
@@ -299,6 +304,8 @@ test('planning injection asks about consequential unknowns before code dispatch'
   assert.match(injection, /acceptance condition/i);
   assert.match(injection, /System-of-record writes \(mandatory\)/i);
   assert.match(injection, /before `plan_complete`/i);
+  assert.match(injection, /compact handoff containing the task/i);
+  assert.match(injection, /does not read whole `.specs` records\s+or edit them/i);
 });
 
 test('resolveSkillBody returns the plan SKILL.md body', () => {

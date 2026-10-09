@@ -121,6 +121,73 @@ describe('GuaranaTelemetry', () => {
     });
   });
 
+  it('records one sanitized completed Advisor execution correlated to its parent', async () => {
+    await api.event({ event: { type: 'session.created', properties: { info: { id: 'advisor-child-proof', parentID: 'parent-proof' } } } });
+    const completed = { role: 'assistant', agent: 'guarana-advisor', sessionID: 'advisor-child-proof', time: { completed: 123 }, providerID: 'openai', modelID: 'gpt-proof', variant: 'high', prompt: 'PRIVATE PROMPT', output: 'PRIVATE OUTPUT', apiKey: 'PRIVATE CREDENTIAL' };
+    await api.event({ event: { type: 'message.updated', properties: { info: completed } } });
+    await api.event({ event: { type: 'message.updated', properties: { info: completed } } });
+    const events = readEvents().filter((event) => event.type === 'advisor-execution');
+    assert.equal(events.length, 1);
+    assert.deepEqual(events[0], { project: projectName(), ts: events[0].ts, type: 'advisor-execution', childSessionID: 'advisor-child-proof', status: 'completed', parentSessionID: 'parent-proof', providerID: 'openai', modelID: 'gpt-proof', variant: 'high' });
+    const created = readEvents().find((event) => event.type === 'session' && event.status === 'created');
+    assert.equal(created.sessionID, 'advisor-child-proof');
+    assert.equal(created.parentSessionID, 'parent-proof');
+    assert.doesNotMatch(JSON.stringify(events[0]), /PRIVATE|prompt|output|apiKey|tokens|cost/i);
+  });
+
+  it('does not use an assistant message parentID as a parent session ID', async () => {
+    await api.event({ event: { type: 'message.updated', properties: { info: {
+      role: 'assistant', agent: 'guarana-advisor', sessionID: 'advisor-unmapped-proof',
+      time: { completed: 125 }, parentID: 'parent-message', providerID: 'openai', modelID: 'gpt-proof',
+    } } } });
+    const event = readEvents().find((row) => row.type === 'advisor-execution');
+    assert.equal(event.parentSessionID, undefined);
+  });
+
+  it('does not infer an omitted Advisor runtime variant', async () => {
+    await api.event({ event: { type: 'message.updated', properties: { info: { role: 'assistant', agent: 'guarana-advisor', sessionID: 'advisor-no-variant-proof', time: { completed: 124 }, providerID: 'openai', modelID: 'gpt-proof' } } } });
+    const event = readEvents().find((row) => row.type === 'advisor-execution');
+    assert.equal(event.variant, undefined);
+  });
+
+  it('records only safe native Advisor Task dispatch metadata and observed session status', async () => {
+    const before = { tool: 'task', sessionID: 'root-session', callID: 'advisor-call-1' };
+    await api['tool.execute.before'](before, { args: { subagent_type: 'guarana-advisor', prompt: 'PRIVATE PROMPT', description: 'Compare failed retry options' } });
+    await api['tool.execute.after'](before, {
+      metadata: { sessionID: 'advisor-child' },
+      error: 'PRIVATE ERROR',
+      output: 'PRIVATE OUTPUT',
+    });
+    await api.event({ event: { type: 'session.created', properties: { info: { id: 'root-session', agent: 'primary', parentID: null } } } });
+    await api.event({ event: { type: 'session.status', properties: { info: { id: 'root-session', status: { type: 'busy' } } } } });
+    const events = readEvents();
+    const dispatch = events.filter((event) => event.type === 'advisor-dispatch');
+    assert.deepEqual(dispatch.map(({ status }) => status), ['dispatched', 'error']);
+    assert.deepEqual(dispatch.map(({ reason }) => reason), ['Compare failed retry options', 'Compare failed retry options']);
+    assert.equal(dispatch[0].parentSessionID, 'root-session');
+    assert.equal(dispatch[1].callID, 'advisor-call-1');
+    assert.equal(dispatch[1].childSessionID, 'advisor-child');
+    assert.equal(events.find((event) => event.type === 'session' && event.status === 'busy').sessionID, 'root-session');
+    assert.doesNotMatch(JSON.stringify(events), /PRIVATE|prompt|description|output/i);
+  });
+
+  it('omits secret-shaped Advisor Task descriptions', async () => {
+    const descriptions = [
+      'Inspect sk-privatevalue now',
+      'Review ghp_privatevalue issue',
+      'Check api_key=privatevalue now',
+      'Check bearer privatevalue now',
+    ];
+    for (const [index, description] of descriptions.entries()) {
+      const input = { tool: 'task', sessionID: 'root-session', callID: `advisor-secret-call-${index}` };
+      await api['tool.execute.before'](input, { args: { subagent_type: 'guarana-advisor', prompt: 'PRIVATE PROMPT', description } });
+    }
+    const events = readEvents().filter((event) => event.type === 'advisor-dispatch');
+    assert.equal(events.length, descriptions.length);
+    assert.ok(events.every((event) => event.reason === undefined));
+    assert.doesNotMatch(JSON.stringify(events), /privatevalue|PRIVATE PROMPT|prompt/i);
+  });
+
   describe('tool result error detection', () => {
     it('flags object { error } results as ok:false with the message', async () => {
       await api['tool.execute.after'](

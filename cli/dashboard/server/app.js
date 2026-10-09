@@ -7,6 +7,7 @@ import { createDecisionsRouter } from './routes/decisions.js';
 import { createMemoryRouter } from './routes/memory.js';
 import { createWorkflowRouter } from './routes/workflow.js';
 import { createSkillsRouter } from './routes/skills.js';
+import { createModelsRouter } from './routes/models.js';
 
 export function createApp({ root, distDir }) {
   const app = express();
@@ -18,6 +19,7 @@ export function createApp({ root, distDir }) {
   app.use('/api/memory', createMemoryRouter({ root }));
   app.use('/api/workflow', createWorkflowRouter({ root }));
   app.use('/api/skills', createSkillsRouter({ root }));
+  app.use('/api/models', createModelsRouter({ root }));
 
   app.use(express.static(distDir));
 

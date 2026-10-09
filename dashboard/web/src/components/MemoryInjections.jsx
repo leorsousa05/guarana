@@ -22,6 +22,10 @@ const reasonLabel = (reason) => ({
   'new-memories': 'new memories became relevant',
 }[reason] || 'memory context');
 
+export function filterInjectionsForSession(injections, sessionID) {
+  return (injections || []).filter((entry) => !sessionID || entry.sessionID === sessionID);
+}
+
 function BrainMap({ injection, selectedNode, onSelectNode }) {
   const nodes = injection?.memories || [];
   const byScope = {
@@ -93,11 +97,11 @@ function BrainMap({ injection, selectedNode, onSelectNode }) {
   );
 }
 
-export function MemoryInjections() {
-  const history = usePoll('/api/memory/injections?limit=40', 5000);
+export function MemoryInjections({ sessionID, tick = 0 } = {}) {
+  const history = usePoll(`/api/memory/injections?limit=${sessionID ? 100 : 40}`, 5000, tick);
   const [selectedEventId, setSelectedEventId] = useState(null);
   const [selectedNodeKey, setSelectedNodeKey] = useState(null);
-  const injections = history.data?.injections || [];
+  const injections = filterInjectionsForSession(history.data?.injections, sessionID);
   const injection = injections.find((entry) => entry.id === selectedEventId) || injections[0] || null;
   const selectedNode = injection?.memories.find((node) => nodeKey(node) === selectedNodeKey)
     || injection?.memories[0]

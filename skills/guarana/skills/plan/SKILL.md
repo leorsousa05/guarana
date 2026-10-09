@@ -8,12 +8,12 @@ description: Use automatically when a task starts or resumes. Restores state, ch
 The meta-skill. The automatic orchestrator enters this step for every new or
 resumed task; the user does not need to mention `guarana:plan`.
 
-## 1. Restore state (always, in this exact order)
-1. `.specs/README.md` — master tracker (DONE/NEXT/BLOCKED).
-2. `.specs/state/project-state.md` — per-skill status, current step.
-3. `.specs/decisions/ADR-*.md` — append-only decisions.
-4. The current feature spec in `.specs/features/` (one directory per feature).
-Never reconstruct state from memory. Disk is truth (ADR-004).
+## 1. Restore state
+
+Use `workflow_get` for operational state. For human-readable project records,
+ask `worker-specs` for a concise factual summary when required; do not read whole
+`.specs` files or edit records in the primary context. Never reconstruct state
+from memory. Disk is truth (ADR-004).
 
 ## Memory
 The orchestrator initializes the project vault and automatically supplies
@@ -22,44 +22,46 @@ quarantined. Use the `memory_*` tools for deeper retrieval, review, or explicit
 decisions; a completed verified run is recorded automatically.
 
 ### Cold start (no `.specs/` on disk)
-The orchestrator creates a minimal `.specs/` system of record and a
-task-specific feature spec before planning. Existing files are never replaced,
-and no project-specific ADR is fabricated. The plan worker fills in the
-acceptance condition and asks only for contract facts that cannot be inferred.
-Only after `.specs/` exists on disk does "disk is truth" (ADR-004) apply.
+The orchestrator creates a minimal `.specs/` shell before planning. Existing files
+are never replaced, and no project-specific ADR is fabricated. The primary
+determines requirements and acceptance; `worker-specs` records only those supplied
+facts. Ask only for contract facts that cannot be inferred.
 
 ## System-of-record writes (mandatory)
 
 The workflow JSON is operational state, not a substitute for the human-readable
-`.specs/` record. Read and write both. A task is not planned until the files on
-disk reflect the task; calling `workflow_tick` alone never completes planning.
+`.specs/` record. The primary owns requirements, acceptance decisions, independent
+verification, and workflow transitions. It does not read whole `.specs` records
+or edit them; `worker-specs` reads and updates the records from concise factual
+handoffs. A task is not planned until the worker reports its writes and validator
+result; calling `workflow_tick` alone never completes planning.
 
-1. **During planning, before `plan_complete`:** replace bootstrap placeholders
-   with the real task. Give the feature directory/file a task-specific slug;
-   update its goal, known requirements, explicit assumptions/open questions,
-   scope boundaries, and observable acceptance criteria. Criteria must be
-   specific enough to distinguish a correct result from a plausible but wrong
-   one; do not leave text such as "implement requested behavior". Update
-   `.specs/README.md` (`NEXT` and tracker row) and
-   `.specs/state/project-state.md` (goal, acceptance condition, current step,
-   and pending writes). Preserve unrelated project records and existing ADRs.
-2. **At each lifecycle transition:** update project-state checkpoint and pending
-   writes to match the active step. Keep the feature spec status in sync (planned,
-   implemented, validated); do not claim validation before independent checks.
-3. **After verification:** write the exact checks and outcomes as proof in the
-   feature spec, mark the tracker `VALIDATED` (and `SHIPPED` only when actually
-   shipped), update `DONE`/`NEXT`/`BLOCKED` and project-state, then inspect the
-   resulting diff to confirm the records were actually changed.
-4. If an existing spec is missing, stale, or uses a generic bootstrap, repair it
-   in place before proceeding. Never overwrite unrelated content or fabricate
-   proof. If a write fails, report the blocker and do not describe the task as
-   fully recorded.
+1. **During planning, before `plan_complete`:** after closing the requirements
+   discovery gate, dispatch `worker-specs` a compact handoff containing the task
+   goal, known requirements, explicit assumptions/open questions, scope
+   boundaries, and observable acceptance criteria. Criteria must distinguish a
+   correct result from a plausible but wrong one. The worker assigns/repairs the
+   task-specific feature record and updates the tracker and project-state while
+   preserving unrelated records. Wait for changed paths and validator status.
+2. **At each lifecycle milestone before `workflow_tick`:** dispatch only the
+   completed milestone, current/next step, status delta, and pending writes to
+   `worker-specs`. The primary advances the workflow only after the worker returns
+   its changed-path and validator summary.
+3. **After independent verification:** dispatch the exact verified checks,
+   outcomes, and proof paths to `worker-specs`. It updates the feature proof and
+   tracker status; `VALIDATED` requires a passing independent result, and
+   `SHIPPED` requires explicit confirmation. The primary runs
+   `guarana specs validate . --json` and does not inspect whole records.
+4. Never let the worker infer missing facts or fabricate proof. If a write or
+   validation fails, report the blocker and do not describe the task as fully
+   recorded.
 
 ## Requirements discovery gate (before any code dispatch)
 
 Do not treat a user's first sentence as a complete specification for a substantial
-or ambiguous change. First inspect the relevant implementation, specs, project
-conventions, and confirmed memory. Then make a short requirements ledger:
+or ambiguous change. First inspect the relevant implementation, project
+conventions, and confirmed memory; request a concise `.specs` summary from
+`worker-specs` when record facts are needed. Then make a short requirements ledger:
 
 - **Known:** facts stated by the user or established by repository evidence.
 - **Inferred:** low-risk defaults that follow from existing patterns.
@@ -103,18 +105,23 @@ unknowns may remain as explicit, reversible assumptions.
 Ambiguous intent → ASK the human (Rule 0). Never guess a route. Never load debug or measure without their trigger.
 
 ## 3. Dispatch template (every dispatch, no exceptions)
-- **Worker:** worker-code | worker-verify | worker-debug
+- **Worker:** worker-code | worker-verify | worker-debug | worker-specs
 - **Mechanism:** invoke that named OpenCode subagent through the native Task tool; do not relabel same-context work as a worker dispatch.
 - **Verifiable condition:** the exact checkable predicate defining done
 - **Budget:** per ADR-005 (code 8k / verify 4k / debug 6k tokens)
-- **State pointers:** which `.specs/` files the worker reads and may append to
+- **State pointers:** relevant record paths and the factual delta; `worker-specs`
+  reads/updates human-readable `.specs` records only
 
 The primary context passes the dispatch contract, waits for the Task return, and
 advances workflow state. If Task is unavailable or denied, report the blocker
 instead of doing the worker's procedure in the primary context.
 
 Before a worker-code dispatch, confirm the requirements discovery gate above is
-closed and the feature spec contains a checkable acceptance condition.
+closed and the acceptance condition has been decided by the primary and recorded
+by `worker-specs`.
 
 ## 4. Stop
-After dispatch, wait for the worker summary. Do not hold worker detail in the main thread; durable facts go to disk, not summaries. Before leaving planning, verify that the feature spec contains the concrete acceptance condition and that `.specs/README.md` and `state/project-state.md` point to this task.
+After dispatch, wait for the worker summary. Do not hold record detail in the main
+thread; durable facts go to disk, not summaries. Before leaving planning, confirm
+the worker reported the acceptance condition and tracker/project-state updates,
+then run the specs validator without reading whole records.

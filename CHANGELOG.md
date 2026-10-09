@@ -37,4 +37,8 @@ maintainer action.
 
 ## [Unreleased]
 
-Future changes will be recorded here.
+### Added
+- `guarana specs record` automates fixed-file, schema-v1 specification records.
+
+### Fixed
+- Worker-specs handoff permissions now default to deny.

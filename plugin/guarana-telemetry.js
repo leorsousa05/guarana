@@ -11,6 +11,23 @@ const SESSION_STATUSES = {
   "session.error": "error",
   "session.compacted": "compacted",
 };
+const OBSERVED_SESSION_STATUSES = new Set(['busy', 'running', 'retry', 'idle', 'error', 'compacted', 'created']);
+
+const advisorState = globalThis[Symbol.for('guarana.telemetry.advisor-executions')] ||
+  (globalThis[Symbol.for('guarana.telemetry.advisor-executions')] = { parents: new Map(), seen: new Set(), dispatches: new Map() });
+advisorState.dispatches ||= new Map();
+function boundedSetAdd(set, value, limit = 500) {
+  set.add(value);
+  if (set.size > limit) set.delete(set.values().next().value);
+}
+function safeID(value) {
+  return typeof value === 'string' && value.length <= 200 && !/[\u0000-\u001f]/.test(value) ? value : null;
+}
+function safeReason(value) {
+  const reason = safeID(value);
+  if (!reason || /\bsk-\S+|\bgh[pousr]_[A-Za-z0-9_]+\b|\b(?:api[_-]?key|token|password|secret)\s*[:=]\s*\S+|\bbearer\s+\S+/i.test(reason)) return null;
+  return reason;
+}
 
 // Normalize a token payload (number, {total}, or {input,output,reasoning,cache})
 // into a single numeric total. Returns null when nothing usable is present.
@@ -85,9 +102,10 @@ export const GuaranaTelemetry = async ({ directory }) => {
     return null;
   }
 
-  const recordTool = (input, output) => {
+  const recordTool = (input, output, safeAdvisorTask = false) => {
     try {
       const error = resultError(output);
+      const advisorTask = safeAdvisorTask || (String(input?.tool || '').toLowerCase() === 'task' && input?.args?.subagent_type === 'guarana-advisor');
       const ev = {
         ts: Date.now(),
         type: "tool",
@@ -98,7 +116,7 @@ export const GuaranaTelemetry = async ({ directory }) => {
           "unknown",
         ok: !error,
       };
-      if (error) ev.error = error;
+      if (error && !advisorTask) ev.error = error;
       append(ev);
     } catch (err) {
       append({ ts: Date.now(), type: "telemetry-error", error: String(err) });
@@ -130,16 +148,57 @@ export const GuaranaTelemetry = async ({ directory }) => {
   const recordEvent = (event) => {
     try {
       const type = event && event.type;
-      if (type && SESSION_STATUSES[type]) {
+      if (type === 'session.created') {
         const props = event.properties || {};
         const info = props.info || props.session || props;
-        append({
+        const childID = safeID(info.id || props.sessionID || event.sessionID);
+        const parentID = safeID(info.parentID || props.parentID);
+        if (childID && parentID) {
+          advisorState.parents.set(childID, parentID);
+          if (advisorState.parents.size > 500) advisorState.parents.delete(advisorState.parents.keys().next().value);
+        }
+      }
+      if (type === 'message.updated') {
+        const info = event.properties?.info;
+        const sessionID = safeID(info?.sessionID || event.properties?.sessionID || event.sessionID);
+        const completed = info?.time?.completed;
+        if (info?.role === 'assistant' && (info?.agent || info?.mode) === 'guarana-advisor' && completed && sessionID) {
+          const key = `${sessionID}:${completed}`;
+          if (!advisorState.seen.has(key)) {
+            boundedSetAdd(advisorState.seen, key);
+            const ev = { ts: Date.now(), type: 'advisor-execution', childSessionID: sessionID, status: info.error ? 'error' : 'completed' };
+            const parentID = safeID(advisorState.parents.get(sessionID));
+            if (parentID) ev.parentSessionID = parentID;
+            for (const field of ['providerID', 'modelID', 'variant']) {
+              const value = safeID(info[field]);
+              if (value) ev[field] = value;
+            }
+            append(ev);
+          }
+        }
+      }
+      if ((type && SESSION_STATUSES[type]) || type === 'session.status') {
+        const props = event.properties || {};
+        const info = props.info || props.session || props;
+        const reportedStatus = type === 'session.status'
+          ? (info.status?.type || info.status || props.status?.type || props.status)
+          : SESSION_STATUSES[type];
+        const status = typeof reportedStatus === 'string' && OBSERVED_SESSION_STATUSES.has(reportedStatus)
+          ? reportedStatus
+          : null;
+        if (!status) return;
+        const session = {
           ts: Date.now(),
           type: "session",
-          status: SESSION_STATUSES[type],
+          status,
           sessionID:
             (info && info.id) || props.sessionID || event.sessionID || "unknown",
-        });
+        };
+        const parentID = safeID(info.parentID || props.parentID);
+        if (parentID) session.parentSessionID = parentID;
+        const agent = safeID(info.agent || props.agent);
+        if (agent) session.agent = agent;
+        append(session);
       } else if (type === "todo.updated") {
         const props = event.properties || {};
         const todos = Array.isArray(props.todos) ? props.todos : [];
@@ -158,9 +217,50 @@ export const GuaranaTelemetry = async ({ directory }) => {
   };
 
   return {
+    'tool.execute.before': async (input, output) => {
+      try {
+        if (String(input?.tool || '').toLowerCase() !== 'task') return;
+        const args = output?.args || input?.args || {};
+        if (args.subagent_type !== 'guarana-advisor') return;
+        const parentSessionID = safeID(input?.sessionID);
+        const callID = safeID(input?.callID);
+        const reason = safeReason(output?.args?.description ?? input?.args?.description);
+        const event = { ts: Date.now(), type: 'advisor-dispatch', status: 'dispatched' };
+        if (parentSessionID) event.parentSessionID = parentSessionID;
+        if (reason) event.reason = reason;
+        if (callID) {
+          event.callID = callID;
+          advisorState.dispatches.set(callID, { parentSessionID, advisor: true, reason });
+          if (advisorState.dispatches.size > 500) advisorState.dispatches.delete(advisorState.dispatches.keys().next().value);
+        }
+        append(event);
+      } catch {
+        /* telemetry must not affect Task dispatch */
+      }
+    },
     "tool.execute.after": async (input, output) => {
       try {
-        recordTool(input, output);
+        const callID = safeID(input?.callID);
+        const dispatch = callID && advisorState.dispatches.get(callID);
+        const advisorTask = String(input?.tool || '').toLowerCase() === 'task' && (input?.args?.subagent_type === 'guarana-advisor' || dispatch?.advisor);
+        if (advisorTask) {
+          const parentSessionID = safeID(input?.sessionID) || dispatch?.parentSessionID;
+          const reason = safeReason(dispatch?.reason) || safeReason(input?.args?.description);
+          const metadata = output?.metadata || {};
+          const childSessionID = safeID(metadata.sessionID || metadata.sessionId || metadata.childSessionID || output?.sessionID);
+          const event = {
+            ts: Date.now(),
+            type: 'advisor-dispatch',
+            status: output?.error != null || output?.isError === true ? 'error' : 'completed',
+          };
+          if (parentSessionID) event.parentSessionID = parentSessionID;
+          if (reason) event.reason = reason;
+          if (callID) event.callID = callID;
+          if (childSessionID) event.childSessionID = childSessionID;
+          append(event);
+        }
+        recordTool(input, output, advisorTask);
+        if (advisorTask && callID) advisorState.dispatches.delete(callID);
       } catch (err) {
         append({ ts: Date.now(), type: "telemetry-error", error: String(err) });
       }

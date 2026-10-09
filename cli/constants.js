@@ -11,6 +11,7 @@ module.exports = {
     { name: 'worker-code', skill: 'code', description: 'Implements one Guarana condition and returns a diff plus stop reason.' },
     { name: 'worker-verify', skill: 'verify', description: 'Independently verifies a Guarana condition and returns criterion-level proof.' },
     { name: 'worker-debug', skill: 'debug', description: 'Diagnoses a confirmed Guarana failure and records its mitigation.' },
+    { name: 'worker-specs', skill: 'specs', description: 'Updates human-readable .specs records from factual handoffs and returns changed paths plus validation.' },
   ],
   PLUGIN_BUNDLE: path.join(__dirname, 'plugin', 'guarana-telemetry.js'),
   PLUGIN_NAME: 'guarana-telemetry.js',

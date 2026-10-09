@@ -4,16 +4,16 @@ import { useLiveTick } from './hooks/useLiveTick.js';
 import { Header } from './components/Header.jsx';
 import { Sidebar } from './components/Sidebar.jsx';
 import { ErrorBanner } from './components/common.jsx';
-import { NowPanel } from './components/NowPanel.jsx';
-import { Ticker } from './components/Ticker.jsx';
+import { Activity, activitySessionIDs } from './components/Activity.jsx';
 import { Runs } from './components/Runs.jsx';
 import { Specs } from './components/Specs.jsx';
 import { Memory } from './components/Memory.jsx';
 import { Workflow } from './components/Workflow.jsx';
 import { Overview } from './components/Overview.jsx';
 import { Skills } from './components/Skills.jsx';
+import { Models } from './components/Models.jsx';
 
-const VIEWS = ['overview', 'now', 'runs', 'specs', 'workflow', 'memory', 'skills'];
+const VIEWS = ['overview', 'now', 'runs', 'specs', 'workflow', 'memory', 'skills', 'models'];
 
 // Read the active view from the URL hash (#/runs -> 'runs'), defaulting to
 // 'now'. Keeps the selected section deep-linkable and shareable.
@@ -49,7 +49,7 @@ export default function App() {
   };
 
   // Fetch events for the ~5 most recent sessions and merge by ts.
-  const recentIDs = summary.data ? summary.data.runs.slice(0, 5).map((r) => r.sessionID).join(',') : '';
+  const recentIDs = summary.data ? activitySessionIDs(summary.data).join(',') : '';
   useEffect(() => {
     if (!recentIDs) {
       setMergedEvents([]);
@@ -78,8 +78,6 @@ export default function App() {
   }, [recentIDs, liveTick]);
 
   const lastEventTs = mergedEvents.length ? mergedEvents[mergedEvents.length - 1].ts : null;
-  const hasTelemetry = summary.data && summary.data.runs.length > 0;
-
   return (
     <main id="main-content" tabIndex={-1} className="app-main">
       <a className="skip-link" href="#main-content">Skip to content</a>
@@ -93,10 +91,7 @@ export default function App() {
             <Overview summary={summary.data} state={state.data} tracker={tracker.data} workflow={workflow.data} />
           )}
           {active === 'now' && summary.data && (
-            <>
-              <NowPanel summary={summary.data} mergedEvents={mergedEvents} state={state.data} workflow={workflow.data} />
-              {hasTelemetry && <Ticker events={mergedEvents} />}
-            </>
+            <Activity summary={summary.data} workflow={workflow.data} tick={liveTick} />
           )}
           {active === 'runs' && summary.data && (
             <Runs summary={summary.data} mergedEvents={mergedEvents} />
@@ -105,6 +100,7 @@ export default function App() {
           {active === 'workflow' && <Workflow data={workflow.data} />}
           {active === 'memory' && <Memory />}
           {active === 'skills' && <Skills />}
+          {active === 'models' && <Models />}
         </div>
       </div>
     </main>

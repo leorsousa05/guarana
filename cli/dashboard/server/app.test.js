@@ -1,12 +1,15 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from './app.js';
+import { createRequire } from 'node:module';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
 import { initVault, initUserVault } from '../../memory/vault.js';
 import { createNode } from '../../memory/graph.js';
 import { createSkill } from '../../skill-engine/index.js';
+import { resolveSharedAdvisorModule } from './routes/shared-advisor-modules.js';
 
 describe('GET /api/telemetry/stream (SSE)', () => {
   let tmp;
@@ -304,5 +307,294 @@ describe('GET /api/skills', () => {
     const response = await fetch(`${base}/api/skills`);
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { global: [], project: [] });
+  });
+});
+
+describe('GET/PUT /api/models', () => {
+  let tmp;
+  let root;
+  let home;
+  let xdg;
+  let oldHome;
+  let oldXdg;
+  let server;
+  let base;
+
+  beforeEach(async () => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-models-api-'));
+    root = path.join(tmp, 'active-project');
+    home = path.join(tmp, 'home');
+    xdg = path.join(home, 'xdg-config');
+    fs.mkdirSync(root, { recursive: true });
+    oldHome = process.env.HOME;
+    oldXdg = process.env.XDG_CONFIG_HOME;
+    process.env.HOME = home;
+    process.env.XDG_CONFIG_HOME = xdg;
+    const app = createApp({ root, distDir: path.join(tmp, 'dist') });
+    await new Promise((resolve) => {
+      server = app.listen(0, () => resolve());
+    });
+    base = `http://localhost:${server.address().port}`;
+  });
+
+  afterEach(async () => {
+    await new Promise((resolve) => server.close(resolve));
+    if (oldHome === undefined) delete process.env.HOME;
+    else process.env.HOME = oldHome;
+    if (oldXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = oldXdg;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('resolves shared advisor modules from canonical and CLI route trees', async () => {
+    let repoRoot = path.dirname(fileURLToPath(import.meta.url));
+    while (!fs.existsSync(path.join(repoRoot, 'scripts', 'sync-cli-bundle.mjs'))) {
+      const parent = path.dirname(repoRoot);
+      if (parent === repoRoot) throw new Error('unable to locate repository root for route resolution test');
+      repoRoot = parent;
+    }
+
+    const require = createRequire(import.meta.url);
+    const layouts = [
+      {
+        route: 'dashboard/server/routes/models.js',
+        resolver: 'dashboard/server/routes/shared-advisor-modules.js',
+      },
+      {
+        route: 'cli/dashboard/server/routes/models.js',
+        resolver: 'cli/dashboard/server/routes/shared-advisor-modules.js',
+      },
+    ];
+
+    for (const layout of layouts) {
+      const routeUrl = pathToFileURL(path.join(repoRoot, layout.route));
+      const { resolveSharedAdvisorModule } = await import(pathToFileURL(path.join(repoRoot, layout.resolver)));
+      for (const name of ['advisor-settings.js', 'advisor-profiles.js', 'opencode-model-catalog.js']) {
+        const resolved = resolveSharedAdvisorModule(name, routeUrl.href);
+        assert.equal(resolved, path.join(repoRoot, 'cli', 'lib', name));
+        const sharedModule = require(resolved);
+        const expectedExport = name === 'advisor-settings.js'
+          ? 'readSettings'
+          : name === 'advisor-profiles.js' ? 'installAdvisorArtifacts' : 'discoverModels';
+        assert.equal(typeof sharedModule[expectedExport], 'function');
+      }
+    }
+  });
+
+  it('catalog API exposes connected model metadata only and uses the explicit project cwd', async () => {
+    const require = createRequire(import.meta.url);
+    const catalog = require(resolveSharedAdvisorModule('opencode-model-catalog.js'));
+    const originalDiscover = catalog.discoverModels;
+    const calls = [];
+    catalog.discoverModels = async (options) => {
+      calls.push(options);
+      const outputs = {
+        'auth list': '● OpenAI api\n│ ● Anthropic │ oauth │\n',
+        models: 'openai/gpt-5\nanthropic/claude-sonnet-4\nnot-connected/private-token\n',
+      };
+      return originalDiscover({
+        ...options,
+        execFile: (executable, args, execOptions, callback) => {
+          assert.equal(executable, process.env.OPENCODE_BIN || 'opencode');
+          assert.equal(execOptions.cwd, root);
+          callback(null, args.join(' ') === 'auth list' ? outputs['auth list'] : outputs.models, '');
+        },
+      });
+    };
+    try {
+      const response = await fetch(`${base}/api/models/catalog?provider=openai`);
+      const body = await response.json();
+      assert.equal(response.status, 200);
+      assert.deepEqual(body, {
+        models: [{ provider: { id: 'openai', name: 'openai' }, model: { id: 'gpt-5', name: 'gpt-5' } }],
+        error: null,
+      });
+      assert.equal(calls[0].cwd, root);
+      assert.equal(calls[0].provider, 'openai');
+      assert.doesNotMatch(JSON.stringify(body), /private-token|\bapi\b|\boauth\b/i);
+    } finally {
+      catalog.discoverModels = originalDiscover;
+    }
+  });
+
+  it('runtime API returns only the latest sanitized Advisor execution or an empty state', async () => {
+    assert.deepEqual(await (await fetch(`${base}/api/models/runtime`)).json(), { execution: null });
+    fs.mkdirSync(path.join(root, '.specs', 'state', 'telemetry'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.specs', 'state', 'telemetry', 'events.jsonl'), [
+      { ts: 1, type: 'advisor-execution', status: 'completed', providerID: 'openai', modelID: 'old', prompt: 'SECRET' },
+      { ts: 2, type: 'advisor-execution', status: 'error', childSessionID: 'child', parentSessionID: 'parent', providerID: 'openai', modelID: 'new', variant: 'xhigh', output: 'SECRET', credential: 'SECRET' },
+    ].map((event) => JSON.stringify(event)).join('\n'));
+    const body = await (await fetch(`${base}/api/models/runtime`)).json();
+    assert.deepEqual(body.execution, { ts: 2, status: 'error', childSessionID: 'child', parentSessionID: 'parent', providerID: 'openai', modelID: 'new', variant: 'xhigh' });
+    assert.doesNotMatch(JSON.stringify(body), /SECRET|credential|output|prompt/i);
+  });
+
+  it('Advisor history endpoint bounds and sanitizes dispatch/execution rows', async () => {
+    fs.mkdirSync(path.join(root, '.specs', 'state', 'telemetry'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.specs', 'state', 'telemetry', 'events.jsonl'), [
+      { ts: 1, type: 'advisor-dispatch', status: 'dispatched', callID: 'call-1', parentSessionID: 'root', reason: 'Compare failed retry options' },
+      { ts: 3, type: 'advisor-execution', status: 'completed', childSessionID: 'child', providerID: 'openai', modelID: 'old', prompt: 'SECRET' },
+      { ts: 4, type: 'advisor-execution', status: 'error', childSessionID: 'child', providerID: 'openai', modelID: 'new', variant: 'high', output: 'SECRET', error: 'SECRET', credential: 'SECRET' },
+      { ts: 5, type: 'advisor-dispatch', status: 'completed', callID: 'call-1', parentSessionID: 'root', childSessionID: 'child' },
+      { ts: 5, type: 'advisor-dispatch', status: 'dispatched', callID: 'call-2', parentSessionID: 'other', reason: 'sk-privatevalue' },
+    ].map((event) => JSON.stringify(event)).join('\n'));
+    const response = await fetch(`${base}/api/telemetry/advisor-history?limit=1`);
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.deepEqual(body.history, [{ ts: 5, status: 'dispatched', callID: 'call-2', parentSessionID: 'other' }]);
+    const all = await (await fetch(`${base}/api/telemetry/advisor-history?limit=1000`)).json();
+    assert.equal(all.history.length, 2);
+    const child = all.history.find((row) => row.childSessionID === 'child');
+    assert.deepEqual(child, { ts: 1, status: 'error', callID: 'call-1', parentSessionID: 'root', childSessionID: 'child', providerID: 'openai', modelID: 'new', variant: 'high', reason: 'Compare failed retry options' });
+    assert.doesNotMatch(JSON.stringify(all), /SECRET|credential|output|prompt|error":"|privatevalue/i);
+  });
+
+  it('variant API returns only variant names for the requested model', async () => {
+    const require = createRequire(import.meta.url);
+    const catalog = require(resolveSharedAdvisorModule('opencode-model-catalog.js'));
+    const original = catalog.discoverVariants;
+    let received;
+    catalog.discoverVariants = async (options) => {
+      received = options;
+      return { variants: ['high'], error: null };
+    };
+    try {
+      const response = await fetch(`${base}/api/models/variants?provider=openrouter&model=~anthropic%2Fclaude-fable-latest`);
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), { variants: ['high'], error: null });
+      assert.deepEqual(received, { cwd: root, provider: 'openrouter', model: '~anthropic/claude-fable-latest' });
+    } finally {
+      catalog.discoverVariants = original;
+    }
+  });
+
+  it('loads global fallback, saves validated project overrides, and refreshes only project profiles', async () => {
+    const globalFile = path.join(xdg, 'guarana', 'advisor.json');
+    fs.mkdirSync(path.dirname(globalFile), { recursive: true });
+    fs.writeFileSync(globalFile, JSON.stringify({
+      primary: { provider: 'anthropic', model: 'claude-sonnet-4', variant: 'high' },
+      advisor: { provider: 'openai', model: 'gpt-5' },
+    }));
+
+    const loaded = await (await fetch(`${base}/api/models`)).json();
+    assert.equal(loaded.project.primary, undefined);
+    assert.equal(loaded.effective.primary.model, 'claude-sonnet-4');
+    assert.equal(loaded.sources.primary.model, 'global');
+    assert.equal(loaded.sources.advisor.variant, 'unset');
+
+    const response = await fetch(`${base}/api/models`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: {
+        primary: { model: 'claude-opus-4', variant: 'max' },
+        advisor: { variant: 'low' },
+      } }),
+    });
+    const saved = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(saved.effective.primary.provider, 'anthropic');
+    assert.equal(saved.effective.primary.model, 'claude-opus-4');
+    assert.equal(saved.effective.advisor.model, 'gpt-5');
+    assert.equal(saved.sources.primary.provider, 'global');
+    assert.equal(saved.sources.primary.model, 'project');
+    assert.equal(saved.sources.advisor.variant, 'project');
+
+    const projectSettings = path.join(root, '.guarana', 'advisor.json');
+    assert.deepEqual(JSON.parse(fs.readFileSync(projectSettings, 'utf8')), {
+      primary: { model: 'claude-opus-4', variant: 'max' },
+      advisor: { variant: 'low' },
+    });
+    const primaryProfile = path.join(root, '.opencode', 'agents', 'guarana.md');
+    const command = path.join(root, '.opencode', 'commands', 'guarana-advisor.md');
+    assert.match(fs.readFileSync(primaryProfile, 'utf8'), /model: "anthropic\/claude-opus-4"[\s\S]*variant: "max"/);
+    assert.ok(fs.existsSync(command));
+    assert.equal(fs.readFileSync(globalFile, 'utf8').includes('claude-opus-4'), false);
+  });
+
+  it('rejects invalid settings without writing project settings or generated artifacts', async () => {
+    const response = await fetch(`${base}/api/models`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: { primary: { provider: 'bad provider', model: 'gpt-5' } } }),
+    });
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /Invalid model settings/);
+    assert.equal(fs.existsSync(path.join(root, '.guarana', 'advisor.json')), false);
+    assert.equal(fs.existsSync(path.join(root, '.opencode')), false);
+  });
+
+  it('defaults Advisor consultations off and permits false without an Advisor model', async () => {
+    const loaded = await (await fetch(`${base}/api/models`)).json();
+    assert.equal(loaded.effective.advisor?.enabled, false);
+    assert.equal(loaded.sources.advisor.enabled, 'unset');
+    const response = await fetch(`${base}/api/models`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: { advisor: { enabled: false } } }),
+    });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).project.advisor.enabled, false);
+  });
+
+  it('rejects enabling Advisor consultations without an effective provider and model', async () => {
+    const response = await fetch(`${base}/api/models`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: { advisor: { enabled: true } } }),
+    });
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /Advisor consultations require/);
+    assert.equal(fs.existsSync(path.join(root, '.guarana', 'advisor.json')), false);
+  });
+
+  it('saves an exact OpenRouter tilde model ID and refreshes the generated profile', async () => {
+    const id = '~anthropic/claude-fable-latest';
+    const response = await fetch(`${base}/api/models`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: {
+        primary: { provider: 'openrouter', model: id },
+        advisor: { provider: 'openai', model: 'gpt-5' },
+      } }),
+    });
+    const saved = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(saved.project.primary.model, id);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(root, '.guarana', 'advisor.json'), 'utf8')).primary.model, id);
+    const profile = fs.readFileSync(path.join(root, '.opencode', 'agents', 'guarana.md'), 'utf8');
+    assert.match(profile, /model: "openrouter\/~anthropic\/claude-fable-latest"/);
+
+    for (const model of ['bad model', 'bad\u0001model']) {
+      const invalid = await fetch(`${base}/api/models`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings: { primary: { provider: 'openrouter', model } } }),
+      });
+      assert.equal(invalid.status, 400);
+    }
+  });
+
+  it('reports foreign-artifact conflicts and leaves settings and foreign files untouched', async () => {
+    const globalFile = path.join(xdg, 'guarana', 'advisor.json');
+    fs.mkdirSync(path.dirname(globalFile), { recursive: true });
+    fs.writeFileSync(globalFile, JSON.stringify({
+      primary: { provider: 'anthropic', model: 'claude-sonnet-4' },
+      advisor: { provider: 'openai', model: 'gpt-5' },
+    }));
+    const projectSettings = path.join(root, '.guarana', 'advisor.json');
+    fs.mkdirSync(path.dirname(projectSettings), { recursive: true });
+    const originalSettings = '{"primary":{"model":"claude-sonnet-4"}}\n';
+    fs.writeFileSync(projectSettings, originalSettings);
+    const foreign = path.join(root, '.opencode', 'agents', 'guarana.md');
+    fs.mkdirSync(path.dirname(foreign), { recursive: true });
+    fs.writeFileSync(foreign, 'owned by another tool\n');
+
+    const response = await fetch(`${base}/api/models`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: { primary: { model: 'claude-opus-4' } } }),
+    });
+    assert.equal(response.status, 409);
+    assert.match((await response.json()).error, /conflict.*not managed by Guarana/i);
+    assert.equal(fs.readFileSync(projectSettings, 'utf8'), originalSettings);
+    assert.equal(fs.readFileSync(foreign, 'utf8'), 'owned by another tool\n');
+    assert.equal(fs.existsSync(path.join(root, '.opencode', 'commands', 'guarana-advisor.md')), false);
   });
 });

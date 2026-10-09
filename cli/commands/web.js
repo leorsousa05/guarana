@@ -2,7 +2,27 @@ const os = require('os');
 const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { createRequire } = require('module');
 const { DASH_SERVER_DIR, DASH_DEFAULT_PORT } = require('../constants.js');
+
+function dependenciesReady(serverDir) {
+  try {
+    const requireFromServer = createRequire(path.join(serverDir, 'index.js'));
+    requireFromServer.resolve('express');
+    requireFromServer('express');
+    requireFromServer('iconv-lite').getDecoder('utf-8');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function ensureDependencies(serverDir, install = spawnSync) {
+  if (dependenciesReady(serverDir)) return true;
+  console.log('dashboard server dependencies are missing or incomplete — running `npm ci --omit=dev`...');
+  const res = install('npm', ['ci', '--omit=dev'], { cwd: serverDir, stdio: 'inherit' });
+  return !res.error && res.status === 0 && dependenciesReady(serverDir);
+}
 
 function openBrowser(url) {
   const opener = process.platform === 'linux' ? 'xdg-open' : process.platform === 'darwin' ? 'open' : 'start';
@@ -36,13 +56,9 @@ function run(args) {
     process.exit(1);
   }
 
-  if (!fs.existsSync(path.join(DASH_SERVER_DIR, 'node_modules'))) {
-    console.log('dashboard server dependencies missing — running `npm install --omit=dev` (network required, one-time)...');
-    const res = spawnSync('npm', ['install', '--omit=dev'], { cwd: DASH_SERVER_DIR, stdio: 'inherit' });
-    if (res.error || res.status !== 0) {
-      console.error('failed to install dashboard server dependencies');
-      process.exit(1);
-    }
+  if (!ensureDependencies(DASH_SERVER_DIR)) {
+    console.error('dashboard dependencies are unavailable or incomplete; run `npm ci --omit=dev` in the dashboard server directory and try again');
+    process.exit(1);
   }
 
   const child = spawn('node', [serverEntry], {
@@ -62,4 +78,4 @@ function run(args) {
   if (!noOpen) openBrowser(`http://127.0.0.1:${port}`);
 }
 
-module.exports = { run };
+module.exports = { run, dependenciesReady, ensureDependencies };

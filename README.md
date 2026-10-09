@@ -25,7 +25,7 @@ task requests automatically move through planning, implementation, verification,
 and memory, while the important state stays inspectable on disk.
 
 <p>
-  <a href="https://github.com/leorsousa05/guarana"><img src="https://img.shields.io/badge/version-1.0.0-7c3aed?style=flat-square" alt="Version 1.0.0"></a>
+  <a href="https://github.com/leorsousa05/guarana"><img src="https://img.shields.io/badge/version-1.1.0-7c3aed?style=flat-square" alt="Version 1.1.0"></a>
   <img src="https://img.shields.io/badge/license-MIT-2563eb?style=flat-square" alt="MIT license">
 </p>
 
@@ -92,6 +92,15 @@ Check the installation:
 guarana list
 guarana plugin status
 ```
+
+### Primary model defaults
+
+Configure Primary in Guarana Web's Models page or with `guarana advisor set
+primary.provider <provider-id>` and `guarana advisor set primary.model <model-id>`
+(optionally `primary.variant`). Project settings override global settings for the
+generated Guarana agent/profile defaults only. Explicit or remembered OpenCode
+session model/variant selections prevail; Guarana does not force request options
+or rewrite session selections. Advisor consultations remain optional.
 
 ## Automatic Workflow
 
@@ -234,8 +243,9 @@ npm run build
 
 ## Status
 
-Guarana `1.0.0` is prepared as a local release candidate. The automated package
-gate and provider-backed OpenCode host smoke are recorded before publication.
+Guarana `1.1.0` is the current local, unpublished version. The `1.0.0` release
+gate and provider-backed OpenCode host smoke are historical evidence; the `1.1.0`
+release gate is not yet complete.
 
 ## License
 

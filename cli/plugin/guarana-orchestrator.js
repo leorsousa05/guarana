@@ -9,18 +9,48 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
+import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const pluginDir = path.dirname(fileURLToPath(import.meta.url));
 const ORCHESTRATOR_INJECTION_MARKER = '<!-- guarana orchestrator injection -->';
+const ADVISOR_OPT_IN_MARKER = '<!-- guarana-advisor-opt-in -->';
 const MEMORY_CONTEXT_GROUPS = ['decisions', 'bugs', 'solutions', 'refactors', 'preferences', 'superseded', 'atoms'];
-const WORKER_AGENT_NAMES = new Set(['worker-code', 'worker-verify', 'worker-debug']);
+const WORKER_AGENT_NAMES = new Set(['worker-code', 'worker-verify', 'worker-debug', 'worker-specs', 'guarana-advisor']);
 const INJECTION_CACHE_SYMBOL = Symbol.for('guarana.orchestrator.memory-injection-cache');
 const injectedMemoryBySession = globalThis[INJECTION_CACHE_SYMBOL] || new Map();
 globalThis[INJECTION_CACHE_SYMBOL] = injectedMemoryBySession;
 const WORKFLOW_MESSAGE_CACHE_SYMBOL = Symbol.for('guarana.orchestrator.workflow-message-cache');
 const processedWorkflowMessages = globalThis[WORKFLOW_MESSAGE_CACHE_SYMBOL] || new Map();
 globalThis[WORKFLOW_MESSAGE_CACHE_SYMBOL] = processedWorkflowMessages;
+const ADVISOR_DISPATCH_GUARD_SYMBOL = Symbol.for('guarana.orchestrator.advisor-dispatch-guard');
+const advisorDispatchesBySession = globalThis[ADVISOR_DISPATCH_GUARD_SYMBOL] || new Map();
+globalThis[ADVISOR_DISPATCH_GUARD_SYMBOL] = advisorDispatchesBySession;
+const ADVISOR_DISPATCH_HOOK_INPUTS_SYMBOL = Symbol.for('guarana.orchestrator.advisor-dispatch-hook-inputs');
+const advisorDispatchHookInputs = globalThis[ADVISOR_DISPATCH_HOOK_INPUTS_SYMBOL] || new WeakSet();
+globalThis[ADVISOR_DISPATCH_HOOK_INPUTS_SYMBOL] = advisorDispatchHookInputs;
+const ADVISOR_ARTIFACT_MARKER = '<!-- guarana-managed-advisor-artifact -->';
+
+function readJson(file) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return {}; }
+}
+
+function effectiveAdvisorSettings(directory) {
+  const globalRoot = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
+  const globalSettings = readJson(path.join(globalRoot, 'guarana', 'advisor.json'));
+  const projectSettings = readJson(path.join(directory, '.guarana', 'advisor.json'));
+  const section = (name) => ({ ...(globalSettings[name] || {}), ...(projectSettings[name] || {}) });
+  return { primary: section('primary'), advisor: section('advisor') };
+}
+
+function hasManagedPrimaryProfile(directory) {
+  const globalRoot = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
+  const targets = [path.join(directory, '.opencode', 'agents', 'guarana.md'), path.join(globalRoot, 'opencode', 'agents', 'guarana.md')];
+  return targets.some((file) => {
+    try { return fs.readFileSync(file, 'utf8').includes(ADVISOR_ARTIFACT_MARKER); } catch { return false; }
+  });
+}
 
 const memoryNodeKey = (node) => `${node.scope === 'global' ? 'global' : 'project'}:${node.id}`;
 
@@ -31,6 +61,36 @@ function claimWorkflowMessage(directory, sessionID, messageID) {
   processedWorkflowMessages.set(key, Date.now());
   while (processedWorkflowMessages.size > 512) {
     processedWorkflowMessages.delete(processedWorkflowMessages.keys().next().value);
+  }
+  return true;
+}
+
+function advisorSessionKey(directory, sessionID) {
+  return `${path.resolve(directory)}::${sessionID}`;
+}
+
+function advisorContextKey(args) {
+  const description = typeof args?.description === 'string' ? args.description : '';
+  const prompt = typeof args?.prompt === 'string' ? args.prompt : '';
+  const normalized = (prompt || description).normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
+  return createHash('sha256').update(normalized).digest('hex');
+}
+
+function claimAdvisorDispatch(sessionKey, contextKey, input) {
+  let state = advisorDispatchesBySession.get(sessionKey);
+  const callID = typeof input?.callID === 'string' ? input.callID : '';
+  if ((callID && state?.callIDs.has(callID)) || (input && advisorDispatchHookInputs.has(input))) return true;
+  if (state?.contexts.has(contextKey)) return false;
+  if (state && state.contexts.size >= 64) return false;
+  if (!state) {
+    state = { contexts: new Set(), callIDs: new Set() };
+    advisorDispatchesBySession.set(sessionKey, state);
+  }
+  state.contexts.add(contextKey);
+  if (callID) state.callIDs.add(callID);
+  if (input && typeof input === 'object') advisorDispatchHookInputs.add(input);
+  while (advisorDispatchesBySession.size > 512) {
+    advisorDispatchesBySession.delete(advisorDispatchesBySession.keys().next().value);
   }
   return true;
 }
@@ -487,6 +547,13 @@ export const GuaranaOrchestrator = async ({ directory }) => {
   };
 
   return {
+    config: async (cfg) => {
+      try {
+        const settings = effectiveAdvisorSettings(directory);
+        if (!settings.primary.provider || !settings.primary.model || !hasManagedPrimaryProfile(directory)) return;
+        if (cfg.default_agent == null || cfg.default_agent === '' || cfg.default_agent === 'build') cfg.default_agent = 'guarana';
+      } catch { /* Runtime configuration must remain non-fatal. */ }
+    },
     tool: workflowTools,
 
     // Session lifecycle arrives through OpenCode's generic event hook.
@@ -506,6 +573,9 @@ export const GuaranaOrchestrator = async ({ directory }) => {
         const messageID = input?.messageID || output?.message?.id;
         if (!claimWorkflowMessage(directory, sessionID, messageID)) return;
         const text = userText((output && output.parts) || (input && input.parts));
+        if (sessionID && text.includes(ADVISOR_OPT_IN_MARKER)) {
+          advisorDispatchesBySession.delete(advisorSessionKey(directory, sessionID));
+        }
         await syncDecision(text, null, sessionID);
       } catch (err) {
         append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
@@ -516,7 +586,7 @@ export const GuaranaOrchestrator = async ({ directory }) => {
     'experimental.chat.system.transform': async (input, output) => {
       try {
         const sessionID = input?.sessionID || sessionIdFrom(input) || activeSessionID || 'unknown';
-        if (childSessions.has(sessionID)) return;
+        if (isWorkerContext(sessionID, input?.agent)) return;
         const cacheKey = sessionCacheKey(sessionID);
         let sessionMemory = injectedMemoryBySession.get(cacheKey);
         if (!sessionMemory) {
@@ -570,11 +640,29 @@ export const GuaranaOrchestrator = async ({ directory }) => {
       await handleSessionCompacted(event);
     },
 
+    // Enforce advisor consultation limits at native Task dispatch, not only in
+    // the primary profile prompt. Other Task subagents and tools are untouched.
+    'tool.execute.before': async (input, output) => {
+      if (String(input?.tool || '').toLowerCase() !== 'task') return;
+      const args = output?.args || input?.args || {};
+      if (args.subagent_type !== 'guarana-advisor') return;
+      const settings = effectiveAdvisorSettings(directory);
+      if (settings.advisor.enabled !== true) throw new Error('Guarana Advisor consultation is disabled. Enable it with `guarana advisor set advisor.enabled true`.');
+      if (!settings.advisor.provider || !settings.advisor.model) throw new Error('Guarana Advisor is not configured. Set advisor.provider and advisor.model before dispatching guarana-advisor.');
+      const sessionID = input?.sessionID;
+      const contextKey = advisorContextKey(args);
+      if (!sessionID || !contextKey) return;
+      const sessionKey = advisorSessionKey(directory, sessionID);
+      if (!claimAdvisorDispatch(sessionKey, contextKey, input)) {
+        throw new Error('Guarana advisor consultation refused: this unchanged blocker has already used its advisor consultation in this parent session. Add materially new evidence or invoke a fresh /guarana-advisor command to reset the consultation budget.');
+      }
+    },
+
     // Observe tool results: an error during verification automatically moves
     // the workflow toward debugging/correction (requirement: verify fail -> debug).
     'tool.execute.after': async (input, output) => {
       try {
-        if (childSessions.has(input?.sessionID)) return;
+        if (isWorkerContext(input?.sessionID, input?.agent)) return;
         const c = await core();
         if (!c) return;
         const wf = c.state.load(directory);

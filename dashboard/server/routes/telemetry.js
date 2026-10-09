@@ -1,7 +1,7 @@
 import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
-import { readJsonl, summarize } from '../lib/telemetry.js';
+import { readJsonl, summarize, advisorHistory } from '../lib/telemetry.js';
 import { SPECS_DIR, TELEMETRY_DIR_SEGMENTS, EVENTS_FILE } from '../lib/constants.js';
 
 export function createTelemetryRouter({ root }) {
@@ -13,10 +13,16 @@ export function createTelemetryRouter({ root }) {
     res.json({ runs: summarize(events) });
   });
 
+  router.get('/advisor-history', (req, res) => {
+    const rawLimit = Number(req.query.limit);
+    const limit = Number.isInteger(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 100) : 25;
+    res.json({ history: advisorHistory(readJsonl(telemetryFile), limit) });
+  });
+
   router.get('/events', (req, res) => {
     const session = req.query.session;
     const events = readJsonl(telemetryFile);
-    const filtered = session ? events.filter((e) => e.sessionID === session) : events;
+    const filtered = typeof session === 'string' ? events.filter((e) => e.sessionID === session) : events;
     res.json({ events: filtered });
   });
 

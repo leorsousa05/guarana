@@ -240,5 +240,113 @@ crossing session or compaction boundaries.
 75. Session creation and compaction reset persisted seen IDs; compaction preserves its distinct injection-history boundary.
 76. Overlapping memory-injected events from the same session within one second merge to one history entry containing the union of unique scope/ID references.
 
+## Addendum 2026-10-08: live Activity view and Advisor history
+
+Replace the simple Now summary surface with a dedicated live **Activity** view.
+Keep the existing `#/now` hash working for deep links, but label its navigation
+item “Activity”. Lead with two peer square/rule-ledger work areas: the latest root
+session and the Advisor. Keep model settings in Models; remove the Advisor runtime
+proof panel from that settings page.
+
+- The root-session area shows identity, evidenced status, current workflow
+  phase/task, elapsed time and tool/token/error counts.
+- The Advisor area shows not-called/running/completed/error based on observed
+  dispatch/session/completion events, the configured vs observed model metadata,
+  and a button that opens an accessible Advisor history modal. The modal lists
+  call time, status, child ID and observed provider/model/variant, not prompts or
+  raw response/tool-error text.
+- Supporting sections show workflow transition flow, recent safe tool/session
+  activity, and memory actually injected into the selected root session, hydrated
+  from the existing memory-injections API. Never label the newest session “active”
+  unless telemetry supplies busy/running evidence; otherwise say latest/last seen.
+- Use existing telemetry SSE for live refresh. Preserve the ledger palette,
+  typography, square outlines and hairlines; on 375px the two work areas stack
+  without horizontal overflow.
+
+77. Navigation label “Activity” opens the existing `#/now` deep link and keeps the
+  rendered section directly focusable.
+78. Desktop shows distinct Current session and Advisor square work areas; 375px
+  stacks them with no horizontal page overflow.
+79. Current-session selection considers root sessions (no parent session ID),
+    prefers a root with observed `busy/running`, then greatest last-activity time;
+    active status appears only when busy/running is actually observed.
+80. Advisor panel distinguishes not-called/running/completed/error, compares
+  observed model metadata to configured settings only when an observed event
+  exists, and opens its history in an accessible modal.
+81. Advisor history modal shows safe event metadata only; Escape/backdrop closes,
+  focus is contained and restored to the history button.
+82. Workflow timeline, safe recent tool activity and actual injected memories for
+  the root session refresh via telemetry SSE; empty states are explicit.
+83. Models displays configuration only and no longer renders the runtime proof
+   panel.
+84. The Advisor panel and each Advisor-history row explain why advice was
+   requested, using the native Task `description` as a concise 3–5-word reason.
+   The Primary profile directs that description to say why help is needed now, not
+   repeat the task title. Store only a bounded, secret-filtered description—never
+   the Task prompt/output. Missing or unsafe reason displays “Reason not recorded.”
+
+### Follow-up — root session was hidden by helper sessions
+
+User saw an Advisor call in history while its Activity work area said it had not
+been called. Telemetry showed the event's `parentSessionID` matched the long-lived
+root, but `rootSessionFrom()` had chosen the first parentless run in session-start
+order. Recent helpers without parent metadata could sort ahead. The fix prefers an
+observed busy/running root, else the greatest end/last-activity timestamp; Advisor
+status/history remains scoped to that root, never the child Advisor.
+
+### Implementation status
+
+- Worker-code `ses_ee17270effferhcAi7zt3WWKbR` implemented Activity at the existing
+  `#/now` hash, relabeled navigation, added Advisor dispatch status/history modal,
+  workflow and safe recent-event sections, and root-session injected-memory view.
+  Models configuration no longer contains the runtime proof block.
+- Telemetry records observed busy/retry state, safe session agent/parent IDs, and
+  start/completion events for native Advisor Task calls. The activity summary now
+  carries parent session/agent/status metadata so Advisor children can be excluded
+  from root-session selection.
+- Follow-up worker-code `ses_ee152fee3ffeGU1GHJ8CNjnUjp` changed root selection to
+  prefer observed busy/running roots and then last activity; Advisor history is
+  matched by the selected root's parent session. `node --test
+  dashboard/web/src/components/Activity.test.mjs` passed 2/2, including older-start
+  busy root vs newer-start idle roots, last-end fallback, and unrelated Advisor
+  parent filtering. Independent worker-verify `ses_ee14cc5aaffexxrn2km3Um7Tuf`
+  passed at 375px with the main busy root behind newer helper/Advisor entries;
+  the correct root and its Advisor call were rendered. Screenshot:
+  `/tmp/opencode/activity-root-fix-375.png`.
+- Independent worker-verify `ses_ee1646f18ffe9eLPHP4MpHYGNx` passed at 375×812:
+  Activity/nav route retained, root picked over newer Advisor child, observed busy
+  status and workflow shown, injected root memory shown and child-only memory
+  excluded, event timeline omits raw error content, and Advisor history modal
+  closes on Escape/backdrop and restores focus; no overflow. Screenshot:
+  `/tmp/opencode/activity-view-375.png`.
+- Focused telemetry/server/Activity/Models command passed 37/37; `npm test`
+  passed 264/264; dashboard build/CLI sync, `npm run check-cli`,
+  `npm run specs:validate`, and `git diff --check` passed.
+- Root-selection correction proof and full-check record:
+  `.specs/changes/2026-10-08-activity-root-selection.md`.
+- Worker-code `ses_edf3af320ffeFQOXaZ77wexRLH` added the why-now Task-description
+  convention to the generated Primary profile; telemetry stores only a bounded,
+  secret-filtered reason on Advisor dispatch, history API passes it through, and
+  both the current Activity square and history modal display it with an explicit
+  missing-reason fallback. It never stores the Task prompt/output. Focused CLI,
+  telemetry, history projection/API, and Activity/modal tests passed 60/60.
+- Independent worker-verify `ses_edf332acfffensm5362id9anSa` passed profile
+  guidance, Task description extraction, secret-shaped reason omission, history
+  projection, Activity card and modal reason display, and “Reason not recorded”
+  fallback. Focused independent test run: 59/59; full `npm test` 266/266,
+  dashboard build/sync, `check-cli`, `specs:validate`, and `git diff --check` pass.
+  Proof: `.specs/changes/2026-10-08-advisor-consultation-reason.md`.
+- A live Advisor Task (`ses_edf1b2176ffe0QFXvnLfob0RR6`) returned `Advisor ativo.`;
+  telemetry recorded parent `ses_ee39ce5c0ffeA5wDL8irBmzskV`, actual
+  `openai/gpt-6-sol`/`xhigh`, but no reason. `plugin status --project` then found
+  the loaded telemetry plugin and Primary profile stale; `guarana plugin install
+  --project` refreshed both and status is current. Restart/reload OpenCode and
+  repeat to validate live reason capture. No prompt/output was stored.
+- After the project plugin reload, live Task `ses_edf12824affeTImYKdFojUTX8x`
+  returned `Advisor ativo.` and dispatch event 67004 recorded
+  `reason=Verificar captura do motivo`, parent `ses_ee39ce5c0ffeA5wDL8irBmzskV`,
+  and the matching child/call IDs. The execution event confirms `openai/gpt-6-sol`
+  / `xhigh`. This passes live reason capture; no prompt/output was stored.
+
 ## Out of scope
 - npm publish, auth, multi-project views, live websockets (polling is fine).
