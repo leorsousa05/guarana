@@ -2,10 +2,10 @@
   "version": 1,
   "state": "completed",
   "skill": null,
-  "activeTask": "Guarana Primary supplies defaults; explicit/remembered OpenCode session choices prevail without silent parameter overrides.",
-  "goal": "Guarana Primary supplies defaults; explicit/remembered OpenCode session choices prevail without silent parameter overrides.",
-  "condition": "All five primary-session-precedence criteria verified; sources/bundles/managed installs consistent, user settings/core/state untouched, tests and validators PASS.",
-  "updatedAt": 1791576645360,
+  "activeTask": "Broaden automatic skill capture to include inferred recurring application knowledge and workflows",
+  "goal": "Broaden automatic skill capture to include inferred recurring application knowledge and workflows",
+  "condition": "Independent verifier confirms after-task assessment and app-context triggers, preserved exclusions/dedup/scope/privacy, focused test and bundle validation pass; verification recorded as VALIDATED.",
+  "updatedAt": 1791579356561,
   "history": [
     {
       "ts": 1788711769257,
@@ -3933,6 +3933,41 @@
       "from": "verifying",
       "to": "completed",
       "note": "worker-verify ses_eddb9384dffeAhauAWkupC1iZt PASS 5/5; 47 focused and 293 full tests, build/check-cli/dist cmp/specs/diff pass. Final worker-specs records VALIDATED, dated change, superseded old enforcement guarantee; primary specs validate 139/27/30/214 PASS. Browser 375px unavailable; source/SSR only, documented limitation. stop_reason condition-met. Restart needed to unload previous hook, not reset remembered selection."
+    },
+    {
+      "ts": 1791577995503,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "User reports skill creation is rare; begin with canonical policy/tool path and existing regression coverage."
+    },
+    {
+      "ts": 1791578696709,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Requirements confirmed by user; worker-specs recorded plan as SPECIFIED and specs validation passed (140 scanned, zero issues)."
+    },
+    {
+      "ts": 1791578823917,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Worker-specs recorded TASKED status and criteria; validator PASS (140 files, zero issues)."
+    },
+    {
+      "ts": 1791579119332,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "worker-specs recorded IMPLEMENTED status; post-write specs validation PASS (140 files, zero issues)."
+    },
+    {
+      "ts": 1791579356561,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "worker-verify PASS all criteria; worker-specs recorded VALIDATED, not SHIPPED. Final specs validation PASS (140 files, zero issues). Stop reason: condition-met."
     }
   ]
 }

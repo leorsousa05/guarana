@@ -26,7 +26,7 @@ user states durable knowledge. Tool/file activity itself is telemetry, not memor
 | `memory_save_node({type,scope,intent,summary,relatedTo?,tags?,author?})` | Save a confirmed `decision`, `bug`, `solution`, `refactor`, or `preference`; use `global` for standing user preferences and `project` for current-project knowledge. |
 | `memory_review_draft({id,action:"confirm"\|"discard",edits?})` | Migrating or discarding legacy draft atoms from older versions. |
 | `skill_list({scope?})` | Check Guarana-generated skills in project/global scopes before proposing a new reusable procedure. |
-| `skill_create({name,description,scope,content})` | Persist a clear reusable procedure as a native OpenCode skill; the tool never overwrites an existing name. |
+| `skill_create({name,description,scope,content})` | Persist a clear reusable procedure or project context as a native OpenCode skill; the tool never overwrites an existing name. |
 
 ## Explicit memory lifecycle
 When a user sets a lasting preference or makes a durable project decision, save
@@ -41,17 +41,26 @@ Legacy draft atoms from older versions are never retrieved automatically; use
 
 ## Skill capture boundary
 
-The memory plugin also injects an automatic skill-capture policy on every turn.
-Create a skill when the user gives a repeatable specialized procedure, recurring
-checks, or a correction intended to guide similar future work. One message is
-enough when future reuse is clear. For example, a repo-specific dashboard review
-sequence is a project skill; rewriting one paragraph in bullets is a one-off and
-should not create a skill. A technically complex request, temporary acceptance
-criteria, generic best practices, or a simple task are not triggers by themselves.
-If reuse is ambiguous, do not create one. Preferences and decisions remain
-memories; skills capture how to perform a repeatable method. Use project scope
-for repository conventions and global scope for portable procedures. The plugin's
-always-on policy remains the runtime authority.
+The memory plugin also injects an automatic skill-capture policy. After completing
+task work and before the final response, assess whether what surfaced is likely to
+help with similar future work. Create a concise skill for reusable workflow,
+project knowledge, conventions, or context, including explanations of application
+architecture/components and how to work with or change them. This is a positive
+trigger even when the user did not explicitly ask for or document a procedure; one
+task can reveal reusable context. Repeatable sequences/checklists, specialized
+recurring checks, and corrections meant to guide similar work are also triggers.
+
+Do not create a skill for one-off deliverables (such as rewriting one paragraph in
+bullets), temporary acceptance criteria, generic best practices, or a simple task.
+A technically complex or long request is not a trigger by itself. If future reuse
+is ambiguous, do not create one. Durable preferences and decisions remain memories;
+skills capture reusable procedures or project context, and the same content should
+not be duplicated across both. Use `skill_list` across both scopes before creating
+one to avoid semantic duplicates; never overwrite an existing skill. Choose project
+scope for repository-specific conventions, tools, architecture, or context and
+global scope for portable procedures. Never copy secrets, credentials, private
+data, or raw conversation transcripts. The plugin's always-on policy remains the
+runtime authority.
 
 ## Automatic retrieval boundary
 Relevant project nodes and up to three current global preferences are injected

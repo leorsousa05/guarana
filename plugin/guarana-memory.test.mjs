@@ -59,10 +59,15 @@ describe('GuaranaMemory', () => {
     assert.match(output.system.join('\n'), /ordinary task requests/);
     assert.match(output.system.join('\n'), /Guarana automatic skills/);
     assert.match(output.system.join('\n'), /skill_list/);
-    assert.match(output.system.join('\n'), /One message is enough when that intent is clear/i);
-    assert.match(output.system.join('\n'), /repeatable sequence\/checklist/);
-    assert.match(output.system.join('\n'), /specialized checks for recurring work/);
-    assert.match(output.system.join('\n'), /correction clearly meant to guide future similar tasks/);
+    assert.match(output.system.join('\n'), /After completing task work and before the final response, assess/i);
+    assert.match(output.system.join('\n'), /One task can reveal reusable context/i);
+    assert.match(output.system.join('\n'), /do not wait for repeated requests, an explicit checklist, or an explicit skill-creation command/i);
+    assert.match(output.system.join('\n'), /reusable workflow, project knowledge, conventions, or context/i);
+    assert.match(output.system.join('\n'), /application architecture\/components and how to work with or change them/i);
+    assert.match(output.system.join('\n'), /positive trigger even when the user did not explicitly ask/i);
+    assert.match(output.system.join('\n'), /Repeatable sequences\/checklists/);
+    assert.match(output.system.join('\n'), /specialized recurring checks/);
+    assert.match(output.system.join('\n'), /corrections meant to guide similar future work are also positive triggers/);
     assert.match(output.system.join('\n'), /Example to create:/);
     assert.match(output.system.join('\n'), /is one-off\./);
     assert.match(output.system.join('\n'), /temporary acceptance criteria/);
@@ -71,9 +76,14 @@ describe('GuaranaMemory', () => {
     assert.match(output.system.join('\n'), /long, technical, or complex is not itself a signal/);
     assert.match(output.system.join('\n'), /If future reuse is ambiguous, do not create a skill/i);
     assert.match(output.system.join('\n'), /preferences and decisions belong in memory/i);
+    assert.match(output.system.join('\n'), /Do not duplicate the same content across both/);
+    assert.match(output.system.join('\n'), /Call `skill_list` to check Guarana-generated skills in both scopes and avoid semantic duplicates/i);
+    assert.match(output.system.join('\n'), /choose a distinct name and never overwrite the existing skill/i);
     assert.match(output.system.join('\n'), /skill_create/);
+    assert.match(output.system.join('\n'), /When a reusable procedure or project context is clear, call `skill_create`/);
     assert.match(output.system.join('\n'), /Choose `project`/);
     assert.match(output.system.join('\n'), /Choose `global`/);
+    assert.match(output.system.join('\n'), /Never copy secrets, credentials, private data, or raw conversation transcripts/i);
   });
 
   it('keeps normal tool activity out of the memory vault', async () => {
