@@ -2,10 +2,10 @@
   "version": 1,
   "state": "completed",
   "skill": null,
-  "activeTask": "A saída do `guarana update` foi redesenhada e validada em instalação de projeto e global.",
-  "goal": "A saída do `guarana update` foi redesenhada e validada em instalação de projeto e global.",
-  "condition": "Update mostra resumo estruturado com mudança de versão quando disponível, alvo/scope e grupos refrescados; cores ANSI só em TTY compatível, nunca com NO_COLOR; instalação continua incluindo skills/plugins/engines/workers e mantendo guards; testes focados, sync do bundle, specs validation e verificação independente passam.",
-  "updatedAt": 1791429605832,
+  "activeTask": "Guarana Primary supplies defaults; explicit/remembered OpenCode session choices prevail without silent parameter overrides.",
+  "goal": "Guarana Primary supplies defaults; explicit/remembered OpenCode session choices prevail without silent parameter overrides.",
+  "condition": "All five primary-session-precedence criteria verified; sources/bundles/managed installs consistent, user settings/core/state untouched, tests and validators PASS.",
+  "updatedAt": 1791576645360,
   "history": [
     {
       "ts": 1788711769257,
@@ -2659,6 +2659,1280 @@
       "from": "verifying",
       "to": "completed",
       "note": "worker-verify PASS (3/3), testes direcionados PASS (5/5), check-cli PASS, specs validate PASS (111 Markdown, 17 specs, 20 ADRs, 167 links), git diff --check PASS. Registros e change ledger atualizados."
+    },
+    {
+      "ts": 1791478243649,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "new task detected"
+    },
+    {
+      "ts": 1791478686498,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "Planejamento consolidado após confirmar comando de fluxo principal, advisory-only, CLI/dashboard e escopo global/projeto. ADR-021 e feature spec escritos; specs validator passou."
+    },
+    {
+      "ts": 1791478706184,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Requirements ledger fechado e specs revisados. Aceite verificável em advisor-flow.md; ADR-021 define arquitetura de comando nativo, perfis configurados, Task read-only, contexto limitado, configuração CLI/dashboard e precedência projeto/global. specs validator passou."
+    },
+    {
+      "ts": 1791478763159,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Frame registrado em feature spec e project-state; trigger goal-driven, orçamento ADR-005, settings em .guarana/advisor.json e $XDG_CONFIG_HOME/guarana/advisor.json."
+    },
+    {
+      "ts": 1791479843601,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Três slices worker-code com stop_reason condition-met: CLI global/projeto e artifacts; dashboard API/UI e profile refresh; advisor handoff one-shot read-only, fail-soft, child-isolation e atualização dos profiles no set/clear. Spec/status atualizados como IMPLEMENTED; validação independente pendente."
+    },
+    {
+      "ts": 1791479862151,
+      "event": "force",
+      "from": "verifying",
+      "to": "verifying",
+      "note": "Restaurando objetivo e condição persistidos que foram limpos ao avançar code_complete; validação independente segue em andamento."
+    },
+    {
+      "ts": 1791480358241,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "worker-verify ses_ee37a5681ffexfq5P5xkQPFFTM: FAIL em critérios 1, 4, 5, 6 e dependência em 7; critérios 2 e 3 passaram. Causas registradas na feature spec/project-state: artifacts globais XDG, comando com configuração incompleta, ausência de guarda runtime por bloqueio. Reparo necessário."
+    },
+    {
+      "ts": 1791480550690,
+      "event": "fix_start",
+      "from": "debugging",
+      "to": "coding",
+      "note": "Diagnóstico independente completo e registrado: causas unclassified no known-issues; recomendação confirmada de caminhos OpenCode XDG-aware, comando de setup permanente e guard via tool.execute.before."
+    },
+    {
+      "ts": 1791481335077,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Reparos worker-code `ses_ee36f1b82ffeqNdbN56yiSVAzI` completados: XDG-aware global roots, setup command sem config, runtime advisor Task guard com dedupe e reset por novo evidence/command; checks focados 44/44, check-cli e diff-check PASS. Independently verify novamente."
+    },
+    {
+      "ts": 1791482472701,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "worker-verify ses_ee363e493ffeU0RmtH8bFl99DX: PASS critérios 1,2,4,5,6; FAIL 3 e 7 pelo import do endpoint models no bundle em cli/cli/lib; tentativa do espelho CLI também não resolveu express. Resultados registrados antes do debug."
+    },
+    {
+      "ts": 1791482624568,
+      "event": "fix_start",
+      "from": "debugging",
+      "to": "coding",
+      "note": "worker-debug ses_ee3525ab0ffe8ONnmUqOeLkk6x identificou import relativo quebrado após sync; Express não é defeito confirmado, pois teste rodou antes da provisão do comando web. Root cause registrada."
+    },
+    {
+      "ts": 1791482921348,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Reparo worker-code `ses_ee35012beffe33vBS3qHJy9G10` adicionou resolver source/bundle para imports do endpoint Models; testes canonical e CLI 13/13 cada; sync-cli, check-cli e diff-check PASS. Revalidar critérios e full gate."
+    },
+    {
+      "ts": 1791483617355,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "worker-verify independente ses_ee34bd63fffedhz1AzXY8VJ3NQ PASS 7/7; npm test 237/237, npm run build, check-cli, OpenCode project/global/XDG checks e app tests 13/13 canonical+CLI PASS. Proof/change/state registrados; após registros, specs validate 114 Markdown/18 feature specs/21 ADRs/175 links e git diff --check PASS. stop_reason=condition-met."
+    },
+    {
+      "ts": 1791485549974,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "Follow-up especificado no advisor-flow.md e ADR-022; escolhemos as APIs documentadas `opencode auth list` e `opencode models`, sem ler nem retornar credenciais. specs validate passou (115 files, 18 features, 22 ADRs, 176 links)."
+    },
+    {
+      "ts": 1791485582037,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Requirements, scope, ADR-022 e critérios observáveis registrados; OpenCode documenta `auth list` para providers autenticados e `models [provider]` para IDs provider/model. Specs validados."
+    },
+    {
+      "ts": 1791485603744,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Goal-driven follow-up; orçamento base ADR-005. Critérios especificados e validados antes da implementação."
+    },
+    {
+      "ts": 1791486328585,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Implementação worker-code: `ses_ee322b8c2ffeQauMvsIT3U1ZZs` catalog helper/CLI/API 30/30, e `ses_ee31c5379ffedY6LcZ9V15EQSi` selectors UI 1/1; bundle sync/check e diff-check reportados PASS. Specs/status marcados IMPLEMENTED; verificação independente pendente."
+    },
+    {
+      "ts": 1791486949130,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "tool result signaled failure during verification"
+    },
+    {
+      "ts": 1791487268174,
+      "event": "fix_start",
+      "from": "debugging",
+      "to": "coding",
+      "note": "worker-debug `ses_ee30cd381ffe9bmqnrxjtzSube` confirmou duas causas unclassified e mitigations registradas: normalize `● OpenAI` rows and resolve mirrored helper test via shared module resolver."
+    },
+    {
+      "ts": 1791487783950,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "worker-code repair `ses_ee30790beffeJAOyeC3zEsibLL` cobre `●`/multiword OpenCode provider rows e shared resolver no app test mirror; focused catalog tests 6/6, canonical/mirror app 14/14 each, sync/check/diff PASS. Spec/status registram repair; independent verification pending."
+    },
+    {
+      "ts": 1791488173964,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "worker-verify `ses_ee3017d86ffeLzNHVsn410YHJa` reproduced remaining ANSI + table header/footer parsing failure in actual OpenCode output; criteria 8–10 FAIL. Original packaged criterion 7 mirror app now 14/14 PASS. Results recorded before debug."
+    },
+    {
+      "ts": 1791488336939,
+      "event": "fix_start",
+      "from": "debugging",
+      "to": "coding",
+      "note": "Diagnóstico worker-debug `ses_ee2fb8f2cffe7Sle4K5B5Lq3SM` classificou unclassified: strip ANSI after raw safety checks before borders/headers/cells; exact ANSI fixture required. Findings durably recorded."
+    },
+    {
+      "ts": 1791488571670,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Worker-code `ses_ee2f8bc36ffe5EgCCTGnsw1HCh` implementou parsing ANSI/table, double scan de credenciais e fixture; catalog/CLI/canonical API 33/33, check-cli/diff-check PASS. Docs marcaram repair concluído, final verifier pendente."
+    },
+    {
+      "ts": 1791489134147,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "worker-verify `ses_ee2f57ed4ffefr1vqVeOdX5Z8y` isolated real output includes `Credentials <path>`, standalone `│`, and `2 credentials`; parser rejects before models invocation. Criteria 8–10 FAIL; mirror gate 14/14 PASS; documented before debugging."
+    },
+    {
+      "ts": 1791489300590,
+      "event": "fix_start",
+      "from": "debugging",
+      "to": "coding",
+      "note": "Worker-debug `ses_ee2ecf44effeRh4VGjsGvsH2ug` identificou wrapper rows ancoradas como causa, mantém unknown provider rows fail-closed; diagnosis registrada."
+    },
+    {
+      "ts": 1791489657921,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Worker-code `ses_ee2ea499cffesK1D8S14KqtLV9` implementou ignore ancorado de credentials header, border e count footer, mantendo fail-closed para linhas desconhecidas; catalog/CLI/canonical+mirror API 47/47, check-cli e diff-check PASS. Re-verificação independente."
+    },
+    {
+      "ts": 1791490183053,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "tool result signaled failure during verification"
+    },
+    {
+      "ts": 1791490490932,
+      "event": "fix_start",
+      "from": "debugging",
+      "to": "coding",
+      "note": "Worker-debug `ses_ee2d97969ffeupcUbyaA4198t0` confirmou unclassified prefix mismatch; smallest fix strips only table corner decoration before matching wrappers, keeping secret scans and fail-closed behavior. Findings recorded."
+    },
+    {
+      "ts": 1791490847695,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Worker-code `ses_ee2d72211ffecQvKTu3JykRLON` remove leading/trailing box drawing before matching anchored wrappers, keeps raw/normalized secret checks and fail-closed unknown rows; exact fixture; catalog/CLI/canonical+mirror API tests 47/47, check-cli/diff-check PASS. Re-verify real-shaped OpenCode fixture."
+    },
+    {
+      "ts": 1791491626974,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "worker-verify `ses_ee2d2c47dffei0Y2qWorbFWzDf`: live CLI/catalog behavior and criteria 8–9 pass, original 7 passes; FAIL criterion 10 because fixture provider cells are fully boxed unlike captured standalone-separator layout. Full tests 247/247 green. Failure recorded before debug."
+    },
+    {
+      "ts": 1791494448705,
+      "event": "fix_start",
+      "from": "debugging",
+      "to": "coding",
+      "note": "Worker-debug `ses_ee2c6ccefffeBhyfFoBjgwphkb` confirmou test-only unclassified fixture mismatch; production CLI behavior and criteria 8–9 pass. Correção deve alterar somente fixture/expectations, não implementação."
+    },
+    {
+      "ts": 1791494608417,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Worker-code `ses_ee29b2962ffeLaqTZMWM4nz0VS` aligned only the catalog test fixture to captured standalone separator/unboxed rows; catalog tests 8/8 and diff-check pass. All repair records updated; final independent verification."
+    },
+    {
+      "ts": 1791495888242,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "Independent worker-verify `ses_ee29073ddffeJLQyalwccEqndE` PASS critérios 8–10 e original criterion 7; npm test 247/247, build, check-cli, canonical/mirror app tests 14/14, OpenCode 1.18.35 isolated auth output real-shape PASS. Follow-up change/proof/tracker/state written; final specs validate 116 Markdown/18 feature specs/22 ADRs/180 links and diff-check PASS. stop_reason=condition-met."
+    },
+    {
+      "ts": 1791496177125,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "Reprodução feita: `opencode models` lista `openrouter/~anthropic/...`; `guarana advisor models` falha `malformed model data`. Critério, scope e ADR-023 registrados; specs validate PASS (117 Markdown, 18 features, 23 ADRs, 180 links)."
+    },
+    {
+      "ts": 1791496215709,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Root cause reproduzida: `opencode models` lista openrouter/~anthropic/... e helper/setting validator rejeitam `~`; catalog validates rows from unconnected providers too early. Requirement, ADR-023, scope and criterion 11 recorded; specs validator pass."
+    },
+    {
+      "ts": 1791496232503,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Frame goal-driven registrado em project-state. Base criteria 1–10 ficam in scope como regressão previamente validada."
+    },
+    {
+      "ts": 1791497012831,
+      "event": "new_task",
+      "from": "coding",
+      "to": "planning",
+      "note": "Escopo ampliado conforme orientação do usuário. `.specs`/ADR-024 registram search UI, per-model variants via `opencode models <provider> --verbose`, custom fallback e estilo ledger; specs validate PASS (118 Markdown, 18 features, 24 ADRs, 181 links)."
+    },
+    {
+      "ts": 1791497030144,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Acceptance e boundaries completos após incorporar pesquisa por modelo e variantes dinâmicas suportadas por OpenCode; specs validation PASS."
+    },
+    {
+      "ts": 1791497054013,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Frame concluído após atualizar specs; implementação segue em run goal-driven com orçamento ADR-005."
+    },
+    {
+      "ts": 1791497531125,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Three worker-code slices complete: tilde ID/catalog/settings/API/profile roundtrip, OpenCode verbose variant metadata endpoint, and searchable ledger UI with per-model variant selector/manual fallback. Focused reports 36/36, 13/13, 1/1 and builds/checks pass; independent verification pending."
+    },
+    {
+      "ts": 1791497798534,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "worker-verify `ses_ee26c865effe6e0kXbIABt0vzP` reported criteria 11–13 FAIL for missing real CLI round-trip/variant smoke and rendered 375px overflow evidence; code tests/full suite pass. Missing proof and rerun need to be addressed."
+    },
+    {
+      "ts": 1791497952669,
+      "event": "debug_complete",
+      "from": "debugging",
+      "to": "verifying",
+      "note": "worker-debug `ses_ee268b26effeSfG9cB2z2Co45C` found only a verification evidence gap, unclassified: rerun separate worker-verify with explicit isolated OpenCode CLI/profile/variant smoke and 375px rendered layout check; no product-code repair identified."
+    },
+    {
+      "ts": 1791498103415,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "tool result signaled failure during verification"
+    },
+    {
+      "ts": 1791498294754,
+      "event": "fix_start",
+      "from": "debugging",
+      "to": "coding",
+      "note": "Processo diagnóstico concluído: worker-debug `ses_ee263ad87ffeE2jDPO1IMT4F5p` confirmou que o único problema foi lifecycle state stale, não código. Re-sincronizando a máquina com a implementação já concluída."
+    },
+    {
+      "ts": 1791498313169,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Lifecycle resynced after scope expansion; all implementation slices completed and documented before transitioning. Begin a fresh independent verifier with explicit host/profile/variant and responsive checks."
+    },
+    {
+      "ts": 1791499273566,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "worker-verify `ses_ee25d6649ffe1U79F8m3KOW3xY` again omitted isolated OpenCode CLI/profile/variant and 375px rendered evidence; criteria 11–13 FAIL for proof gap, code/full tests green. Recorded before debug."
+    },
+    {
+      "ts": 1791499577876,
+      "event": "debug_complete",
+      "from": "debugging",
+      "to": "verifying",
+      "note": "Reusing prior worker-debug classification `ses_ee268b26effeSfG9cB2z2Co45C`: implementation evidence gap only, no product defect. A temporary Playwright browser and explicit OpenCode smoke procedure are now available; start a fresh verification-only run."
+    },
+    {
+      "ts": 1791500099720,
+      "event": "new_task",
+      "from": "verifying",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1791500420895,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Scope refinado após feedback: provider picker será realmente pesquisável e a tela ganhará hierarquia Primary/Advisor; variant options serão dinâmicas por modelo. ADR-025, feature criteria 11–14, README/state atualizados; specs validate 119 Markdown, 18 features, 25 ADRs, 182 links."
+    },
+    {
+      "ts": 1791500509557,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Planning/spec gate complete; implementation of provider-search, page layout hierarchy and variants dropdown starts now."
+    },
+    {
+      "ts": 1791501233858,
+      "event": "new_task",
+      "from": "coding",
+      "to": "planning",
+      "note": "Escopo corrigido explicitamente pelo usuário e registrado em ADR-026/feature spec: um campo de variante por Primary/Advisor, sem opção default visível; o vazio representa default."
+    },
+    {
+      "ts": 1791501268280,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Correção registrada em ADR-026 e critérios 13; todo provider/model search/redesign segue in scope."
+    },
+    {
+      "ts": 1791501290795,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Frame completo; corrigir somente o controle variant já implementado e sua cobertura."
+    },
+    {
+      "ts": 1791501603559,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Worker-code `ses_ee2333c4fffeb0Bpo8tP67A7im` replaced the select+custom pair with one editable datalist-backed variant input for each role; default option removed, empty means OpenCode default; UI test, build, diff-check pass. Specs/state updated; fresh independent validation next."
+    },
+    {
+      "ts": 1791501643900,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "tool result signaled failure during verification"
+    },
+    {
+      "ts": 1791501695471,
+      "event": "debug_complete",
+      "from": "debugging",
+      "to": "verifying",
+      "note": "Reutilizando diagnóstico conhecido de lifecycle: o primeiro `code_complete` já havia concluído antes da chamada duplicada. Sem falha de produto; retorno a verifying para a prova independente final."
+    },
+    {
+      "ts": 1791501849986,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "tool result signaled failure during verification"
+    },
+    {
+      "ts": 1791501984876,
+      "event": "debug_complete",
+      "from": "debugging",
+      "to": "verifying",
+      "note": "Reusing prior debug diagnosis `ses_ee263ad87ffeE2jDPO1IMT4F5p`: duplicate transition request, no code defect. Lifecycle resynced after recording this recurrence; fresh independent verifier follows."
+    },
+    {
+      "ts": 1791502653658,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "tool result signaled failure during verification"
+    },
+    {
+      "ts": 1791502789241,
+      "event": "debug_complete",
+      "from": "debugging",
+      "to": "verifying",
+      "note": "Worker-debug `ses_ee21daf69ffeYFLVankGRzlJn1` classificou a falha como drift de expectativas do teste, sem defeito confirmado. Rerun final passou; Playwright mock capturou interação/payload e layout 375/1280. Seguindo para validação independente; checks de repo e smoke OpenCode/profile ainda pendentes."
+    },
+    {
+      "ts": 1791503379887,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "Worker-verify independente `ses_ee21be264ffeL4qKTmo7vUcl3z` reproduziu um defeito: após selecionar um modelo, o campo ainda focado não reabre a lista ao digitar outra busca (aria-expanded false); variante datalist também sem prova de seleção nativa em headless. Critérios 12–13 falharam."
+    },
+    {
+      "ts": 1791503470506,
+      "event": "fix_start",
+      "from": "debugging",
+      "to": "coding",
+      "note": "Worker-debug `ses_ee213bcccffek2QM4TmHYVkJW9` confirmou causa e recomendou o menor fix: restaurar active index -1 no onChange do model combobox e adicionar regressão select→type. Datalist de variant permanece; sem defeito funcional reproduzido nela."
+    },
+    {
+      "ts": 1791503573634,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Worker-code `ses_ee21216ceffeGwVdnvVwTST3kg` implementou reset do active index para -1 no onChange do modelo e regressão state-level no teste existente; focused Models test passou 1/1. Datalist de variant mantido; verificação Chromium independente obrigatória."
+    },
+    {
+      "ts": 1791503774277,
+      "event": "new_task",
+      "from": "verifying",
+      "to": "planning",
+      "note": "Criterion 12 passou independentemente após o fix de reopen. Criterion 13 ainda não foi provado: Chromium headless expôs as opções nativas do datalist, mas ArrowDown/Enter não atualizou o valor. Escopo replanejado para lista explícita de sugestões acessível ancorada ao mesmo input; continua sem segunda variante/input ou default explícito."
+    },
+    {
+      "ts": 1791503798774,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Plano registrado na feature spec/project-state: usar listbox ARIA acessível associado ao input existente (sem datalist nativo, campo extra ou opção default); pesquisar, setas, Enter/Escape e clique; status/erro continuam não bloqueantes."
+    },
+    {
+      "ts": 1791503804279,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Frame/spec gate complete. Implement accessible inline suggestions on the existing single variant input; no second input/default option."
+    },
+    {
+      "ts": 1791504332393,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Worker-code `ses_ee20d276cffe3QAWNHWX21mTee` substituiu datalist nativo por listbox acessível ligado ao input único; filtra opções OpenCode, oferece seleção por ponteiro/setas/Enter/Escape, mantém input custom/stale e blank-default sem opção; erro lookup não bloqueia. Teste focused passa; primary-context Chromium smoke confirmou seleção `medium` + save custom Advisor após 503."
+    },
+    {
+      "ts": 1791504537170,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "Independent worker-verify `ses_ee2052a68ffejjBigk3U6ajqgP` confirmed listbox controls but returned FAIL for missing selected-option payload, blank-default save, 503 fallback, and overflow measurement while list is open. No product defect reported."
+    },
+    {
+      "ts": 1791504582607,
+      "event": "debug_complete",
+      "from": "debugging",
+      "to": "verifying",
+      "note": "Worker-debug `ses_ee2021084ffeWZFyew2rPaY29P` classificou o resultado como evidence-procedure gap, sem defeito de produto. Reverify com seleção do modelo antes da busca de variants, capturar PUT após seleção, testar 503 + variante vazia, e medir 375px com menu aberto."
+    },
+    {
+      "ts": 1791504738780,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "Follow-up independent worker-verify `ses_ee201259effeMQMvQZ5qoTWdot` could not render the Models form because its Vite fixture omitted shared dashboard API responses; no browser interactions ran, no product behavior was reported."
+    },
+    {
+      "ts": 1791504789663,
+      "event": "debug_complete",
+      "from": "debugging",
+      "to": "verifying",
+      "note": "Worker-debug `ses_ee1fef82bffe3Ev2FklFk439Bl` confirmou que worker-verify falhou antes da tela por fixtures incompletas; sem defeito de produto. Reexecutar com a lista explícita de rotas compartilhada."
+    },
+    {
+      "ts": 1791505324364,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "tool result signaled failure during verification"
+    },
+    {
+      "ts": 1791505446977,
+      "event": "debug_complete",
+      "from": "debugging",
+      "to": "verifying",
+      "note": "Worker-debug `ses_ee1f53218ffekoUraq6DEAlHZe` não confirmou defeito e recomenda instrumentar submit event + PUT route para distinguir interação de coleta. Reverify com essa instrumentação antes de alterar código."
+    },
+    {
+      "ts": 1791505471852,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "tool result signaled failure during verification"
+    },
+    {
+      "ts": 1791505631629,
+      "event": "debug_complete",
+      "from": "debugging",
+      "to": "verifying",
+      "note": "Worker-debug `ses_ee1f53218ffekoUraq6DEAlHZe` concluiu que o segundo save ainda não confirma defeito: listeners em nós obsoletos. Verificação deve registrar click/submit em listener no document e depois auditar PUT."
+    },
+    {
+      "ts": 1791505883011,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "Independent verify `ses_ee1f11a97ffe0XioqPMDXisKV6` captured Primary selected variant PUT, but no menu-open viewport proof or Advisor custom/blank payloads; fresh-page fallback not executed. No product failure confirmed."
+    },
+    {
+      "ts": 1791505928552,
+      "event": "debug_complete",
+      "from": "debugging",
+      "to": "verifying",
+      "note": "Worker-debug `ses_ee1ed7c6effei58IUWoCDrQRq3` classificou o restante como evidência incompleta, sem defeito. Reverify fresh page com captura 375px menu aberto antes da seleção e saves Advisor custom/blank."
+    },
+    {
+      "ts": 1791506104383,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "Independent verifier `ses_ee1ec9296ffePpmXosBwzDH5VF` used Vite `configFile:false`, got React is not defined, and never reached product UI. No product behavior demonstrated."
+    },
+    {
+      "ts": 1791506161954,
+      "event": "debug_complete",
+      "from": "debugging",
+      "to": "verifying",
+      "note": "Worker-debug `ses_ee1ea0cddffe3X9jq8KzRpigTN` confirmou erro de harness (Vite `configFile:false` removeu o plugin React), sem produto rodando. Próximo verifier deve usar configuração padrão do projeto e concluir os três casos."
+    },
+    {
+      "ts": 1791506246099,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "Worker-verify `ses_ee1e9091effedglTLhByYGvalT` did not run browser cases and returned unverified; this is still an evidence gap, not a product finding."
+    },
+    {
+      "ts": 1791506300211,
+      "event": "debug_complete",
+      "from": "debugging",
+      "to": "verifying",
+      "note": "Worker-debug `ses_ee1e7f4defferm29JD6IGTdGwv` confirmou non-execution como process/evidence gap, sem código para mudar. Próximo é fresh verifier com Vite config + fixture completa."
+    },
+    {
+      "ts": 1791506520544,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "Split independent verify: Primary PUT passed but 375px screenshot happened after menu closed; Advisor 503/status passed but trusted click hit <main>, no PUT; no blank save. Evidence incomplete; no product issue confirmed."
+    },
+    {
+      "ts": 1791506568769,
+      "event": "debug_complete",
+      "from": "debugging",
+      "to": "verifying",
+      "note": "Worker-debug `ses_ee1e3c8e6ffeSYyF74vJHdx4tc` classificou hit em `<main>` como verificador/coord issue, sem bug confirmado. Próxima execução deve avaliar bounds e scroll do botão Save e capturar evento em document."
+    },
+    {
+      "ts": 1791506672990,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "Primary-only independent proof passed, but Advisor 503 pages had Save button y≈1171–1242 and trusted clicks hit <html>; no PUT/blank payload, so criterion 13 remains incomplete. No product defect established."
+    },
+    {
+      "ts": 1791506712395,
+      "event": "debug_complete",
+      "from": "debugging",
+      "to": "verifying",
+      "note": "Worker-debug `ses_ee1e17db4ffepA9xZi6cAKIdhL` concluiu que Save estava fora do viewport e trusted clicks atingiram <html>, sem evidência de defeito. Reverify com scrollIntoViewIfNeeded + bounds em viewport e capturar custom/blank PUTs."
+    },
+    {
+      "ts": 1791507180283,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "Independent criteria 11–14 PASS: fixture-backed exact profile round-trip; both-role searchable provider/model controls; Primary `medium` selection+PUT and 375px open-list screenshot/no overflow; Advisor 503 fallback, custom `custom-r` PUT, blank omits variant. Full `npm test` 255/255, dashboard build/sync, `check-cli`, final specs validate 121/18/26/188, and `git diff --check` all pass."
+    },
+    {
+      "ts": 1791507835812,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "new task detected"
+    },
+    {
+      "ts": 1791508881561,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "Planning found the profiles carry model+variant, but current Task hook and telemetry do not correlate an Advisor child to the requested variant. The OpenCode message schema reliably exposes provider/model, not necessarily variant. Clarify proof surface before implementation."
+    },
+    {
+      "ts": 1791509475590,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "ADR-027 aceito: Dashboard Models é a superfície; usar message.updated completada do agent guarana-advisor, correlacionar via session.created parentID, exibir configured vs observed e nunca inferir variante ausente. OpenCode v1.18.35 Task/SessionPrompt resolve profile variant e a persiste no child message."
+    },
+    {
+      "ts": 1791509482146,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Início da implementação focada em telemetry plugin + route GET /api/models + Models UI. Manter o dispatch nativo e o guard atual inalterados."
+    },
+    {
+      "ts": 1791510305868,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Worker-code `ses_ee1b32987ffe46Um0Dt95RYCXx` implementou telemetria `advisor-execution`, API `GET /api/models/runtime` e bloco Models atualizado por SSE. Focused telemetry/API/Models tests 33/33 passaram; revisado parent-session fallback e sem payload de prompt/output."
+    },
+    {
+      "ts": 1791510823539,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "Worker-verify `ses_ee1a78643ffeTDB1oMY2PqtjLS` passed criteria 1–3 but did not retrieve the tagged OpenCode v1.18.35 Task/SessionPrompt source for criterion 4; evidence gap only, no product failure."
+    },
+    {
+      "ts": 1791510929180,
+      "event": "debug_complete",
+      "from": "debugging",
+      "to": "verifying",
+      "note": "Worker-debug `ses_ee1a20035ffeajs8zHC5hoWRJc` classificou o ponto não verificado como evidence gap upstream, sem defeito de código; source URLs v1.18.35 já identificadas no spec. Fresh verifier deve obter e citar esses dois ficheiros."
+    },
+    {
+      "ts": 1791511521672,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "Fresh runtime panel verifier `ses_ee19b5082ffeMOTneSfcFBpbnW` failed before rendering: mock `/api/models` fixture shape did not satisfy the page, retry could not resolve Vite package and produced no browser assertions. No product issue demonstrated; rendered 375px evidence remains pending."
+    },
+    {
+      "ts": 1791511775596,
+      "event": "debug_complete",
+      "from": "debugging",
+      "to": "verifying",
+      "note": "Worker-debug `ses_ee197771effe42D1C5BejJ9B53` classified the attempt as verifier setup only and supplied the exact Vite resolver and fixtures; no code changes indicated. Rerun at 375px with corrected harness."
+    },
+    {
+      "ts": 1791512063401,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "PASS: worker-verify `ses_ee1a78643ffeTDB1oMY2PqtjLS` passou telemetry/API/UI; `ses_ee1a0759fffeX2fsAzVTzrRuN1` confirmou a chamada Task/SessionPrompt v1.18.35; `ses_ee1937079ffespVrM5TQ0uW15h` passou render 375px configured/observed, missing variant e fetch error. `npm test` 259/259, build/sync, check-cli, specs 123/18/27/193 e diff check passam. Nenhuma inferência live executada."
+    },
+    {
+      "ts": 1791513904050,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "Requisitos e acceptance registrados em `.specs/features/dashboard/dashboard.md` Addendum Activity, ADR-028, README NEXT e project-state. Assumptions explícitas: manter hash `#/now` e reaproveitar nav como Activity; current session = newest root; não exibir erros brutos/prompt."
+    },
+    {
+      "ts": 1791513914979,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Requirements discovery complete. Existing APIs provide run aggregates, per-session telemetry, workflow history, injected-memory history and advisor-execution events. `.specs` records contain explicit scope, assumptions and criteria 74–83; `npm run specs:validate` PASS (124 Markdown/18 features/28 ADRs/195 links)."
+    },
+    {
+      "ts": 1791513926030,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Discovery e spec gate completos; iniciar implementação usando novo componente Activity e endpoint sanitizado para histórico Advisor, reaproveitando contratos existentes."
+    },
+    {
+      "ts": 1791514849098,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Worker-code `ses_ee17270effferhcAi7zt3WWKbR` implementou Activity/telemetry/history modal e removeu runtime proof de Models; focused tests 37/37 e diff-check passaram. README/state/dashboard feature spec atualizados antes da transição."
+    },
+    {
+      "ts": 1791515503069,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "Worker-verify `ses_ee1646f18ffe9eLPHP4MpHYGNx` passou browser 375×812, root-first selection com child mais recente, status busy, workflow, injected memory root-only, timeline sem raw errors, history modal Escape/backdrop + focus restoration, zero overflow. `npm test` 264/264; build/sync, check-cli, specs 125/18/28/199 e git diff --check passaram."
+    },
+    {
+      "ts": 1791515684276,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "new task detected"
+    },
+    {
+      "ts": 1791515981183,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "Reprodução confirmada por telemetria: Task Advisor child está parent-linked ao root ocupado `ses_ee39ce5c0ffeA5wDL8irBmzskV`, mas há sessões auxiliares sem parent metadata com start mais recente. Specs/ADR-028 addendum registram correção. Specs validate passou 125/18/28/199."
+    },
+    {
+      "ts": 1791515989635,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Acceptance fechado no addendum Dashboard Activity: observed busy root > most recent end activity, roots exclude explicit children and Advisor status scoped by root parentSessionID. Regressão preparada: main root start antigo/status busy; helper roots start recente/idle."
+    },
+    {
+      "ts": 1791516000946,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Planning complete; implement pure root-selection helper and regression tests, preserving safe telemetry, route and UI behavior."
+    },
+    {
+      "ts": 1791516405950,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Worker-code `ses_ee152fee3ffeGU1GHJ8CNjnUjp` mudou rootSessionFrom para preferir busy/running, fallback end/last activity e manteve Advisor history scoped ao root. Regressões busy older-root, end fallback e unrelated parent; focused Activity tests 2/2 passaram."
+    },
+    {
+      "ts": 1791517207569,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "PASS: regression unit tests; independent Playwright `ses_ee14cc5aaffexxrn2km3Um7Tuf` reproduced an older-start busy root behind newer-start idle helpers and Advisor child, selected correct root/Advisor, root-only memory/events/modal behavior at 375px. `npm test` 264/264, build/sync, check-cli, specs 126/18/28/202, diff-check pass."
+    },
+    {
+      "ts": 1791517570950,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "new task detected"
+    },
+    {
+      "ts": 1791550896878,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "User explicitly quer ver por que Advisor foi usado. Plano escolhido: reaproveitar Task `description` como reason curto, mandar o primary explicar por que pede ajuda agora, persistir somente esse campo bounded/sanitizado e renderizar em Activity e history. ADR-029/dashboard criterion 84 registrados; specs validate PASS (127/18/29/203)."
+    },
+    {
+      "ts": 1791550915331,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Discovery complete: Task already has bounded 3–5-word `description`; source/profile will frame it as why consultation is needed now. Keep only this reason with strict secret filtering, never persist `prompt`. Render the reason prominently in the current Activity Advisor square and every history row; explicit not-recorded state. Scope/ADR-029 and criterion 84 written, specs gate passed."
+    },
+    {
+      "ts": 1791550930112,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Implementation frame: add reason to Advisor dispatch telemetry and bounded history projection; instruct Primary profile to use Task.description for why it consults; display in Activity card and modal. No prompt storage."
+    },
+    {
+      "ts": 1791551640152,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Worker-code `ses_edf3af320ffeFQOXaZ77wexRLH` atualizou Primary profile guidance, telemetria dispatch, advisorHistory sanitizer, Activity square e AdvisorHistoryModal. Focussed CLI/plugin/history/API/Activity/Models tests passaram 60/60; specs validate 127/18/29/203."
+    },
+    {
+      "ts": 1791551904582,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "tool result signaled failure during verification"
+    },
+    {
+      "ts": 1791552081322,
+      "event": "debug_complete",
+      "from": "debugging",
+      "to": "verifying",
+      "note": "Worker-debug `ses_edf2ec5fdffeDtfnfx03Zdl` classificou `code_complete` recusado em estado verifying como mismatch de lifecycle, não falha de produto. Código foi implementado e independent verifier passou; retomar verifying e executar full checks."
+    },
+    {
+      "ts": 1791552228965,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "Independent worker-verify `ses_edf332acfffensm5362id9anSa` PASS profile guidance, sanitized description capture/secret omission, history projection, Activity square/modal and missing-reason state. `npm test` 266/266, build/CLI sync/check-cli, specs 128/18/29/207, git diff-check pass."
+    },
+    {
+      "ts": 1791553208416,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "new task detected"
+    },
+    {
+      "ts": 1791554008325,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "Novo objetivo do usuário; pesquisa atual focada no lifecycle existente de specs e pontos de atualização."
+    },
+    {
+      "ts": 1791554220577,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Discovery complete: current prompt mandates manual multi-file edits; ADR-020 already establishes native isolated workers. User accepts primary-context isolation even if aggregate token savings are not guaranteed. ADR-030 and acceptance spec recorded; specs validator PASS."
+    },
+    {
+      "ts": 1791554232007,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "One bounded code dispatch; relevant implementation/spec pointers are recorded in spec-update-isolation.md."
+    },
+    {
+      "ts": 1791555573113,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "worker-code `ses_edf08d816ffeT5GjbCtFNQo3sZ` implemented profile/routing; permission glob failure fixed by removing unsupported **/ prefixes and updating worker-debug path; plugin profile installed. worker-specs recorded exact implementation and validation proof after successful reload."
+    },
+    {
+      "ts": 1791555577791,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "Independent worker-verify `ses_edef8ddb0ffeUg2brb6lxLdS61` PASS (6/6): profile/install and restricted permission patterns; prompt routing and ownership; plugin child isolation; regression coverage; canonical/CLI sync; `npm test` 267/267, check-cli, specs validate 130/19/30/208, diff-check. worker-specs final record update validated."
+    },
+    {
+      "ts": 1791555618926,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "new task detected"
+    },
+    {
+      "ts": 1791555881684,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Feature spec created and reviewed at .specs/features/orchestrator/spec-record-command.md; requirements/assumptions/acceptance concrete, worker-specs fixed heading warning. README NEXT and project-state point to task. specs validator PASS (131 Markdown, 20 features, 30 ADRs, 209 links)."
+    },
+    {
+      "ts": 1791555929059,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Feature contract and JSON schema v1 are recorded in `.specs/features/orchestrator/spec-record-command.md`; no architectural unknowns remain."
+    },
+    {
+      "ts": 1791556422494,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Worker-code implementation includes binary-preserving rollback after independent review. Focused suite 8/8, prior full suite 272/272, check-cli and validator pass. Worker-specs exercised real `node bin/guarana.js specs record --stdin`; JSON result ok with three changed paths and validator ok. Records updated and validator passes."
+    },
+    {
+      "ts": 1791556479453,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "Independent worker-verify `ses_edeea5f56ffeoUM08LaKft3KHW` found AC6 proof record omits live Task `ses_edefeb199cffehjnKftd43HFAc5` result, though command succeeded and remaining five criteria/tests PASS. No product failure; route to recording the missing factual proof, then re-verify."
+    },
+    {
+      "ts": 1791556544252,
+      "event": "debug_complete",
+      "from": "debugging",
+      "to": "verifying",
+      "note": "worker-debug `ses_edee971ccffeLHTWPGu8bwMEdG` found an evidence handoff omission (not a code defect). worker-specs recorded the live result via `specs record --stdin`: ok true, three paths, validator true. Known issue mitigation recorded; repeat independent verify now."
+    },
+    {
+      "ts": 1791556671959,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "Final independent worker-verify `ses_edee8733affeL3ugYU3cvuuoxQ` PASS 6/6, including binary-exact rollback and live command receipt. `npm test` 272/272; check-cli, specs validator (131/20/30/208), diff-check pass. Final lifecycle update used `worker-specs` command and validator passed."
+    },
+    {
+      "ts": 1791557693905,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "Review found source skills coherent but installed project worker-specs stale, global plan outdated, worker-specs absent globally, and `bash: allow` bypassing edit-path policy."
+    },
+    {
+      "ts": 1791557767360,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Feature spec `.specs/features/orchestrator/worker-specs-runtime-hardening.md` records scope and five acceptance criteria. Worker-specs command registered the plan and specs validator passed (132 files, no issues)."
+    },
+    {
+      "ts": 1791557774915,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "No dependency or public API changes. Canonical skill procedure already uses only the record CLI and requires no other shell actions."
+    },
+    {
+      "ts": 1791558006096,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Updated profile generator and tests; update summary now derives 4 workers. Project/global `guarana update` refreshed skill/profile copies, both statuses show all managed worker agents up to date; plan/specs files are byte-identical to canonical. `npm test` 272/272; check-cli/specs/diff-check pass. worker-specs recorded implementation via command."
+    },
+    {
+      "ts": 1791558119942,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "Independent worker-verify `ses_eded22aeeffeXNY6ISzvB2u1sQ` PASS 5/5. `npm test` 272/272, check-cli, specs validate 132/21/30/208, diff-check pass. Project/global `guarana update` report 4 worker profiles; all installed profiles up to date; canonical plan/specs equal project/global copies. worker-specs recorded final verification; only process restart remains to activate config."
+    },
+    {
+      "ts": 1791559292212,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "Post-restart smoke confirmed unrelated shell denial works, but exact allowlisted `--stdin` command got no heredoc JSON and returned `invalid JSON`. Worker-debug confirmed Bash heredoc input is blocked by permission. Use a scoped handoff file plus exact CLI command."
+    },
+    {
+      "ts": 1791559401012,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Acceptance contract and assumptions recorded in `.specs/features/orchestrator/worker-specs-handoff-transport.md`; README/project-state point to the follow-up; validator PASS (133 files, no issues)."
+    },
+    {
+      "ts": 1791559406830,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Keep stdin API available for primary use; worker uses `.specs/state/worker-specs-handoff.json` and exact `specs record --file` command."
+    },
+    {
+      "ts": 1791559624250,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Worker-code `ses_edebc9657ffeXbHovHa1BCHxcG` added file input, skill and permissions; `ses_edebb58a9ffejVSDtk8xihnMcK` fixed parent-symlink cleanup. `npm test` 276/276, check-cli/specs/diff pass; project/global bundles refreshed and status current. Specs recorded implementation; live post-restart permission smoke pending."
+    },
+    {
+      "ts": 1791560707018,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "tool result signaled failure during verification"
+    },
+    {
+      "ts": 1791560782323,
+      "event": "debug_complete",
+      "from": "debugging",
+      "to": "verifying",
+      "note": "Worker-debug `ses_edec06c35ffe5TS5RZJQX2iKU9` confirmed the exact stdin command could not accept Bash heredoc input under the narrow allowlist. Worker-code replaced worker delivery with an editable fixed JSON file and exact `specs record --file` command; security tests cover cleanup and symlink parents."
+    },
+    {
+      "ts": 1791560788477,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "Final independent worker-verify `ses_edeb32bcbffeHSEERdwatPetis` PASS 5/5. Post-restart live denial `ses_edeaaec9cffeSuAoIrNNj7X7dV` and allowed fixed-file command `ses_edeaab7e6ffe4R1DhX3VPPdnSp` PASS; worker-specs final record update `ses_edea8ebcdffeB5ZxkR7gkpNNw1` ok, validator passed."
+    },
+    {
+      "ts": 1791560805068,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "User authorized a version bump after completion. Chosen SemVer minor 1.1.0 because the public CLI gained a backward-compatible `specs record --file` capability; no publish/tag."
+    },
+    {
+      "ts": 1791560899432,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Chose minor 1.1.0 for an additive public CLI capability. Feature `.specs/features/release/version-bump-1-1-0.md` and README/project-state tracker recorded via worker-specs; validator passed (134 files, no issues)."
+    },
+    {
+      "ts": 1791560905658,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "SemVer minor chosen for the additive `specs record` CLI/file-handoff behavior; preserve historical 1.0.0 evidence as historical."
+    },
+    {
+      "ts": 1791561014141,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Worker-code `ses_edea5d9dfffe2btDQTiBlx4ZM1` updated package, README and changelog. `node bin/guarana.js --version` is 1.1.0; npm test 276/276; check-cli/specs/diff pass; project/global update output shows 1.0.0→1.1.0 and plugin status all current. Worker-specs recorded implementation."
+    },
+    {
+      "ts": 1791561095979,
+      "event": "verify_fail",
+      "from": "verifying",
+      "to": "debugging",
+      "note": "Independent verifier passed version/docs/runtime/tests but marked AC4 partial because it cannot rule out a pre-existing remote tag; this task has performed no publish/tag or remote operation, and `npm view guarana@1.1.0` returned E404. Need scope proof to actions performed by this bump."
+    },
+    {
+      "ts": 1791561192542,
+      "event": "debug_complete",
+      "from": "debugging",
+      "to": "verifying",
+      "note": "Worker-debug `ses_edea2f9ecffefFIi44qftH92K3` classified the verifier concern as overbroad negative evidence, not product failure. AC4 now explicitly says this task does not publish/tag/push; `npm view guarana@1.1.0` returned E404. Specs validator and diff-check pass."
+    },
+    {
+      "ts": 1791561291920,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "Independent worker-verify `ses_edea186ddffed36RSeh9eTt7qC` PASS 4/4: version/docs, global/project updates and profile status, 276/276 tests, check-cli/specs/diff. Registry returned E404; no local matching tag and no publish/tag/push performed. worker-specs recorded final validation via fixed-file command; specs validate PASS."
+    },
+    {
+      "ts": 1791561389486,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "new task detected"
+    },
+    {
+      "ts": 1791561683278,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Feature `.specs/features/cli/dashboard-dependency-recovery.md` records observed failure, root cause assumption, scope and falsifiable acceptance. Worker-specs validator PASS (135 Markdown, 24 features, 30 ADRs, 208 links)."
+    },
+    {
+      "ts": 1791561688489,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "No open contract questions; Node/package lock dependency tree inspected, failure matches missing `iconv-lite/encodings` package-root file."
+    },
+    {
+      "ts": 1791561806330,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Worker-code `ses_ede99d076ffeho3KKxCjR6SoE7` added readiness probe, clean lockfile repair, and four helper tests. `npm test` 280/280, check-cli/specs/diff pass; `npm run smoke:pack` passed for guarana-1.1.0.tgz (99 files, no node_modules). worker-specs recorded implementation."
+    },
+    {
+      "ts": 1791561920234,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "Independent worker-verify `ses_ede9829a6ffeVijrN3ogchiRdd` PASS 4/4. `npm test` 280/280; check-cli/specs/diff/dump package smoke all pass; `npm run smoke:pack` passed for 1.1.0, 99 files, no node_modules. Worker-debug closed known issue; worker-specs recorded validation. Final specs validator 135/24/30/208 passes."
+    },
+    {
+      "ts": 1791563050181,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "new task detected"
+    },
+    {
+      "ts": 1791563394912,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1791563755716,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1791563784139,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1791564030240,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "new task detected while a workflow was active — re-plan"
+    },
+    {
+      "ts": 1791564052091,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "Requirements discovery needed: inspect current generated command/profile/settings/default-agent behavior, then clarify whether all ordinary OpenCode chats should use the configured primary or only Guarana-managed workflows."
+    },
+    {
+      "ts": 1791564632948,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "User chose profile name `guarana`, project+global default scope, Advisor toggle controls consultation only and starts off, and `/guarana-advisor` remains an alias. Feature spec recorded and validator passed (136 files); durable decision saved. Assumptions: if Primary missing, preserve existing default; enabling Advisor requires Advisor model; explicit custom defaults are preserved."
+    },
+    {
+      "ts": 1791564708811,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Cross-surface code task; work will be split into bounded conditions with separate focused tests and final independent verification."
+    },
+    {
+      "ts": 1791566309866,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Worker-code settings/profile/CLI tests pass; runtime plugin tests 29/29; Dashboard API/UI tests 21/21. `npm run build` synced CLI, `npm test` 291/291, check-cli/specs/diff and smoke:pack 1.1.0 pass. Project/global profiles refreshed; OpenCode project debug config shows default_agent guarana. Worker-specs recorded implementation."
+    },
+    {
+      "ts": 1791566552241,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "Final independent worker-verify `ses_ede51947fffe7vb29aVenXfgUT` PASS 6/6. Project OpenCode debug config reports default_agent guarana; Advisor off by default and gated; global Primary settings are absent so global remains build. `npm test` 291/291, build/check-cli/specs/diff all pass. Final specs update and validator passed."
+    },
+    {
+      "ts": 1791567006211,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "new task detected"
+    },
+    {
+      "ts": 1791567114736,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "User answers and requirements recorded in `.specs/features/orchestrator/guarana-primary-default-and-advisor-toggle.md`; specs validation passed. Durable decision saved: `guarana` Primary default, Advisor enabled false by default, project/global scopes, legacy command preserved."
+    },
+    {
+      "ts": 1791567124579,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Implementation and checks were completed in bounded worker-code slices; transitioning to code-complete for final independent verification."
+    },
+    {
+      "ts": 1791567138210,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Worker-code settings/profile/CLI slice and plugin default/gate tests pass; dashboard API/UI tests pass. `npm run build` synced CLI; `npm test` 291/291; `check-cli`, specs, smoke:pack (1.1.0, 100 files) pass. `opencode debug config` confirms project `default_agent: guarana`; project/global artifacts current. Specs implementation status recorded."
+    },
+    {
+      "ts": 1791567211094,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "Independent worker-verify `ses_ede51947fffe7vb29aVenXfgUT` PASS 6/6. `npm test` 291/291, dashboard build, check-cli, specs validator 136/25/30/208, diff-check and smoke:pack 1.1.0 pass. Project debug config resolves default_agent guarana; global Primary settings are empty so global default correctly remains build. worker-specs final record validated."
+    },
+    {
+      "ts": 1791567636399,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "Current evidence: project settings, `.opencode/agents/guarana.md`, and `opencode debug config` all specify openai/gpt-6-luna with xhigh; user reports agent UI still shows medium."
+    },
+    {
+      "ts": 1791567679914,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "natural-language completion signal for planning"
+    },
+    {
+      "ts": 1791569376866,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "Begin bounded diagnosis using fresh runtime evidence."
+    },
+    {
+      "ts": 1791569393940,
+      "event": "abort",
+      "from": "coding",
+      "to": "idle",
+      "note": "Native worker-code Task was denied by user; no fresh no-tool runtime evidence obtained."
+    },
+    {
+      "ts": 1791569837714,
+      "event": "new_task",
+      "from": "idle",
+      "to": "planning",
+      "note": "Fresh profile and config resolve variant `low` (user's test setting), but new OpenCode conversation UI still shows `medium`; a read-only run confirms modelID but exposes no variant metadata. Use the documented `chat.params` hook to enforce request options."
+    },
+    {
+      "ts": 1791569997669,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "User observes new sessions display medium despite profile/settings/debug variant. Fresh telemetry doesn't expose variant, so feature acceptance targets outbound chat.params. Feature spec created and validated (137 files). Current project Primary test value remains low."
+    },
+    {
+      "ts": 1791570009602,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "No UI variant-label changes are planned; enforcement applies outgoing request parameters, with unsupported or mismatched model contexts left untouched."
+    },
+    {
+      "ts": 1791570272341,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "Worker-code `ses_ede1aab43ffeHgtiA7g2adye9N` added the chat.params override and tests; focused plugin tests 31/31; build synced bundles; npm test 293/293, check-cli/specs/diff and smoke:pack pass. Project/global plugins refreshed. worker-specs recorded implementation; restart/live request smoke pending."
+    },
+    {
+      "ts": 1791570409577,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "Independent worker-verify `ses_ede16ad48ffebKd0q46x3CZDDv` PASS 4/4. `chat.params` test proves session `medium` option is replaced by configured `low`/`xhigh` model variant options for matching Guarana requests, preserves unrelated options and no-ops for other agents/models/unsupported variants. npm test 293/293, build/check-cli/specs/diff/smoke pass. Worker-specs recorded validation. OpenCode process restart remains needed to load updated plugin; UI label may still show its session-level variant."
+    },
+    {
+      "ts": 1791570617856,
+      "event": "new_task",
+      "from": "completed",
+      "to": "planning",
+      "note": "new task detected"
+    },
+    {
+      "ts": 1791575954358,
+      "event": "new_task",
+      "from": "planning",
+      "to": "planning",
+      "note": "User explicitly approved session-authoritative precedence; plan and supersession records written by worker-specs, specs validator PASS 138/27/30/209."
+    },
+    {
+      "ts": 1791575965985,
+      "event": "plan_complete",
+      "from": "planning",
+      "to": "building",
+      "note": "Known: TUI remembers per-model variant and passes explicit session selection. Approved solution is defaults not locks; no core/state modifications. worker-specs plan completed and primary validator PASS."
+    },
+    {
+      "ts": 1791576024684,
+      "event": "run_start",
+      "from": "building",
+      "to": "coding",
+      "note": "TASKED milestone recorded by worker-specs with validator PASS; worker-code budget 8k."
+    },
+    {
+      "ts": 1791576398574,
+      "event": "code_complete",
+      "from": "coding",
+      "to": "verifying",
+      "note": "worker-code removed override, added nested UserMessage regression and docs, build/full/focused checks PASS; managed installs refreshed, project/global settings and OpenCode state equality confirmed. IMPLEMENTED record by worker-specs and primary specs validator PASS."
+    },
+    {
+      "ts": 1791576645360,
+      "event": "verify_pass",
+      "from": "verifying",
+      "to": "completed",
+      "note": "worker-verify ses_eddb9384dffeAhauAWkupC1iZt PASS 5/5; 47 focused and 293 full tests, build/check-cli/dist cmp/specs/diff pass. Final worker-specs records VALIDATED, dated change, superseded old enforcement guarantee; primary specs validate 139/27/30/214 PASS. Browser 375px unavailable; source/SSR only, documented limitation. stop_reason condition-met. Restart needed to unload previous hook, not reset remembered selection."
     }
   ]
 }
