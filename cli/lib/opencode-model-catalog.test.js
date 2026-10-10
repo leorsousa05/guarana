@@ -18,6 +18,7 @@ function fakeCli({ auth = '', models = '', errors = {} } = {}) {
 }
 
 test('catalog includes only models from authenticated providers and emits metadata only', async () => {
+  assert.equal(COMMAND_TIMEOUT_MS, 15000, 'auth and model catalog commands each use the approved 15s timeout');
   const fake = fakeCli({
     auth: 'Authenticated providers:\n- anthropic\n- openai\n',
     models: 'anthropic/claude-sonnet-4\nopenai/gpt-5\ngemini/gemini-3-pro\n',

@@ -24,7 +24,7 @@ Last updated: 2026-10-09 (deterministic `.specs` record command planned)
 | Guarana optional model advisor | **VALIDATED** — UI criteria 11–14 and ADR-027 runtime proof |
 
 ## Current step
-VALIDATED — independent worker-verify PASS for all criteria. Runtime policy, focused policy tests, and matching memory-skill guidance are proven at plugin/guarana-memory.js:22-32, plugin/guarana-memory.test.mjs:53-87, and skills/guarana/skills/memory/SKILL.md:42-63. node bin/guarana.js specs validate . --json PASS (ok:true, 140 files, zero issues); node --test plugin/guarana-memory.test.mjs PASS (9/9); npm run check-cli PASS (bundle matches); direct canonical/CLI byte comparisons PASS; git diff --check PASS. Existing skill-engine and dashboard behavior remain unchanged per verifier. Static policy/tool verification only; no live-model capture-rate test. Shipping was not confirmed.
+VALIDATED: User-requested global update and plugin install are complete; independent worker-verify PASS confirms the global 1.1.0 skill suite, current global plugins, and healthy engines. Advisor settings remain incomplete, running OpenCode needs restart, and the read-only project check still reports its memory plugin stale; project scope was untouched. No code/configuration changes or release are claimed.
 
 ## Previous validated correction — Activity root selection
 **Activity root-selection correction (2026-10-08) — VALIDATED.** `rootSessionFrom()` filters child sessions, chooses an observed busy/running root first, and otherwise uses greatest `end`/last activity rather than start order. Advisor call lookup remains scoped to that root's `parentSessionID`. Focused Activity tests pass 2/2. Independent worker-verify `ses_ee14cc5aaffexxrn2km3Um7Tuf` passed Chromium 375×812 with helper roots and an Advisor child ordered ahead of the actual root; it showed the busy root, correct Advisor call/model, root-only memory/events, modal history/Escape/backdrop/focus behavior, and no overflow. Screenshot: `/tmp/opencode/activity-root-fix-375.png`. Full suite/build/CLI/spec checks passed; see `.specs/changes/2026-10-08-activity-root-selection.md`.
@@ -52,13 +52,12 @@ VALIDATED — independent worker-verify PASS for all criteria. Runtime policy, f
 Validated before this task: the post-bootstrap-fix release gate, final archive, provider-backed smoke, plugin/status/dashboard checks, and uninstall passed. Independent worker-verify `ses_ee737f1aaffeL1oEwBUZ1AeEs8` passed five release criteria. Candidate remains local, unpublished, and untagged. Detailed evidence is in `.specs/features/release/release-candidate-1.0.0-smoke.jsonl` and `.specs/changes/2026-10-07-release-candidate-1.0.0.md`.
 
 ## Checkpoint
-- Goal: Preserve OpenCode model IDs and redesign advisor Models with searchable provider/model comboboxes and one selectable/editable variant input per role.
-- Previous validated goals: advisor flow criteria 1–7 and connected catalog criteria 8–10.
-- Acceptance: Criteria 11–14 in `features/orchestrator/advisor-flow.md`.
-- Scope: exact ID grammar, provider/model comboboxes, Models page hierarchy/input polish, on-demand variant lookup, single input with accessible suggestion list/default semantics, API/UI tests, ADR-023/024/025/026 and synchronized bundle. Preserve manual fallback and ledger styling.
-- Reproduction: `opencode models` emits `openrouter/~anthropic/claude-fable-latest`; initial catalog/settings validation rejected `~`.
-- Implemented before redesign: tilde ID compatibility, connected model catalog, current catalog selector, verbose variant API and manual fallback; evidence is in prior worker-code slices.
-- Pending: independent verification of criteria 11–14, isolated OpenCode/profile behavior, full tests/build/CLI/spec checks, and final proof/change record.
+- Models page-wide UX/UI/DX overhaul is VALIDATED as of 2026-10-09.
+- Goal: Record the final independent verification of the Models page overhaul.
+- Independent worker-verify passed all nine criteria, including live Playwright/Chromium proof at 375x812; the earlier criterion-8 failure is superseded while its history remains in the feature record.
+- The provider/model mismatch guard and event-level regression coverage are complete. A different project Provider without an explicit project Model blocks save; same-provider inherited Model is allowed; catalog selection or manual-ID confirmation clears the guard. No API change was made.
+- Browser proof confirms 375px document/body width, 351px content scroll/client widths for the Models sections and discovery areas, stacked grids, no clipped Models descendants, visible keyboard focus, polite status announcement, and reduced-motion behavior. Global navigation's horizontal scrolling is intentional; page content does not overflow.
+- Detailed proof and check outcomes: `changes/2026-10-09-models-page-overhaul.md`. Shipping was not confirmed; status is VALIDATED, not SHIPPED.
 - Budget: ADR-005 defaults.
 
 ## Proofs that exist

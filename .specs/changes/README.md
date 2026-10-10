@@ -6,6 +6,9 @@ Entry format: date · feature · what validated / failed / re-opened · proof pa
 
 ## Records
 
+### 2026-10-09 — global Guarana runtime update
+- [Global runtime update handoff](2026-10-09-global-guarana-update-handoff.md) — global 1.1.0 skill suite, plugins, engines, and worker profiles refreshed; independent worker-verify PASS; Advisor restart/settings and stale project-plugin caveats preserved; no code or release claim
+
 ### 2026-10-08 — CLI and coding-skill refinements
 - [CLI update presentation](2026-10-08-cli-update-presentation.md) — terminal-aware completion summary, project/global runtime refresh tests, and independent verification PASS (3/3)
 - [Code design/refactoring guidance](2026-10-08-code-design-guidance.md) — context-driven design-pattern selection and bounded refactoring; independent verification PASS (5/5)

@@ -2,7 +2,7 @@
 
 const { execFile: childExecFile } = require('node:child_process');
 
-const COMMAND_TIMEOUT_MS = 5000;
+const COMMAND_TIMEOUT_MS = 15000;
 const MAX_OUTPUT_BYTES = 128 * 1024;
 const VARIANT_COMMAND_TIMEOUT_MS = 10000;
 const MAX_VARIANT_OUTPUT_BYTES = 2 *  1024 * 1024;

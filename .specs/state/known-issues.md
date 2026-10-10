@@ -253,3 +253,18 @@ Open problems and material failures from the build. Entry format: title / sympto
 - **Reproduction trigger:** Run `node --test dashboard/server/lib/memory.test.js` after adding global graph coverage.
 - **Mitigation:** Assert that the expected project node is either endpoint of the correctly scoped edge.
 - **Status:** Resolved (2026-10-02); focused `dashboard/server/lib/memory.test.js` and the full suite pass.
+
+## 2026-10-09 — OpenCode model catalog discovery intermittently exceeds command timeout
+- **Symptom:** Catalog discovery could time out and leave the dashboard without discovered models; manual provider/model entry remained available.
+- **Reproduction trigger:** Safe instrumentation recorded `opencode auth list` taking 2931ms and `opencode models` exceeding the previous per-command `COMMAND_TIMEOUT_MS=5000`; the child was killed after 5075ms. No raw command output or secrets were recorded.
+- **Root cause:** `opencode models` was killed by the previous 5000ms command timeout. This establishes the timeout trigger, not why the command took that long.
+- **Mitigation / limits:** With user approval, auth and models command timeouts are now 15000ms per command (`cli/lib/opencode-model-catalog.js:5,158,193,206`). The UI displays safe discovery errors and retains manual fallback (`dashboard/web/src/components/Models.jsx:137-150`); catalog loading is visibly accessible and its spinner respects reduced-motion preferences (`Models.jsx:188-190`, `style.css:1122-1132,1329-1331`). Commands exceeding 15 seconds can still time out, but the UI now shows the safe reason and manual fallback. This mitigates timeout handling; it does not eliminate all discovery latency or timeouts.
+- **Verification:** Independent worker-verify PASS; focused tests 14/14, `npm test` 293/293, build, check-cli, specs validation, and diff check passed.
+- **Status:** Mitigated; discovery commands may still exceed the 15000ms per-command timeout.
+
+## 2026-10-09 — Models provider override can retain an incompatible effective global model
+- **Symptom:** Changing the project Provider override to `openai` while inheriting global model `claude-opus-4` left an incompatible effective provider/model pair, and the UI permitted saving it.
+- **Reproduction trigger:** Set a global model to `claude-opus-4`, then change the project Provider override to `openai` without committing a project model; observe the effective model remain `claude-opus-4` and save the warning state.
+- **Resolution:** `Models.jsx` computes `providerModelMismatch` / `hasProviderModelMismatch`, shows actionable validation, disables Save, and blocks submit when the project provider differs from the effective global provider and no explicit project model exists. Inheriting a model from the same provider remains allowed. Manual custom model IDs are explicitly accepted; no generalized API catalog-compatibility validation was added.
+- **Verification:** `Models.test.mjs:84-124,150-176` verifies the mismatched-pair guard, same-provider inheritance, catalog selection, manual-ID acceptance, and submit blocking. Independent worker-verify passed all 9 criteria; actual Chromium render at 375x812 has no Models overflow; the final feature is **VALIDATED**.
+- **Status:** Resolved; implementation and regression behavior independently verified. Scope remains limited to the Models UI provider-override save path.

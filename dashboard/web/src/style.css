@@ -1051,8 +1051,12 @@ table.ledger {
 .models-advisor-toggle input { width: 1rem; height: 1rem; accent-color: var(--guarana); }
 .models-advisor-toggle input:focus-visible, .models-inherit:focus-visible { outline: 2px solid var(--guarana); outline-offset: 3px; }
 .models-advisor-toggle input:disabled { cursor: not-allowed; }
-.models-inherit { border: 0; border-bottom: 1px solid var(--ink); background: transparent; color: var(--ink); padding: 0.15rem 0; font: 500 0.72rem var(--display); cursor: pointer; }
+.models-inherit { align-self: flex-start; border: 0; border-bottom: 1px solid var(--ink); background: transparent; color: var(--ink); padding: 0.15rem 0; font: 500 0.72rem var(--display); cursor: pointer; text-align: left; }
 .models-inherit:hover { color: var(--guarana); border-bottom-color: var(--guarana); }
+.models-inherit:focus-visible { outline: 2px solid var(--guarana); outline-offset: 3px; }
+.models-source code { overflow-wrap: anywhere; font: 0.68rem var(--mono); }
+.models-manual { color: var(--guarana); font-weight: 700; }
+.models-model-warning { color: var(--amber); font-size: 0.7rem; line-height: 1.45; overflow-wrap: anywhere; }
 
 .models-discovery {
   display: grid;
@@ -1118,6 +1122,18 @@ table.ledger {
 }
 
 .models-variant-status { font-size: 0.7rem; overflow-wrap: anywhere; }
+.models-variant-status--loading { display: flex; align-items: center; gap: 0.45rem; color: var(--amber); font-weight: 600; }
+.models-catalog-status--loading { display: flex; align-items: center; gap: 0.45rem; color: var(--amber); font-weight: 600; }
+.models-variant-spinner {
+  flex: 0 0 0.8rem;
+  width: 0.8rem;
+  height: 0.8rem;
+  border: 2px solid var(--hairline);
+  border-top-color: var(--guarana);
+  border-radius: 50%;
+  animation: models-variant-spin 0.8s linear infinite;
+}
+@keyframes models-variant-spin { to { transform: rotate(360deg); } }
 .models-variant-options { margin-top: 0; }
 
 .models-fields {
@@ -1186,6 +1202,10 @@ table.ledger {
   cursor: wait;
   opacity: 0.55;
 }
+
+.models-save-scope { max-width: 70ch; margin: 0.9rem 0 0.5rem; padding-top: 0.65rem; border-top: 1px solid var(--hairline); font-size: 0.72rem; line-height: 1.5; overflow-wrap: anywhere; }
+#models fieldset:disabled { opacity: 0.72; }
+#models fieldset:disabled button { cursor: wait; }
 
 .models-feedback {
   margin: 0.5rem 0;
@@ -1316,6 +1336,7 @@ table.ledger {
 
 @media (prefers-reduced-motion: reduce) {
   #models *, #models *::before, #models *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+  #models .models-variant-spinner { animation: none; }
 }
 
 .skill-list {
