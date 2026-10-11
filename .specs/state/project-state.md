@@ -24,7 +24,7 @@ Last updated: 2026-10-11 (dashboard redesign validated; CLI refactor remains TAS
 | Guarana optional model advisor | **VALIDATED** — UI criteria 11–14 and ADR-027 runtime proof |
 
 ## Current step
-Commit/push run started. Complete the final pre-commit review and intentionally stage the latest planning updates to .specs/README.md, .specs/state/project-state.md, and this task record. Keep .specs/state/workflow.json and archive-0w9fZ3/ excluded. Candidate remains VALIDATED; no commit or push has occurred yet.
+COMPLETE/VALIDATED (not SHIPPED): independent worker-verify corrected verdict PASS. HEAD and origin/main both resolve to 7322e3db322585109fdab08922c6a6d6a733ca38 (feat(guarana): redesign dashboard and refactor CLI). The commit changes 108 paths; none match .specs/state/workflow.json, .guarana/, archive-0w9fZ3/, or node_modules. workflow.json and .guarana/advisor.json exist unchanged from HEAD^; their full-tree presence is inherited. Archive and node_modules are absent from the changed set. No 1.2.0 tag exists; npm view guarana@1.2.0 version --json returned E404. Specs validation returned ok:true, 158 files, 0 issues. Post-commit .specs record edits remain local and have not been pushed.
 
 ## Dashboard redesign final validation — 2026-10-11
 
