@@ -4,9 +4,10 @@ const install = require('./install.js');
 const { VERSION, SKILLS, WORKER_AGENTS } = require('../constants.js');
 const { STAMP } = require('../lib/guard.js');
 const { targetDir } = require('../lib/paths.js');
+const { stdoutLine } = require('../lib/io.js');
 
-function colorEnabled() {
-  return Boolean(process.stdout.isTTY && !process.env.NO_COLOR && process.env.TERM !== 'dumb');
+function colorEnabled(stdout = process.stdout) {
+  return Boolean(stdout.isTTY && !process.env.NO_COLOR && process.env.TERM !== 'dumb');
 }
 
 function paint(text, code, enabled) {
@@ -37,13 +38,14 @@ function formatSummary({ target, useProject, previousVersion, useColor = false }
   ].join('\n');
 }
 
-function run(args, { useProject }) {
+function run(args, { useProject, stdout = process.stdout, stderr = process.stderr } = {}) {
   const target = targetDir(useProject);
   const stamp = path.join(target, STAMP);
   const previousVersion = fs.existsSync(stamp) ? fs.readFileSync(stamp, 'utf8').trim() : null;
 
-  install.run(args, { useProject, quiet: true });
-  console.log(formatSummary({ target, useProject, previousVersion, useColor: colorEnabled() }));
+  install.run(args, { useProject, quiet: true, stdout, stderr });
+  stdoutLine({ stdout, stderr }, formatSummary({ target, useProject, previousVersion, useColor: colorEnabled(stdout) }));
+  return 0;
 }
 
 module.exports = { run, formatSummary, colorEnabled };

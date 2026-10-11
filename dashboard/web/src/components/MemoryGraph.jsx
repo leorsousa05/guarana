@@ -157,74 +157,71 @@ export function MemoryGraph({ nodes, edges, selected, onSelect }) {
         <p className="mem-graph-help">Select a node to inspect it; drag to arrange. Positions stay put between refreshes.</p>
         <button type="button" className="mem-graph-reset" onClick={resetLayout}>reset layout</button>
       </div>
-      <svg
-        ref={svgRef}
-        viewBox={`0 0 ${W} ${H}`}
-        className="mem-graph-svg"
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerCancel}
-      >
-        {graphEdges.map((e, i) => {
-          const a = pos.get(e.from);
-          const b = pos.get(e.to);
-          if (!a || !b) return null;
-          const active = selected && (e.from === selected || e.to === selected);
-          const mx = (a.x + b.x) / 2;
-          const my = (a.y + b.y) / 2;
-          return (
-            <g key={i} className={`mem-edge${active ? ' mem-edge--active' : ''}`}>
-              <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
-              {active && (
-                <text x={mx} y={my - 4} textAnchor="middle" className="mem-edge-label">
-                  {e.rel}
-                </text>
-              )}
-              <title>
-                {nodesById.get(e.from)?.intent || e.from} —{e.rel}→ {nodesById.get(e.to)?.intent || e.to}:{' '}
-                {REL_DESC[e.rel]}
-              </title>
-            </g>
-          );
-        })}
-        {graphNodes.map((n) => {
-          const p = pos.get(n.id);
-          if (!p) return null;
-          const active = selected === n.id || neighbors.set.has(n.id);
-          return (
-            <g
-              key={n.id}
-              className={`mem-node${active ? ' mem-node--active' : ''}`}
-              role="button"
-              tabIndex={0}
-              aria-pressed={selected === n.id}
-              aria-label={`${n.scope || 'project'} ${n.type}: ${n.intent || n.memoryId || n.id}`}
-              onPointerDown={(ev) => onPointerDown(n.id, ev)}
-              onKeyDown={(ev) => {
-                if (ev.key === 'Enter' || ev.key === ' ') {
-                  ev.preventDefault();
-                  onSelect(selected === n.id ? null : n.id);
-                }
-              }}
-            >
-              <circle cx={p.x} cy={p.y} r={12} className={TYPE_CLASS(n.type)} />
-              {active && (
-                <>
-                  <text x={p.x} y={p.y - 18} textAnchor="middle" className="mem-node-text">
-                    {shortLabel(n.intent || n.type)}
+      <div className="mem-graph-viewport" role="region" aria-label="Memory graph canvas; scroll to explore the full map" tabIndex={0}>
+        <svg
+          ref={svgRef}
+          viewBox={`0 0 ${W} ${H}`}
+          className="mem-graph-svg"
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerCancel}
+        >
+          {graphEdges.map((e, i) => {
+            const a = pos.get(e.from);
+            const b = pos.get(e.to);
+            if (!a || !b) return null;
+            const active = selected && (e.from === selected || e.to === selected);
+            const mx = (a.x + b.x) / 2;
+            const my = (a.y + b.y) / 2;
+            return (
+              <g key={i} className={`mem-edge${active ? ' mem-edge--active' : ''}`}>
+                <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
+                {active && (
+                  <text x={mx} y={my - 4} textAnchor="middle" className="mem-edge-label">
+                    {e.rel}
                   </text>
-                  <text x={p.x} y={p.y + 25} textAnchor="middle" className={`mem-node-scope-text memory-scope--${n.scope || 'project'}`}>
-                    {n.scope || 'project'}
-                  </text>
-                </>
-              )}
-              <title>
-                {n.scope || 'project'} {n.type}: {n.intent || n.memoryId || n.id} — click to inspect
-              </title>
-            </g>
-          );
-        })}
-      </svg>
+                )}
+                <title>{`${nodesById.get(e.from)?.intent || e.from} —${e.rel}→ ${nodesById.get(e.to)?.intent || e.to}: ${REL_DESC[e.rel]}`}</title>
+              </g>
+            );
+          })}
+          {graphNodes.map((n) => {
+            const p = pos.get(n.id);
+            if (!p) return null;
+            const active = selected === n.id || neighbors.set.has(n.id);
+            return (
+              <g
+                key={n.id}
+                className={`mem-node${active ? ' mem-node--active' : ''}`}
+                role="button"
+                tabIndex={0}
+                aria-pressed={selected === n.id}
+                aria-label={`${n.scope || 'project'} ${n.type}: ${n.intent || n.memoryId || n.id}`}
+                onPointerDown={(ev) => onPointerDown(n.id, ev)}
+                onKeyDown={(ev) => {
+                  if (ev.key === 'Enter' || ev.key === ' ') {
+                    ev.preventDefault();
+                    onSelect(selected === n.id ? null : n.id);
+                  }
+                }}
+              >
+                <circle cx={p.x} cy={p.y} r={12} className={TYPE_CLASS(n.type)} />
+                {active && (
+                  <>
+                    <text x={p.x} y={p.y - 18} textAnchor="middle" className="mem-node-text">
+                      {shortLabel(n.intent || n.type)}
+                    </text>
+                    <text x={p.x} y={p.y + 25} textAnchor="middle" className={`mem-node-scope-text memory-scope--${n.scope || 'project'}`}>
+                      {n.scope || 'project'}
+                    </text>
+                  </>
+                )}
+                <title>{`${n.scope || 'project'} ${n.type}: ${n.intent || n.memoryId || n.id} — click to inspect`}</title>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
 
       {selected && (
         <div className="mem-detail">
@@ -252,7 +249,7 @@ export function MemoryGraph({ nodes, edges, selected, onSelect }) {
                   </p>
                 )}
                 {(() => {
-                  const { older, newer } = buildLineage(selected, edges, nodesById);
+                  const { older, newer } = buildLineage(selected, graphEdges, nodesById);
                   if (older.length === 0 && newer.length === 0) return null;
                   const row = (node, tag) => (
                     <li key={node.id} className="mem-lineage-row">

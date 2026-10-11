@@ -7,11 +7,17 @@ const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const { searchMemory } = require('./memory.js');
 
 const BIN = path.join(__dirname, '..', '..', 'bin', 'guarana.js');
+const MEMORY_COMMAND = path.join(__dirname, 'memory.js');
+
+function runResult(args, cwd) {
+  return spawnSync(process.execPath, [BIN, 'memory', ...args], { cwd, encoding: 'utf8' });
+}
 
 function run(args, cwd) {
-  const res = spawnSync(process.execPath, [BIN, 'memory', ...args], { cwd, encoding: 'utf8' });
+  const res = runResult(args, cwd);
   assert.equal(res.status, 0, `exit != 0 for: memory ${args.join(' ')}\nstdout: ${res.stdout}\nstderr: ${res.stderr}`);
   return res.stdout;
 }
@@ -79,6 +85,18 @@ describe('guarana memory status', () => {
 });
 
 describe('guarana memory search', () => {
+  it('passes the project filter to the search service as opts.project', async () => {
+    let receivedOptions;
+    const searchVault = async (_vaultDir, opts) => {
+      receivedOptions = opts;
+      return [];
+    };
+
+    await searchMemory(['search', '--project', 'HASH'], '/test-vault', searchVault);
+
+    assert.equal(receivedOptions.project, 'HASH');
+  });
+
   it('returns only confirmed nodes; drafts never appear', () => {
     writeNode(cwd(), { id: 'mem-c', type: 'decision', status: 'confirmed', ts: 5, intent: 'used storage for memory', summary: 'append-friendly', tags: ['storage'] });
     writeNode(cwd(), { id: 'mem-d', type: 'atom', status: 'draft', ts: 6, intent: 'draft must not show', summary: 'hidden', tags: ['storage'] });
@@ -175,5 +193,44 @@ describe('guarana memory compact / prune', () => {
     // newest draft survives (draft-3), oldest three pruned
     assert.ok(nodes.some((x) => x.id === 'draft-3'));
     for (let i = 0; i < 3; i++) assert.ok(!nodes.some((x) => x.id === `draft-${i}`));
+  });
+});
+
+describe('guarana memory command failures', () => {
+  it('reports an uninitialized vault once and exits 1', () => {
+    const uninitialized = path.join(tmp, 'uninitialized');
+    fs.mkdirSync(uninitialized);
+
+    const result = runResult(['status'], uninitialized);
+
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, '');
+    assert.equal(result.stderr, `memory vault not initialized at ${path.join(uninitialized, '.guarana', 'memory')} — run \`guarana memory init\` first\n`);
+  });
+
+  it('reports invalid and missing flag values once and exits 1', () => {
+    for (const [args, diagnostic] of [
+      [['search', '--since', 'not-a-date'], 'invalid --since value: not-a-date'],
+      [['search', '--since'], 'missing value for --since'],
+    ]) {
+      const result = runResult(args, cwd());
+
+      assert.equal(result.status, 1, `unexpected status for: memory ${args.join(' ')}`);
+      assert.equal(result.stdout, '');
+      assert.equal(result.stderr, `${diagnostic}\n`);
+    }
+  });
+
+  it('prints the unknown-subcommand diagnostic and detailed help, then exits 1', () => {
+    const result = runResult(['not-a-subcommand'], cwd());
+
+    assert.equal(result.status, 1);
+    assert.equal(result.stderr, 'unknown memory command: not-a-subcommand\n');
+    assert.equal(result.stdout, run(['--help'], cwd()));
+  });
+
+  it('does not call process.exit or mutate process.exitCode', () => {
+    const source = fs.readFileSync(MEMORY_COMMAND, 'utf8');
+    assert.doesNotMatch(source, /\bprocess\.(?:exit|exitCode)\b/);
   });
 });

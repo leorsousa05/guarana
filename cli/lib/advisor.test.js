@@ -12,18 +12,25 @@ const pluginCommand = require('../commands/plugin.js');
 const { advisorSettingsTarget, advisorCommandTarget, advisorAgentsTarget, advisorSubagentTarget, legacyAdvisorAgentsTarget } = require('./paths.js');
 const { HELP } = require('../help.js');
 
+function captureStreams() {
+  const stdoutChunks = [];
+  const stderrChunks = [];
+  return {
+    stdout: { write: (chunk) => { stdoutChunks.push(chunk.toString()); } },
+    stderr: { write: (chunk) => { stderrChunks.push(chunk.toString()); } },
+    output: () => ({ stdout: stdoutChunks.join(''), stderr: stderrChunks.join('') }),
+    stdoutChunks,
+    stderrChunks,
+  };
+}
+
 function isolated(callback) {
   const cwd = process.cwd();
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-advisor-home-'));
   const project = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-advisor-project-'));
   const oldHome = process.env.HOME;
   const oldXdg = process.env.XDG_CONFIG_HOME;
-  try {
-    process.env.HOME = home;
-    process.env.XDG_CONFIG_HOME = path.join(home, 'xdg');
-    process.chdir(project);
-    return callback({ home, project });
-  } finally {
+  const cleanup = () => {
     process.chdir(cwd);
     if (oldHome === undefined) delete process.env.HOME;
     else process.env.HOME = oldHome;
@@ -31,6 +38,18 @@ function isolated(callback) {
     else process.env.XDG_CONFIG_HOME = oldXdg;
     fs.rmSync(home, { recursive: true, force: true });
     fs.rmSync(project, { recursive: true, force: true });
+  };
+  try {
+    process.env.HOME = home;
+    process.env.XDG_CONFIG_HOME = path.join(home, 'xdg');
+    process.chdir(project);
+    const result = callback({ home, project });
+    if (result && typeof result.then === 'function') return result.finally(cleanup);
+    cleanup();
+    return result;
+  } catch (error) {
+    cleanup();
+    throw error;
   }
 }
 
@@ -173,7 +192,7 @@ test('Primary defaults preserve exact custom model/variant IDs and omit blank va
   });
 });
 
-test('foreign files block generation; status detects stale and foreign artifacts; uninstall removes only managed files', () => {
+test('foreign files block generation; modified tracked profile content blocks uninstall', () => {
   isolated(() => {
     for (const [field, value] of Object.entries({
       'primary.provider': 'anthropic', 'primary.model': 'claude-sonnet-4',
@@ -197,12 +216,10 @@ test('foreign files block generation; status detects stale and foreign artifacts
     assert.equal(profiles.advisorArtifactStatus(true)[1].status, 'foreign');
 
     fs.writeFileSync(advisorSettingsTarget(true), '{ invalid settings');
-    const result = profiles.uninstallAdvisorArtifacts(true);
-    assert.equal(result.removed.length, 2);
-    assert.deepEqual(result.preserved, [agentPath]);
+    assert.throws(() => profiles.uninstallAdvisorArtifacts(true), /managed advisor profile was modified/);
     assert.equal(fs.readFileSync(agentPath, 'utf8'), 'foreign replacement\n');
-    assert.equal(fs.existsSync(commandPath), false);
-    assert.equal(fs.existsSync(advisorSubagentTarget(true)), false);
+    assert.equal(fs.existsSync(commandPath), true);
+    assert.equal(fs.existsSync(advisorSubagentTarget(true)), true);
   });
 });
 
@@ -280,31 +297,31 @@ test('migration removes only marked legacy profiles and preserves foreign old an
   });
 });
 
-test('setup-only command coexists with foreign agent files while completion preflights settings safely', () => {
-  isolated(() => {
+test('setup-only command coexists with foreign agent files while completion preflights settings safely', async () => {
+  await isolated(async () => {
     const foreignAgent = advisorAgentsTarget(true);
     fs.mkdirSync(path.dirname(foreignAgent), { recursive: true });
     fs.writeFileSync(foreignAgent, 'foreign agent profile\n');
-    const originalLog = console.log;
-    const originalError = console.error;
     const originalExitCode = process.exitCode;
-    console.log = () => {};
-    console.error = () => {};
+    const streams = captureStreams();
     try {
-      advisorCommand.run(['set', 'primary.provider', 'anthropic'], { useProject: true });
-      advisorCommand.run(['set', 'primary.model', 'claude-sonnet-4'], { useProject: true });
-      advisorCommand.run(['set', 'advisor.provider', 'openai'], { useProject: true });
+      process.exitCode = 23;
+      const run = async (args) => {
+        const result = await advisorCommand.run(args, { useProject: true, ...streams });
+        assert.equal(process.exitCode, 23);
+        return result;
+      };
+      assert.equal(await run(['set', 'primary.provider', 'anthropic']), 0);
+      assert.equal(await run(['set', 'primary.model', 'claude-sonnet-4']), 1);
+      assert.equal(await run(['set', 'advisor.provider', 'openai']), 0);
       assert.match(fs.readFileSync(advisorCommandTarget(true), 'utf8'), /setup-only command/i);
       assert.equal(fs.readFileSync(foreignAgent, 'utf8'), 'foreign agent profile\n');
 
-      advisorCommand.run(['set', 'advisor.model', 'gpt-5'], { useProject: true });
+      assert.equal(await run(['set', 'advisor.model', 'gpt-5']), 0);
       assert.deepEqual(settings.readSettings(true).advisor, { provider: 'openai', model: 'gpt-5' });
       assert.equal(fs.readFileSync(foreignAgent, 'utf8'), 'foreign agent profile\n');
       assert.match(fs.readFileSync(advisorCommandTarget(true), 'utf8'), /setup-only command/i);
-      assert.equal(process.exitCode, 1);
     } finally {
-      console.log = originalLog;
-      console.error = originalError;
       process.exitCode = originalExitCode;
     }
   });
@@ -322,10 +339,7 @@ test('CLI help exposes advisor configuration and status commands', () => {
 test('CLI advisor models lists metadata and reports safe discovery errors', async () => {
   const modelCatalog = require('./opencode-model-catalog.js');
   const originalDiscover = modelCatalog.discoverModels;
-  const output = [];
-  const errors = [];
-  const originalLog = console.log;
-  const originalError = console.error;
+  const output = captureStreams();
   const originalExitCode = process.exitCode;
   modelCatalog.discoverModels = async ({ cwd, provider }) => {
     assert.equal(cwd, process.cwd());
@@ -335,69 +349,61 @@ test('CLI advisor models lists metadata and reports safe discovery errors', asyn
       error: null,
     };
   };
-  console.log = (...parts) => output.push(parts.join(' '));
-  console.error = (...parts) => errors.push(parts.join(' '));
   try {
-    await advisorCommand.run(['models', 'openai'], { useProject: true });
-    assert.deepEqual(JSON.parse(output[0]), [
+    process.exitCode = 23;
+    assert.equal(await advisorCommand.run(['models', 'openai'], { useProject: true, ...output }), 0);
+    assert.equal(process.exitCode, 23);
+    assert.deepEqual(JSON.parse(output.output().stdout), [
       { provider: { id: 'openai', name: 'openai' }, model: { id: 'gpt-5', name: 'gpt-5' } },
     ]);
 
+    output.stdoutChunks.length = 0;
+    output.stderrChunks.length = 0;
     modelCatalog.discoverModels = async () => ({ models: [], error: 'OpenCode is not installed.' });
-    await advisorCommand.run(['models'], { useProject: true });
-    assert.deepEqual(JSON.parse(output[1]), []);
-    assert.match(errors[0], /not installed/);
-    assert.equal(process.exitCode, 1);
+    assert.equal(await advisorCommand.run(['models'], { useProject: true, ...output }), 1);
+    assert.equal(process.exitCode, 23);
+    assert.deepEqual(JSON.parse(output.output().stdout), []);
+    assert.match(output.output().stderr, /not installed/);
   } finally {
     modelCatalog.discoverModels = originalDiscover;
-    console.log = originalLog;
-    console.error = originalError;
     process.exitCode = originalExitCode;
   }
 });
 
 test('CLI advisor read/set/clear commands operate on their selected settings scope', () => {
   isolated(() => {
-    const lines = [];
-    const originalLog = console.log;
-    console.log = (...parts) => lines.push(parts.join(' '));
-    try {
-      advisorCommand.run(['set', 'primary.provider', 'anthropic'], { useProject: false });
-      advisorCommand.run(['set', 'primary.model', 'claude-sonnet-4'], { useProject: true });
-      advisorCommand.run(['set', 'advisor.enabled', 'false'], { useProject: true });
-      advisorCommand.run(['read'], { useProject: false });
-      advisorCommand.run(['read'], { useProject: true });
-      const documents = lines.filter((line) => line.startsWith('{')).map((line) => JSON.parse(line));
-      assert.deepEqual(documents[0].settings, { primary: { provider: 'anthropic' } });
-      assert.deepEqual(documents[1].settings, { primary: { model: 'claude-sonnet-4' }, advisor: { enabled: false } });
-      assert.deepEqual(documents[1].effective, { primary: { provider: 'anthropic', model: 'claude-sonnet-4' }, advisor: { enabled: false } });
-      advisorCommand.run(['clear', 'primary.model'], { useProject: true });
-      advisorCommand.run(['clear', 'advisor.enabled'], { useProject: true });
-      advisorCommand.run(['clear', 'primary.provider'], { useProject: false });
-      assert.deepEqual(settings.readSettings(true), {});
-      assert.deepEqual(settings.readSettings(false), {});
-    } finally {
-      console.log = originalLog;
-    }
+    const streams = captureStreams();
+    const run = (args, useProject) => advisorCommand.run(args, { useProject, ...streams });
+    run(['set', 'primary.provider', 'anthropic'], false);
+    run(['set', 'primary.model', 'claude-sonnet-4'], true);
+    run(['set', 'advisor.enabled', 'false'], true);
+    run(['read'], false);
+    run(['read'], true);
+    const documents = streams.stdoutChunks.filter((line) => line.startsWith('{')).map((line) => JSON.parse(line));
+    assert.deepEqual(documents[0].settings, { primary: { provider: 'anthropic' } });
+    assert.deepEqual(documents[1].settings, { primary: { model: 'claude-sonnet-4' }, advisor: { enabled: false } });
+    assert.deepEqual(documents[1].effective, { primary: { provider: 'anthropic', model: 'claude-sonnet-4' }, advisor: { enabled: false } });
+    run(['clear', 'primary.model'], true);
+    run(['clear', 'advisor.enabled'], true);
+    run(['clear', 'primary.provider'], false);
+    assert.deepEqual(settings.readSettings(true), {});
+    assert.deepEqual(settings.readSettings(false), {});
   });
 });
 
 test('CLI advisor set/clear refreshes the selected scope artifacts and preflights foreign ownership', () => {
   isolated(({ home }) => {
-    const lines = [];
-    const originalLog = console.log;
-    const originalError = console.error;
+    const streams = captureStreams();
+    const run = (args, useProject) => advisorCommand.run(args, { useProject, ...streams });
     const originalExitCode = process.exitCode;
-    console.log = (...parts) => lines.push(parts.join(' '));
-    console.error = (...parts) => lines.push(parts.join(' '));
     try {
-      advisorCommand.run(['set', 'primary.provider', 'anthropic'], { useProject: true });
-      advisorCommand.run(['set', 'primary.model', 'claude-opus-4'], { useProject: true });
-      advisorCommand.run(['set', 'advisor.provider', 'openai'], { useProject: true });
-      advisorCommand.run(['set', 'advisor.model', 'gpt-5'], { useProject: true });
-      advisorCommand.run(['set', 'advisor.enabled', 'true'], { useProject: true });
-      advisorCommand.run(['set', 'primary.variant', 'high'], { useProject: true });
-      advisorCommand.run(['set', 'advisor.variant', 'max'], { useProject: true });
+      run(['set', 'primary.provider', 'anthropic'], true);
+      run(['set', 'primary.model', 'claude-opus-4'], true);
+      run(['set', 'advisor.provider', 'openai'], true);
+      run(['set', 'advisor.model', 'gpt-5'], true);
+      run(['set', 'advisor.enabled', 'true'], true);
+      run(['set', 'primary.variant', 'high'], true);
+      run(['set', 'advisor.variant', 'max'], true);
       const command = fs.readFileSync(advisorCommandTarget(true), 'utf8');
       const primary = fs.readFileSync(advisorAgentsTarget(true), 'utf8');
       const advisor = fs.readFileSync(advisorSubagentTarget(true), 'utf8');
@@ -407,25 +413,25 @@ test('CLI advisor set/clear refreshes the selected scope artifacts and preflight
       assert.match(advisor, /model: "openai\/gpt-5"/);
       assert.match(advisor, /variant: "max"/);
 
-      advisorCommand.run(['set', 'primary.model', 'claude-haiku-4'], { useProject: true });
+      run(['set', 'primary.model', 'claude-haiku-4'], true);
       assert.match(fs.readFileSync(advisorAgentsTarget(true), 'utf8'), /model: "anthropic\/claude-haiku-4"/);
-      advisorCommand.run(['clear'], { useProject: true });
+      run(['clear'], true);
       assert.ok(fs.existsSync(advisorCommandTarget(true)));
       assert.match(fs.readFileSync(advisorCommandTarget(true), 'utf8'), /setup-only command/i);
       assert.equal(fs.existsSync(advisorAgentsTarget(true)), false);
       assert.equal(fs.existsSync(advisorSubagentTarget(true)), false);
 
-      advisorCommand.run(['set', 'primary.provider', 'openai'], { useProject: false });
-      advisorCommand.run(['set', 'primary.model', 'gpt-5'], { useProject: false });
-      advisorCommand.run(['set', 'advisor.provider', 'anthropic'], { useProject: false });
-      advisorCommand.run(['set', 'advisor.model', 'claude-opus-4'], { useProject: false });
-      advisorCommand.run(['set', 'advisor.enabled', 'true'], { useProject: false });
+      run(['set', 'primary.provider', 'openai'], false);
+      run(['set', 'primary.model', 'gpt-5'], false);
+      run(['set', 'advisor.provider', 'anthropic'], false);
+      run(['set', 'advisor.model', 'claude-opus-4'], false);
+      run(['set', 'advisor.enabled', 'true'], false);
       assert.match(fs.readFileSync(advisorAgentsTarget(false), 'utf8'), /model: "openai\/gpt-5"/);
       assert.match(fs.readFileSync(advisorSubagentTarget(false), 'utf8'), /model: "anthropic\/claude-opus-4"/);
       assert.equal(fs.existsSync(path.join(process.env.XDG_CONFIG_HOME, 'opencode', 'commands', 'guarana-advisor.md')), true);
-      advisorCommand.run(['set', 'advisor.variant', 'max'], { useProject: false });
+      run(['set', 'advisor.variant', 'max'], false);
       assert.match(fs.readFileSync(advisorSubagentTarget(false), 'utf8'), /variant: "max"/);
-      advisorCommand.run(['clear'], { useProject: false });
+      run(['clear'], false);
       assert.ok(fs.existsSync(advisorCommandTarget(false)));
       assert.match(fs.readFileSync(advisorCommandTarget(false), 'utf8'), /setup-only command/i);
       assert.equal(fs.existsSync(advisorAgentsTarget(false)), false);
@@ -434,13 +440,12 @@ test('CLI advisor set/clear refreshes the selected scope artifacts and preflight
       const foreign = advisorCommandTarget(true);
       fs.mkdirSync(path.dirname(foreign), { recursive: true });
       fs.writeFileSync(foreign, 'foreign command');
-      advisorCommand.run(['set', 'primary.model', 'claude-sonnet-4'], { useProject: true });
+      run(['set', 'primary.model', 'claude-sonnet-4'], true);
       assert.equal(settings.readSettings(true).primary, undefined);
       assert.equal(fs.readFileSync(foreign, 'utf8'), 'foreign command');
-      assert.ok(lines.some((line) => line.includes('not managed by Guarana')));
+      assert.ok(streams.stdoutChunks.some((line) => line.includes('managed advisor profile was modified')) ||
+        streams.stderrChunks.some((line) => line.includes('managed advisor profile was modified')));
     } finally {
-      console.log = originalLog;
-      console.error = originalError;
       process.exitCode = originalExitCode;
     }
   });
@@ -461,20 +466,14 @@ test('plugin install/status/uninstall includes configured advisor artifacts', as
       'advisor.provider': 'openai', 'advisor.model': 'gpt-5',
       'advisor.enabled': true,
     })) settings.setSetting(true, field, value);
-    const lines = [];
-    const originalLog = console.log;
-    console.log = (...parts) => lines.push(parts.join(' '));
-    try {
-      pluginCommand.install(true, { quiet: true });
-      assert.ok(fs.existsSync(advisorCommandTarget(true)));
-      await pluginCommand.run(['status'], { useProject: true });
-      assert.ok(lines.some((line) => line.includes('advisor command') && line.includes('ok (up to date)')));
-      pluginCommand.uninstall(true);
-      assert.equal(fs.existsSync(advisorCommandTarget(true)), false);
-      assert.equal(fs.existsSync(advisorAgentsTarget(true)), false);
-    } finally {
-      console.log = originalLog;
-    }
+    const streams = captureStreams();
+    pluginCommand.install(true, { quiet: true });
+    assert.ok(fs.existsSync(advisorCommandTarget(true)));
+    await pluginCommand.run(['status'], { useProject: true, ...streams });
+    assert.ok(streams.stdoutChunks.some((line) => line.includes('advisor command') && line.includes('ok (up to date)')));
+    pluginCommand.uninstall(true, null, { stdout: streams.stdout });
+    assert.equal(fs.existsSync(advisorCommandTarget(true)), false);
+    assert.equal(fs.existsSync(advisorAgentsTarget(true)), false);
   } finally {
     process.chdir(cwd);
     if (oldHome === undefined) delete process.env.HOME;
@@ -494,16 +493,10 @@ test('plugin install/status keeps the setup-only advisor command available witho
     pluginCommand.install(true, { quiet: true });
     assert.ok(fs.existsSync(advisorCommandTarget(true)));
     assert.equal(fs.existsSync(advisorAgentsTarget(true)), false);
-    const lines = [];
-    const originalLog = console.log;
-    console.log = (...parts) => lines.push(parts.join(' '));
-    try {
-      await pluginCommand.run(['status'], { useProject: true });
-    } finally {
-      console.log = originalLog;
-    }
-    assert.ok(lines.some((line) => line.includes('advisor command') && line.includes('ok (up to date)')));
-    assert.ok(lines.some((line) => line.includes('advisor primary agent') && line.includes('settings incomplete')));
+    const streams = captureStreams();
+    await pluginCommand.run(['status'], { useProject: true, ...streams });
+    assert.ok(streams.stdoutChunks.some((line) => line.includes('advisor command') && line.includes('ok (up to date)')));
+    assert.ok(streams.stdoutChunks.some((line) => line.includes('advisor primary agent') && line.includes('settings incomplete')));
   } finally {
     process.chdir(cwd);
     fs.rmSync(project, { recursive: true, force: true });

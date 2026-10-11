@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { ORCHESTRATOR_PLUGIN_NAME } = require('../constants.js');
-const { targetDir, opencodeConfigDir, pluginTarget, workerAgentsTarget, advisorCommandTarget } = require('./paths.js');
+const { targetDir, opencodeConfigDir, pluginTarget, workerAgentsTarget, advisorCommandTarget, installManifestTarget } = require('./paths.js');
 
 describe('targetDir', () => {
   let dir;
@@ -47,6 +47,14 @@ describe('targetDir', () => {
     assert.equal(workerAgentsTarget(false), path.join(root, 'agents'));
   });
 
+  it('uses a project-local engine install manifest', () => {
+    assert.equal(installManifestTarget(true), path.join(dir, '.guarana', 'install-manifest.json'));
+  });
+
+  it('uses XDG_CONFIG_HOME for the global engine install manifest', () => {
+    assert.equal(installManifestTarget(false), path.join(process.env.XDG_CONFIG_HOME, 'guarana', 'install-manifest.json'));
+  });
+
   it('preserves the ~/.config/opencode fallback when XDG_CONFIG_HOME is unset', () => {
     delete process.env.XDG_CONFIG_HOME;
     const root = path.join(os.homedir(), '.config', 'opencode');
@@ -54,5 +62,6 @@ describe('targetDir', () => {
     assert.equal(pluginTarget(false, ORCHESTRATOR_PLUGIN_NAME), path.join(root, 'plugins', ORCHESTRATOR_PLUGIN_NAME));
     assert.equal(advisorCommandTarget(false), path.join(root, 'commands', 'guarana-advisor.md'));
     assert.equal(workerAgentsTarget(false), path.join(root, 'agents'));
+    assert.equal(installManifestTarget(false), path.join(os.homedir(), '.config', 'guarana', 'install-manifest.json'));
   });
 });

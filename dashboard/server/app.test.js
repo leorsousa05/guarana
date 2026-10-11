@@ -369,13 +369,17 @@ describe('GET/PUT /api/models', () => {
     for (const layout of layouts) {
       const routeUrl = pathToFileURL(path.join(repoRoot, layout.route));
       const { resolveSharedAdvisorModule } = await import(pathToFileURL(path.join(repoRoot, layout.resolver)));
-      for (const name of ['advisor-settings.js', 'advisor-profiles.js', 'opencode-model-catalog.js']) {
+      for (const name of [
+        'advisor-settings.js', 'advisor-profiles.js', 'artifact-transaction.js', 'paths.js', 'opencode-model-catalog.js',
+      ]) {
         const resolved = resolveSharedAdvisorModule(name, routeUrl.href);
         assert.equal(resolved, path.join(repoRoot, 'cli', 'lib', name));
         const sharedModule = require(resolved);
         const expectedExport = name === 'advisor-settings.js'
           ? 'readSettings'
-          : name === 'advisor-profiles.js' ? 'installAdvisorArtifacts' : 'discoverModels';
+          : name === 'advisor-profiles.js' ? 'installAdvisorArtifacts'
+            : name === 'artifact-transaction.js' ? 'run'
+              : name === 'paths.js' ? 'advisorSettingsTarget' : 'discoverModels';
         assert.equal(typeof sharedModule[expectedExport], 'function');
       }
     }
@@ -596,5 +600,110 @@ describe('GET/PUT /api/models', () => {
     assert.equal(fs.readFileSync(projectSettings, 'utf8'), originalSettings);
     assert.equal(fs.readFileSync(foreign, 'utf8'), 'owned by another tool\n');
     assert.equal(fs.existsSync(path.join(root, '.opencode', 'commands', 'guarana-advisor.md')), false);
+  });
+
+  it('preflights modified manifest-owned Advisor profiles before saving settings', async () => {
+    const created = await fetch(`${base}/api/models`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: {
+        primary: { provider: 'anthropic', model: 'claude-sonnet-4' },
+        advisor: { provider: 'openai', model: 'gpt-5', enabled: true },
+      } }),
+    });
+    assert.equal(created.status, 200);
+
+    const projectSettings = path.join(root, '.guarana', 'advisor.json');
+    const profile = path.join(root, '.opencode', 'agents', 'guarana-advisor.md');
+    const manifest = JSON.parse(fs.readFileSync(path.join(root, '.guarana', 'install-manifest.json'), 'utf8'));
+    assert.ok(manifest.advisor.some((entry) => entry.path === 'agents/guarana-advisor.md' && /^[a-f0-9]{64}$/.test(entry.sha256)));
+
+    fs.appendFileSync(profile, '\nlocal edit\n');
+    const settingsBefore = fs.readFileSync(projectSettings);
+    const profileBefore = fs.readFileSync(profile);
+    const response = await fetch(`${base}/api/models`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: {
+        primary: { provider: 'anthropic', model: 'claude-sonnet-4' },
+        advisor: { provider: 'openai', model: 'gpt-5.1', enabled: true },
+      } }),
+    });
+
+    assert.equal(response.status, 409);
+    assert.match((await response.json()).error, /managed advisor profile was modified/i);
+    assert.deepEqual(fs.readFileSync(projectSettings), settingsBefore);
+    assert.deepEqual(fs.readFileSync(profile), profileBefore);
+
+    const incomplete = await fetch(`${base}/api/models`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: { advisor: { model: 'gpt-5.2' } } }),
+    });
+    assert.equal(incomplete.status, 409);
+    assert.match((await incomplete.json()).error, /managed advisor profile was modified/i);
+    assert.deepEqual(fs.readFileSync(projectSettings), settingsBefore);
+    assert.deepEqual(fs.readFileSync(profile), profileBefore);
+  });
+
+  it('rolls back settings, Advisor profiles, and manifest when the manifest rename fails after committing', async () => {
+    const globalSettings = path.join(xdg, 'guarana', 'advisor.json');
+    fs.mkdirSync(path.dirname(globalSettings), { recursive: true });
+    fs.writeFileSync(globalSettings, '{"advisor":{"provider":"openai","model":"gpt-5"}}\n');
+    const foreign = path.join(root, '.opencode', 'plugins', 'local-plugin.js');
+    const memory = path.join(root, '.guarana', 'memory', 'nodes.jsonl');
+    fs.mkdirSync(path.dirname(foreign), { recursive: true });
+    fs.writeFileSync(foreign, 'foreign plugin stays\n');
+    fs.mkdirSync(path.dirname(memory), { recursive: true });
+    fs.writeFileSync(memory, '{"id":"keep-memory"}\n');
+
+    const first = await fetch(`${base}/api/models`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: {} }),
+    });
+    assert.equal(first.status, 200);
+
+    const settingsFile = path.join(root, '.guarana', 'advisor.json');
+    const manifestFile = path.join(root, '.guarana', 'install-manifest.json');
+    const setupCommand = path.join(root, '.opencode', 'commands', 'guarana-advisor.md');
+    fs.chmodSync(settingsFile, 0o600);
+    fs.chmodSync(manifestFile, 0o640);
+    fs.chmodSync(setupCommand, 0o640);
+    const managed = [settingsFile, manifestFile, setupCommand, globalSettings, foreign, memory];
+    const before = new Map(managed.map((file) => [file, {
+      bytes: fs.readFileSync(file), mode: fs.statSync(file).mode & 0o7777,
+    }]));
+
+    const originalRename = fs.renameSync;
+    let injected = false;
+    fs.renameSync = function (from, to, ...rest) {
+      const result = originalRename.call(this, from, to, ...rest);
+      if (!injected && to === manifestFile) {
+        injected = true;
+        throw new Error('injected manifest rename failure');
+      }
+      return result;
+    };
+    let response;
+    try {
+      response = await fetch(`${base}/api/models`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings: {
+          primary: { provider: 'anthropic', model: 'claude-opus-4' },
+          advisor: { provider: 'openai', model: 'gpt-5.1', enabled: true },
+        } }),
+      });
+    } finally {
+      fs.renameSync = originalRename;
+    }
+
+    assert.ok(injected);
+    assert.equal(response.status, 500);
+    assert.match((await response.json()).error, /Unable to save model settings: injected manifest rename failure/);
+    for (const [file, prior] of before) {
+      assert.deepEqual(fs.readFileSync(file), prior.bytes, file);
+      assert.equal(fs.statSync(file).mode & 0o7777, prior.mode, file);
+    }
+    assert.equal(fs.existsSync(path.join(root, '.opencode', 'agents')), false);
   });
 });

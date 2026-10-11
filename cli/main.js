@@ -2,41 +2,40 @@
 
 const { VERSION, SKILLS } = require('./constants.js');
 const { HELP } = require('./help.js');
+const COMMANDS = require('./commands/registry.js');
+const { parseArgs } = require('./lib/args.js');
 
-const COMMANDS = {
-  install: require('./commands/install.js'),
-  uninstall: require('./commands/uninstall.js'),
-  list: require('./commands/list.js'),
-  update: require('./commands/update.js'),
-  plugin: require('./commands/plugin.js'),
-  web: require('./commands/web.js'),
-  memory: require('./commands/memory.js'),
-  advisor: require('./commands/advisor.js'),
-  specs: require('./commands/specs.js'),
-};
+async function main(args, { stdout = process.stdout, stderr = process.stderr } = {}) {
+  const { command, commandArgs, useProject } = parseArgs(args);
 
-function main(args) {
-  const useProject = args.includes('--project');
-  const rest = args.filter((a) => a !== '--project');
-  const cmd = rest[0];
-
-  if (cmd === '--help' || cmd === '-h' || cmd === undefined) {
-    process.stdout.write(HELP);
-    return;
+  if (command === '--help' || command === '-h' || command === undefined) {
+    stdout.write(HELP);
+    return 0;
   }
-  if (cmd === '--version' || cmd === '-v') {
-    console.log(VERSION);
-    return;
+  if (command === '--version' || command === '-v') {
+    stdout.write(`${VERSION}\n`);
+    return 0;
   }
 
-  const handler = COMMANDS[cmd];
+  const handler = COMMANDS[command];
   if (!handler) {
-    console.error(`unknown command: ${cmd}`);
-    process.stdout.write(HELP);
-    process.exit(1);
+    stderr.write(`unknown command: ${command}\n`);
+    stdout.write(HELP);
+    return 1;
   }
 
-  handler.run(rest.slice(1), { useProject });
+  try {
+    const result = await handler.run(commandArgs, { useProject, stdout, stderr });
+    if (!Number.isInteger(result) || result < 0 || result > 255) {
+      stderr.write('command handler contract violation: expected integer exit code 0..255\n');
+      return 1;
+    }
+    return result;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    stderr.write(`${message}\n`);
+    return 1;
+  }
 }
 
 module.exports = { main, HELP, SKILLS };

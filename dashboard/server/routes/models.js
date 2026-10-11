@@ -8,6 +8,8 @@ import { SPECS_DIR, TELEMETRY_DIR_SEGMENTS, EVENTS_FILE } from '../lib/constants
 const require = createRequire(import.meta.url);
 const advisorSettings = require(resolveSharedAdvisorModule('advisor-settings.js', import.meta.url));
 const advisorProfiles = require(resolveSharedAdvisorModule('advisor-profiles.js', import.meta.url));
+const artifactTransaction = require(resolveSharedAdvisorModule('artifact-transaction.js', import.meta.url));
+const { advisorSettingsTarget } = require(resolveSharedAdvisorModule('paths.js', import.meta.url));
 const modelCatalog = require(resolveSharedAdvisorModule('opencode-model-catalog.js', import.meta.url));
 
 function sources(project, global) {
@@ -93,16 +95,22 @@ export function createModelsRouter({ root }) {
     try {
       const global = advisorSettings.readSettings(false, { projectRoot: root });
       const effective = advisorSettings.mergeSettings(project, global);
-        if (effective.advisor?.enabled === true && (!effective.advisor.provider || !effective.advisor.model)) {
-          return res.status(400).json({ error: 'Advisor consultations require an effective Advisor provider and model.' });
-        }
-        if (advisorSettings.isConfigured(effective)) advisorProfiles.assertInstallable(true, { projectRoot: root });
-
-      advisorSettings.writeSettings(true, project, { projectRoot: root });
-      const artifacts = advisorProfiles.installAdvisorArtifacts(true, { projectRoot: root });
+      if (effective.advisor?.enabled === true && (!effective.advisor.provider || !effective.advisor.model)) {
+        return res.status(400).json({ error: 'Advisor consultations require an effective Advisor provider and model.' });
+      }
+      const options = { projectRoot: root, settingsOverride: effective };
+      const profilePlan = advisorProfiles.preflightInstall(true, options);
+      const artifacts = artifactTransaction.run([
+        advisorSettingsTarget(true, root),
+        profilePlan.manifestFile,
+        ...artifactTransaction.profileTargets(profilePlan),
+      ], () => {
+        advisorSettings.writeSettings(true, project, { projectRoot: root });
+        return advisorProfiles.installAdvisorArtifacts(true, { projectRoot: root, preflight: profilePlan });
+      });
       res.json({ ...responseSettings(root), ok: true, artifacts });
     } catch (error) {
-      const conflict = /exists and is not managed by Guarana/.test(error.message);
+      const conflict = /exists and is not managed by Guarana|managed advisor profile was modified/.test(error.message);
       res.status(conflict ? 409 : 500).json({
         error: conflict
           ? `Model settings conflict: ${error.message}`

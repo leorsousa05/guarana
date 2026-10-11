@@ -47,7 +47,7 @@ export function RunModal({ sessionID, onClose, trigger }) {
     <div className="modal-backdrop" onClick={onClose}>
       <div
         ref={boxRef}
-        className="modal"
+        className="modal modal--run"
         role="dialog"
         aria-modal="true"
         aria-label={`Event stream for ${sessionID}`}
@@ -55,9 +55,12 @@ export function RunModal({ sessionID, onClose, trigger }) {
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKey}
       >
-        <button type="button" className="modal-close" onClick={onClose}>
-          close
-        </button>
+        <div className="run-modal-head">
+          <p className="run-modal-label">Session event record</p>
+          <button type="button" className="modal-close" onClick={onClose}>
+            close
+          </button>
+        </div>
         <div className="modal-body">
           <EventStream sessionID={sessionID} />
         </div>

@@ -21,12 +21,14 @@ test('Models provides searchable role comboboxes, model variants, manual fallbac
   const project = { primary: { provider: 'anthropic', model: 'claude-opus-4', variant: 'high' }, advisor: { provider: 'openai', model: 'gpt-5', variant: '' } };
   const props = { project, sources: { primary: { provider: 'project', model: 'project', variant: 'project' }, advisor: {} }, effective: { primary: {}, advisor: {} }, catalog, onChange() {}, onSubmit() {}, saving: false, variants: { primary: { provider: 'anthropic', model: 'claude-opus-4', status: 'ready', values: ['high', 'low'] }, advisor: { provider: 'openai', model: 'gpt-5', status: 'error', values: [] } } };
   const html = renderToStaticMarkup(React.createElement(ModelsForm, props));
-  assert.match(html, /Primary sets Guarana profile defaults for this project; it does not change model or variant selections already made in an OpenCode session/);
-  assert.match(html, /Default provider, model, and variant for this project’s Guarana profile\. Existing OpenCode session selections are unaffected/);
-  assert.match(html, /Advisor is an optional, read-only second opinion/);
+  assert.match(html, /Project defaults for Guarana profiles; running OpenCode sessions are unchanged\. Credentials stay OpenCode-managed\./);
+  assert.match(html, /<legend><span>Primary<\/span><small class="models-role-kind">Project default<\/small><\/legend>/);
+  assert.match(html, /<legend><span>Advisor<\/span><small class="models-role-kind">Optional · read-only<\/small><\/legend>/);
   assert.doesNotMatch(html, /Route project work to OpenCode models|Model used for project work/);
+  assert.doesNotMatch(html, /Primary sets Guarana profile defaults|Default provider, model, and variant|Existing OpenCode session selections are unaffected/);
   assert.match(html, /<div class="models-roles">/);
-  assert.match(html, /Optional read-only second opinion for work that is blocked/);
+  assert.match(html, /A read-only second opinion/);
+  assert.match(html, /class="models-source models-source--project"><code>anthropic<\/code><span class="models-source-label">Project<\/span>/);
   assert.doesNotMatch(html, /runtime proof|Last observed completed execution|Runtime:/i);
   const modelSource = fs.readFileSync(path.join(webRoot, 'src/components/Models.jsx'), 'utf8');
   assert.doesNotMatch(modelSource, /\/api\/models\/runtime|runtimeState|RuntimeDetails/);
@@ -52,8 +54,8 @@ test('Models provides searchable role comboboxes, model variants, manual fallbac
   assert.deepEqual(comboboxKeyAction('Escape', 1, 3), { close: true });
   const componentSource = fs.readFileSync(path.join(webRoot, 'src/components/Models.jsx'), 'utf8');
   assert.match(html, /Use this ID/);
-  assert.match(html, /Effective provider: <code>anthropic<\/code> · project override/);
-  assert.match(html, /Effective model: <code>claude-opus-4<\/code> · project override/);
+  assert.match(html, /<code>anthropic<\/code><span class="models-source-label">Project<\/span>/);
+  assert.match(html, /<code>claude-opus-4<\/code><span class="models-source-label">Project<\/span>/);
   assert.match(componentSource, /const variantValues = \[\.\.\.new Set\(variantState\.values \|\| \[\]\)\]/);
   assert.match(componentSource, /Your manually typed value will be kept/);
   assert.equal(comboboxKeyAction('ArrowDown', -1, 3).activeIndex, 0);
@@ -131,15 +133,15 @@ test('Models provides searchable role comboboxes, model variants, manual fallbac
   applyCatalogSelection('advisor', pick, (...args) => updates.push(args));
   assert.deepEqual(updates, [['advisor', 'provider', 'openrouter'], ['advisor', 'model', '~anthropic/claude-fable-latest'], ['advisor', 'variant', '']]);
   assert.ok(variantsRequested.length === 0); // this data-only helper does not request variants
-  assert.match(html, /Suggestions unavailable\. Manual entry works; blank uses the model default/);
-  assert.match(html, /2 variant suggestions available; blank uses the model default/);
+  assert.match(html, /Suggestions unavailable\. Manual entry works; blank uses model default/);
+  assert.match(html, /2 suggestions available\. Blank uses model default/);
   const loadingVariants = renderToStaticMarkup(React.createElement(ModelsForm, { ...props, variants: { primary: { provider: 'anthropic', model: 'claude-opus-4', status: 'loading', values: [] }, advisor: { provider: 'openai', model: 'gpt-5', status: 'loading', values: [] } } }));
   assert.match(loadingVariants, /class="models-variant-spinner" aria-hidden="true"/);
   assert.match(loadingVariants, /role="status" aria-live="polite" aria-busy="true"/);
-  assert.match(loadingVariants, /Loading Primary variant suggestions for anthropic\/claude-opus-4\. Manual entry works; blank uses the model default\./);
-  assert.match(loadingVariants, /Loading Advisor variant suggestions for openai\/gpt-5\. Manual entry works; blank uses the model default\./);
+  assert.match(loadingVariants, /Loading Primary variants for anthropic\/claude-opus-4\. Manual entry works; blank uses model default\./);
+  assert.match(loadingVariants, /Loading Advisor variants for openai\/gpt-5\. Manual entry works; blank uses model default\./);
   assert.equal((loadingVariants.match(/class="models-lookup" disabled=""/g) || []).length, 2);
-  assert.match(html, /class="models-source models-source--project">Effective provider: <code>anthropic<\/code> · project override/);
+  assert.match(html, /class="models-source models-source--project"><code>anthropic<\/code><span class="models-source-label">Project<\/span>/);
   assert.deepEqual(settingsPayload({ primary: { provider: 'custom', model: 'manual/model', variant: 'custom-v' }, advisor: { provider: '', model: '', variant: '' } }), { settings: { primary: { provider: 'custom', model: 'manual/model', variant: 'custom-v' } } });
   assert.deepEqual(settingsPayload({ primary: { provider: 'anthropic', model: 'claude-opus-4', variant: '' }, advisor: {} }), { settings: { primary: { provider: 'anthropic', model: 'claude-opus-4' } } });
   assert.deepEqual(settingsPayload({ primary: { provider: 'openrouter', model: '~anthropic/claude-fable-latest', variant: 'custom-v' }, advisor: {} }), { settings: { primary: { provider: 'openrouter', model: '~anthropic/claude-fable-latest', variant: 'custom-v' } } });
@@ -179,11 +181,11 @@ test('Models provides searchable role comboboxes, model variants, manual fallbac
   assert.deepEqual(settingsPayload(advisorDraft), { settings: { advisor: { provider: 'openai', model: 'gpt-5', enabled: true } } }, 'new Advisor config and enablement are submitted together');
   assert.equal(advisorCanEnable({ advisor: { provider: 'openai' } }, {}), false, 'Advisor needs an effective model too');
   const inheritedValuesHtml = renderToStaticMarkup(React.createElement(ModelsForm, { ...props, project: { primary: {}, advisor: {} }, globalSettings: inheritedGlobal, sources: {}, effective: {} }));
-  assert.match(inheritedValuesHtml, /Effective provider: <code>anthropic<\/code> · from global settings/);
-  assert.match(inheritedValuesHtml, /Effective model: <code>claude-opus-4<\/code> · from global settings/);
+  assert.match(inheritedValuesHtml, /class="models-source models-source--global"><code>anthropic<\/code><span class="models-source-label">Global<\/span>/);
+  assert.match(inheritedValuesHtml, /class="models-source models-source--global"><code>claude-opus-4<\/code><span class="models-source-label">Global<\/span>/);
   assert.match(inheritedValuesHtml, /Override global provider/);
   assert.match(inheritedValuesHtml, /Override global model/);
-  assert.match(inheritedValuesHtml, /Blank uses the model default/);
+  assert.match(inheritedValuesHtml, /Model default · blank/);
   const savingHtml = renderToStaticMarkup(React.createElement(ModelsForm, { ...props, saving: true }));
   assert.equal((savingHtml.match(/<fieldset class="models-section" disabled=""/g) || []).length, 2, 'all editable roles are disabled during save');
   assert.match(savingHtml, /role="status" aria-live="polite">Saving project settings and refreshing managed profiles… Editing is paused until the save finishes/);
@@ -193,12 +195,12 @@ test('Models provides searchable role comboboxes, model variants, manual fallbac
   assert.match(feedbackHtml, /role="status">Saved project profiles\./);
   const defaultAdvisor = renderToStaticMarkup(React.createElement(ModelsForm, { ...props, project: { primary: {}, advisor: {} }, sources: { advisor: { enabled: 'unset' } }, effective: { advisor: { enabled: false } } }));
   assert.match(defaultAdvisor, /aria-label="Advisor consultations"[^>]*type="checkbox"|type="checkbox"[^>]*aria-label="Advisor consultations"/);
-  assert.match(defaultAdvisor, /Using global setting: off/);
+  assert.match(defaultAdvisor, /Global · Off/);
   const inheritedAdvisor = renderToStaticMarkup(React.createElement(ModelsForm, { ...props, project: { primary: {}, advisor: {} }, sources: { advisor: { enabled: 'global' } }, effective: { advisor: { enabled: true, provider: 'openai', model: 'gpt-5' } } }));
-  assert.match(inheritedAdvisor, /Using global setting: on/);
+  assert.match(inheritedAdvisor, /Global · On/);
   assert.match(inheritedAdvisor, /Advisor consultations[^>]*checked/);
   const overriddenAdvisor = renderToStaticMarkup(React.createElement(ModelsForm, { ...props, project: { primary: {}, advisor: { enabled: false } }, sources: { advisor: { enabled: 'project' } }, effective: { advisor: { enabled: false, provider: 'openai', model: 'gpt-5' } } }));
-  assert.match(overriddenAdvisor, /Project override/);
+  assert.match(overriddenAdvisor, /Project · Off/);
   assert.match(overriddenAdvisor, /Use global setting/);
   const refreshed = renderToStaticMarkup(React.createElement(ModelsForm, { ...props, project: { primary: { provider: 'anthropic', model: 'claude-opus-4', variant: 'saved-custom' }, advisor: { variant: 'current-stale' } }, variants: { primary: { status: 'ready', values: ['high'] }, advisor: { status: 'ready', values: ['low'] } } }));
   assert.match(refreshed, /id="model-primary-variant"[^>]*value="saved-custom"/);
@@ -230,7 +232,7 @@ test('Models provides searchable role comboboxes, model variants, manual fallbac
     ...props,
     variants: { ...props.variants, advisor: { provider: 'openai', model: 'gpt-5', status: 'error', values: [], error: 'OpenCode discovery timed out.' } },
   }));
-  assert.match(errorState, /Suggestions unavailable: OpenCode discovery timed out\. Manual entry works; blank uses the model default\./);
+  assert.match(errorState, /Suggestions unavailable: OpenCode discovery timed out\. Manual entry works; blank uses model default\./);
 
   let resolveRequest;
   let requestCount = 0;
@@ -251,23 +253,23 @@ test('Models provides searchable role comboboxes, model variants, manual fallbac
   const failedCatalog = catalogStateFromResponse({ ok: true }, { models: [], error: catalogError });
   assert.deepEqual(failedCatalog, { status: 'error', models: [], error: catalogError });
   const failedCatalogHtml = renderToStaticMarkup(React.createElement(ModelsForm, { ...props, catalog: failedCatalog }));
-  assert.match(failedCatalogHtml, /OpenCode discovery timed out\. Try again or enter model IDs manually\. Enter provider and model IDs manually below\./);
+  assert.match(failedCatalogHtml, /OpenCode discovery timed out\. Try again or enter model IDs manually\. Manual provider and model IDs remain available\./);
   assert.match(failedCatalogHtml, /id="model-primary-provider-search"/);
   assert.match(failedCatalogHtml, /id="model-primary-search"/);
 
   const emptyCatalog = catalogStateFromResponse({ ok: true }, { models: [], error: null });
   assert.deepEqual(emptyCatalog, { status: 'empty', models: [], error: null });
   const emptyCatalogHtml = renderToStaticMarkup(React.createElement(ModelsForm, { ...props, catalog: emptyCatalog }));
-  assert.match(emptyCatalogHtml, /No connected OpenCode models found/);
+  assert.match(emptyCatalogHtml, /No connected OpenCode models\. Enter provider and model IDs manually\./);
   assert.doesNotMatch(emptyCatalogHtml, /OpenCode catalog unavailable|discovery timed out/);
 
   const pendingCatalogHtml = renderToStaticMarkup(React.createElement(ModelsForm, { ...props, catalog: { status: 'loading', models: [] } }));
   assert.match(pendingCatalogHtml, /class="models-catalog-status models-catalog-status--loading" role="status" aria-live="polite" aria-busy="true"/);
-  assert.match(pendingCatalogHtml, /class="models-variant-spinner" aria-hidden="true"><\/span>Checking the OpenCode catalog/);
-  assert.match(pendingCatalogHtml, /Checking the OpenCode catalog\. Provider and model IDs remain editable below\./);
+  assert.match(pendingCatalogHtml, /class="models-variant-spinner" aria-hidden="true"><\/span>Loading connected OpenCode models/);
+  assert.match(pendingCatalogHtml, /Loading connected OpenCode models\. IDs remain editable below\./);
 
   const states = ['loading', 'empty', 'error'];
-  for (const status of states) assert.match(renderToStaticMarkup(React.createElement(ModelsForm, { ...props, catalog: { status, models: [] } })), new RegExp(status === 'loading' ? 'Checking the OpenCode catalog' : status === 'empty' ? 'No connected OpenCode models found' : 'OpenCode catalog unavailable'));
+  for (const status of states) assert.match(renderToStaticMarkup(React.createElement(ModelsForm, { ...props, catalog: { status, models: [] } })), new RegExp(status === 'loading' ? 'Loading connected OpenCode models' : status === 'empty' ? 'No connected OpenCode models' : 'OpenCode catalog unavailable'));
   const css = fs.readFileSync(path.join(webRoot, 'src/style.css'), 'utf8');
   assert.match(css, /\.models-roles\s*\{\s*display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
   assert.match(css, /@media \(max-width: 600px\)\s*\{\s*\.models-roles\s*\{\s*grid-template-columns: minmax\(0, 1fr\)/);

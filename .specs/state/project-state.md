@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-10-09 (deterministic `.specs` record command planned)
+Last updated: 2026-10-11 (dashboard redesign validated; CLI refactor remains TASKED)
 
 ## Per-skill status
 | Skill | Status |
@@ -13,7 +13,7 @@ Last updated: 2026-10-09 (deterministic `.specs` record command planned)
 | guarana:debug | SHIPPED (optional, trigger-only) |
 | guarana:measure | SHIPPED (optional, trigger-only) |
 | guarana CLI | VALIDATED — update output polish |
-| guarana dashboard | VALIDATED — live Activity and Advisor history view |
+| guarana dashboard | VALIDATED — complete eight-view redesign; final actual CLI-served bundle PASS; not shipped |
 | guarana memory | **FINAL GATE PASSED** + hardening batch applied |
 | guarana orchestrator | **SPECIFIED → IMPLEMENTED → VALIDATED** |
 | Guarana native worker dispatch | **VALIDATED** |
@@ -24,7 +24,19 @@ Last updated: 2026-10-09 (deterministic `.specs` record command planned)
 | Guarana optional model advisor | **VALIDATED** — UI criteria 11–14 and ADR-027 runtime proof |
 
 ## Current step
-VALIDATED: User-requested global update and plugin install are complete; independent worker-verify PASS confirms the global 1.1.0 skill suite, current global plugins, and healthy engines. Advisor settings remain incomplete, running OpenCode needs restart, and the read-only project check still reports its memory plugin stale; project scope was untouched. No code/configuration changes or release are claimed.
+Commit/push run started. Complete the final pre-commit review and intentionally stage the latest planning updates to .specs/README.md, .specs/state/project-state.md, and this task record. Keep .specs/state/workflow.json and archive-0w9fZ3/ excluded. Candidate remains VALIDATED; no commit or push has occurred yet.
+
+## Dashboard redesign final validation — 2026-10-11
+
+Independent `worker-verify` PASS against the actual CLI-served combined bundle covers Overview, Activity, Runs, Specs, Workflow, Memory, Skills, and Models at 375x812 and 1440x900. Document/body widths equal the viewport; active `aria` navigation matches; no console, page, or API errors or secret leaks were observed. Route interactions and evidence are detailed in `.specs/changes/2026-10-11-dashboard-redesign.md`; full results are in `/tmp/opencode/dashboard-actual-cli/final-results.json`.
+
+`npm test` passed 439/439 on Node 24.20 and Node 22.23.3; `npm run build` and CLI sync, `npm run check-cli`, `npm pack --dry-run --json` (122 entries, no packaged `node_modules`, required assets present), and `npm run smoke:pack` passed. The independent specs validator passed with 154 files and 0 issues. The subsequent `specs record` validator passed with 155 files and 0 issues after adding this dated record. Fixture APIs were mocked and existing API semantics retained. Overall dashboard status is **VALIDATED, not SHIPPED**; latest-stable OpenCode host smoke is a separate release-only pending gate.
+
+## Closed bounded checkpoint — package/memory documentation (criterion 68)
+Independent worker-verify PASS (4/4) confirms the package contains 122 files and no `node_modules` path while retaining required docs/bin/CLI/dashboard assets; local dependencies remain intact. The help/docs accurately explain the current-working-directory memory vault and project-filter syntax. `npm run check-cli`, package dry-run, relevant help tests (20/20), `npm run smoke:pack`, and specs validation (149 files, 221 links, 0 issues) passed. This closes only the bounded package/memory-documentation slice; it does not validate or ship the overall CLI refactor.
+
+## Current final gate checklist — CLI refactor
+Overall status remains TASKED; no final overall verification or shipping claim is recorded. Prior independent PASS receipts for criterion 38 (numeric handler results) and criterion 49 (lifecycle transaction/rollback) are reported in the earlier plan/conversation receipts, and the closeout record now notes that provenance; the final verifier must still reconcile both against current code. Independently cover the full specs parser/domain extraction in criteria 60–61, not just the separately verified `changePath` correction (65), and reconcile earlier help metadata (20), ownership (39, 43, 47), package closeout (68), and Advisor transaction (71). Run `npm test`, `npm run check-cli`, `npm pack --dry-run --json` with a manifest inspection proving no packaged `node_modules` paths and required docs/bin/CLI/dashboard assets, `npm run smoke:pack`, and specs validation. Exercise Node 24.20.0; `node22` was not found, so attempt an ephemeral Node 22 runner or record the exact attempt and local/CI limitation without claiming a Node 22 pass. Latest-stable OpenCode host smoke is release-only; this task requests no release or SHIPPED status. ADR-031 write denial remains open and must not be retried. Preserve the stale Advisor test-contract caveat in known issues.
 
 ## Previous validated correction — Activity root selection
 **Activity root-selection correction (2026-10-08) — VALIDATED.** `rootSessionFrom()` filters child sessions, chooses an observed busy/running root first, and otherwise uses greatest `end`/last activity rather than start order. Advisor call lookup remains scoped to that root's `parentSessionID`. Focused Activity tests pass 2/2. Independent worker-verify `ses_ee14cc5aaffexxrn2km3Um7Tuf` passed Chromium 375×812 with helper roots and an Advisor child ordered ahead of the actual root; it showed the busy root, correct Advisor call/model, root-only memory/events, modal history/Escape/backdrop/focus behavior, and no overflow. Screenshot: `/tmp/opencode/activity-root-fix-375.png`. Full suite/build/CLI/spec checks passed; see `.specs/changes/2026-10-08-activity-root-selection.md`.

@@ -213,11 +213,15 @@ export function createVariantLoader(setVariants, fetchSuggestions = fetchVariant
 }
 
 function catalogMessage(catalog, models) {
-  if (catalog?.status === 'loading') return 'Checking the OpenCode catalog. Provider and model IDs remain editable below.';
-  if (catalog?.status === 'error') return `${catalog.error || 'OpenCode catalog unavailable.'} Enter provider and model IDs manually below.`;
-  if (models.length === 0) return 'No connected OpenCode models found. Enter provider and model IDs manually below.';
+  if (catalog?.status === 'loading') return 'Loading connected OpenCode models. IDs remain editable below.';
+  if (catalog?.status === 'error') return `${catalog.error || 'OpenCode catalog unavailable.'} Manual provider and model IDs remain available.`;
+  if (models.length === 0) return 'No connected OpenCode models. Enter provider and model IDs manually.';
   const providers = [...new Set(models.map(({ provider }) => provider.id))];
-  return `Connected OpenCode providers: ${providers.join(', ')}. Select a model to fill the provider and model fields.`;
+  return `${providers.length} connected provider${providers.length === 1 ? '' : 's'}. Select a model to use its exact IDs.`;
+}
+
+function sourceLabel(source) {
+  return source === 'project' ? 'Project' : source === 'global' ? 'Global' : 'Not set';
 }
 
 export function catalogStateFromResponse(response, body) {
@@ -281,12 +285,12 @@ export function ModelsForm({
   return (
     <section id="models" aria-label="Models">
       <h2 className="section-title">Models</h2>
-      <p className="models-intro">Primary sets Guarana profile defaults for this project; it does not change model or variant selections already made in an OpenCode session. Advisor is an optional, read-only second opinion. Project values override global defaults only when you choose an override. Credentials stay in OpenCode.</p>
+      <p className="models-intro">Project defaults for Guarana profiles; running OpenCode sessions are unchanged. Credentials stay OpenCode-managed.</p>
       <p id="models-catalog-status" className={`models-catalog-status${catalogLoading ? ' models-catalog-status--loading' : ''}`} role="status" aria-live="polite" aria-busy={catalogLoading || undefined}>
         {catalogLoading && <span className="models-variant-spinner" aria-hidden="true" />}
         {message}
       </p>
-        <form className="models-form" onSubmit={(event) => handleModelsSubmit(event, project, baseSettings, onSubmit)}>
+      <form className="models-form" onSubmit={(event) => handleModelsSubmit(event, project, baseSettings, onSubmit)}>
         <div className="models-roles">{ROLES.map(([role, title]) => {
           const provider = effectiveFieldValue(project, baseSettings, role, 'provider');
           const model = effectiveFieldValue(project, baseSettings, role, 'model');
@@ -307,27 +311,27 @@ export function ModelsForm({
           const modelOpen = active[`${role}-model`] !== undefined;
           const matchingVariants = variantValues.filter((value) => value.toLowerCase().includes(currentVariant.toLowerCase()));
           const variantMessage = variantState.status === 'loading'
-            ? `Loading ${title} variant suggestions for ${provider}/${model}. Manual entry works; blank uses the model default.`
+            ? `Loading ${title} variants for ${provider}/${model}. Manual entry works; blank uses model default.`
             : variantOpen[role]
-            ? `${matchingVariants.length ? `${matchingVariants.length} variant suggestion${matchingVariants.length === 1 ? '' : 's'} found.` : 'No variant suggestions match. Your manually typed value will be kept.'}${variantState.status === 'error' ? variantState.error ? ` Suggestions unavailable: ${variantState.error} Manual entry works; blank uses the model default.` : ' Suggestions unavailable. Manual entry works; blank uses the model default.' : !matchingVariants.length ? ' Blank uses the model default.' : ''}`
+            ? `${matchingVariants.length ? `${matchingVariants.length} match${matchingVariants.length === 1 ? '' : 'es'}.` : 'No matches. Your manually typed value will be kept.'}${variantState.status === 'error' ? variantState.error ? ` Suggestions unavailable: ${variantState.error} Manual entry works; blank uses model default.` : ' Suggestions unavailable. Manual entry works; blank uses model default.' : !matchingVariants.length ? ' Blank uses model default.' : ''}`
             : variantState.status === 'error'
               ? variantState.error
-                ? `Suggestions unavailable: ${variantState.error} Manual entry works; blank uses the model default.`
-                : 'Suggestions unavailable. Manual entry works; blank uses the model default.'
+                ? `Suggestions unavailable: ${variantState.error} Manual entry works; blank uses model default.`
+                : 'Suggestions unavailable. Manual entry works; blank uses model default.'
               : variantState.status === 'ready'
-                ? `${variantValues.length} variant suggestion${variantValues.length === 1 ? '' : 's'} available; blank uses the model default.`
-                : 'Choose a model to load variant suggestions.';
+                ? `${variantValues.length} suggestion${variantValues.length === 1 ? '' : 's'} available. Blank uses model default.`
+                : 'Choose a model to load suggestions.';
           return (
             <fieldset className="models-section" key={role} disabled={saving}>
-              <legend>{role === 'primary' ? 'Primary' : 'Advisor'}</legend>
-              <p className="models-role-description">{role === 'primary' ? 'Default provider, model, and variant for this project’s Guarana profile. Existing OpenCode session selections are unaffected.' : 'Optional read-only second opinion for work that is blocked.'}</p>
+              <legend><span>{title}</span><small className="models-role-kind">{role === 'primary' ? 'Project default' : 'Optional · read-only'}</small></legend>
+              <p className="models-role-description">{role === 'primary' ? 'Used by Guarana project profiles.' : 'A read-only second opinion.'}</p>
               {role === 'advisor' && (() => {
                 const enabledSource = typeof project?.advisor?.enabled === 'boolean' ? 'project' : Object.hasOwn(baseSettings?.advisor || {}, 'enabled') ? 'global' : 'unset';
                 const enabled = typeof project?.advisor?.enabled === 'boolean' ? project.advisor.enabled : baseSettings?.advisor?.enabled === true;
                 const configured = advisorCanEnable(project, baseSettings);
                 return <div className="models-advisor-toggle">
                   <label><input type="checkbox" aria-label="Advisor consultations" checked={enabled} disabled={!enabled && !configured} onChange={(event) => onChange('advisor', 'enabled', event.target.checked)} /> Enable Advisor</label>
-                  <small className={`models-source models-source--${enabledSource}`}>{enabledSource === 'project' ? 'Project override' : enabledSource === 'global' ? `Using global setting: ${enabled ? 'on' : 'off'}` : 'Default: off'}</small>
+                  <small className={`models-source models-source--${enabledSource}`}>{enabledSource === 'unset' ? 'Default · Off' : `${sourceLabel(enabledSource)} · ${enabled ? 'On' : 'Off'}`}</small>
                   {typeof project?.advisor?.enabled === 'boolean' && <button type="button" className="models-inherit" onClick={() => onChange('advisor', 'enabled', undefined)}>Use global setting</button>}
                 </div>;
               })()}
@@ -337,8 +341,8 @@ export function ModelsForm({
                 <input id={`model-${role}-provider-search`} type="search" role="combobox" aria-label={`${title} provider search`} aria-expanded={providerOpen} aria-controls={providerOpen ? `model-${role}-providers` : undefined} aria-activedescendant={active[`${role}-provider`] >= 0 ? optionId(role, 'provider', active[`${role}-provider`]) : undefined} aria-autocomplete="list" value={providerSearches[role] || ''} placeholder="Search provider name or ID" onFocus={() => setActive((a) => ({ ...a, [`${role}-provider`]: -1 }))} onChange={(event) => updateCatalogSearch(event, role, 'provider', setProviderSearches, setActive)} onKeyDown={(event) => { const action = comboboxKeyAction(event.key, active[`${role}-provider`] ?? -1, providerOptions.length); if (!action) return; event.preventDefault(); if (action.close) setActive((a) => { const next = { ...a }; delete next[`${role}-provider`]; return next; }); else if (action.select !== undefined) { acceptProvider(role, providerOptions[action.select].id); setActive((a) => ({ ...a, [`${role}-provider`]: undefined })); } else setActive((a) => ({ ...a, [`${role}-provider`]: action.activeIndex })); }} />
                 {providerOpen && <ul id={`model-${role}-providers`} className="models-options" role="listbox">{providerOptions.map((option, index) => <li key={option.id}><button id={optionId(role, 'provider', index)} type="button" role="option" aria-selected={active[`${role}-provider`] === index} tabIndex={-1} onMouseDown={(event) => event.preventDefault()} onClick={() => { acceptProvider(role, option.id); setActive((a) => ({ ...a, [`${role}-provider`]: undefined })); }}>{option.name || option.id} <small>{option.id}</small></button></li>)}</ul>}
                   {providerOpen && <small className="models-result-count" role="status" aria-live="polite">{providerOptions.length ? `${providerOptions.length} connected provider${providerOptions.length === 1 ? '' : 's'} found.` : 'No connected match. Enter a provider ID and confirm it below.'}</small>}
-                  {!providerOpen && <small className="models-field-hint">{connectedProviders.length} connected providers · Search by name or ID</small>}
-                  <small className={`models-source models-source--${providerSource}`}>Effective provider: <code>{provider || 'Not configured'}</code> · {providerSource === 'project' ? 'project override' : providerSource === 'global' ? 'from global settings' : 'no project or global value'}</small>
+                  {!providerOpen && <small className="models-field-hint">{connectedProviders.length} connected · Search name or ID</small>}
+                  <small className={`models-source models-source--${providerSource}`}><code>{provider || 'Not configured'}</code><span className="models-source-label">{sourceLabel(providerSource)}</span></small>
                   {providerSource === 'global' && <button type="button" className="models-inherit" onClick={() => { setFieldValue(role, 'provider', provider); setProviderSearches((state) => ({ ...state, [role]: provider })); }}>Override global provider</button>}
                   {project?.[role]?.provider && <button type="button" className="models-inherit" onClick={() => restoreGlobal(role, 'provider')}>{Object.hasOwn(baseSettings?.[role] || {}, 'provider') ? 'Use global provider' : 'Clear project override'}</button>}
                   {!!providerSearches[role]?.trim() && <button type="button" className="models-inherit models-manual" onClick={() => acceptProvider(role, providerSearches[role].trim())}>Use this ID</button>}
@@ -348,8 +352,8 @@ export function ModelsForm({
                 <input id={`model-${role}-search`} role="combobox" aria-label={`${title} model search`} aria-expanded={modelOpen} aria-controls={modelOpen ? `model-${role}-options` : undefined} aria-activedescendant={active[`${role}-model`] >= 0 ? optionId(role, 'model', active[`${role}-model`]) : undefined} aria-autocomplete="list" type="search" value={searches[role] || ''} placeholder="Search model name or ID" onFocus={() => setActive((a) => ({ ...a, [`${role}-model`]: -1 }))} onChange={(event) => updateCatalogSearch(event, role, 'model', setSearches, setActive)} onKeyDown={(event) => { const action = comboboxKeyAction(event.key, active[`${role}-model`] ?? -1, filteredModels.length); if (!action) return; event.preventDefault(); if (action.close) setActive((a) => { const next = { ...a }; delete next[`${role}-model`]; return next; }); else if (action.select !== undefined) { const entry = filteredModels[action.select]; acceptModel(role, entry.provider.id, entry.model.id); setActive((a) => ({ ...a, [`${role}-model`]: undefined })); } else setActive((a) => ({ ...a, [`${role}-model`]: action.activeIndex })); }} />
                 {modelOpen && <ul id={`model-${role}-options`} className="models-options" role="listbox">{filteredModels.map((entry, index) => <li key={modelChoiceValue(entry)}><button id={optionId(role, 'model', index)} type="button" role="option" aria-selected={active[`${role}-model`] === index} tabIndex={-1} onMouseDown={(event) => event.preventDefault()} onClick={() => { acceptModel(role, entry.provider.id, entry.model.id); setActive((a) => ({ ...a, [`${role}-model`]: undefined })); }}>{entry.model.name || entry.model.id} <small>{entry.model.id}</small></button></li>)}</ul>}
                   {modelOpen && <small className="models-result-count" role="status" aria-live="polite">{filteredModels.length ? `${filteredModels.length} model${filteredModels.length === 1 ? '' : 's'} found${provider ? ` for ${provider}` : ''}.` : 'No catalog match. Enter a model ID and confirm it below.'}</small>}
-                  {!modelOpen && <small className="models-field-hint">{provider ? `${provider} catalog · Search model name or ID` : 'Search model name or ID; choose a provider to narrow results'}</small>}
-                  <small className={`models-source models-source--${modelSource}`}>Effective model: <code>{model || 'Not configured'}</code> · {modelSource === 'project' ? 'project override' : modelSource === 'global' ? 'from global settings' : 'no project or global value'}</small>
+                  {!modelOpen && <small className="models-field-hint">{provider ? `${provider} · Search model name or ID` : 'Search model name or ID'}</small>}
+                  <small className={`models-source models-source--${modelSource}`}><code>{model || 'Not configured'}</code><span className="models-source-label">{sourceLabel(modelSource)}</span></small>
                   {modelMismatch && <small className="models-model-warning" role="alert">The inherited global model belongs to {baseSettings?.[role]?.provider || 'a different provider'}. Choose or enter a model for this provider before saving.</small>}
                   {modelSource === 'global' && <button type="button" className="models-inherit" onClick={() => { setFieldValue(role, 'model', model); setSearches((state) => ({ ...state, [role]: model })); }}>Override global model</button>}
                   {project?.[role]?.model && <button type="button" className="models-inherit" onClick={() => restoreGlobal(role, 'model')}>{Object.hasOwn(baseSettings?.[role] || {}, 'model') ? 'Use global model' : 'Clear project override'}</button>}
@@ -383,7 +387,7 @@ export function ModelsForm({
                         onChange={(event) => onChange(role, field, event.target.value)}
                         aria-describedby={`${id}-source`}
                       />}
-                      <small id={`${id}-source`} className={`models-source models-source--${source}`}>{resolvedVariant ? <>Effective variant: <code>{resolvedVariant}</code> · {source === 'project' ? 'project override' : source === 'global' ? 'from global settings' : 'not configured'}</> : 'Blank uses the model default.'}</small>
+                      <small id={`${id}-source`} className={`models-source models-source--${source}`}>{resolvedVariant ? <><code>{resolvedVariant}</code><span className="models-source-label">{sourceLabel(source)}</span></> : 'Model default · blank'}</small>
                       {source === 'global' && resolvedVariant && <button type="button" className="models-inherit" onClick={() => onChange(role, 'variant', resolvedVariant)}>Override global variant</button>}
                       {project?.[role]?.variant && <button type="button" className="models-inherit" onClick={() => onChange(role, 'variant', undefined)}>{Object.hasOwn(baseSettings?.[role] || {}, 'variant') ? 'Use global variant' : 'Clear project override'}</button>}
                       </div>
@@ -395,7 +399,7 @@ export function ModelsForm({
         })}</div>
         {error && <p className="models-feedback models-feedback--error" role="alert">{error}</p>}
         {notice && <p className="models-feedback models-feedback--success" role="status">{notice}</p>}
-        <p className="models-save-scope">Saving updates this project’s model settings and managed profiles. It does not change selections in an already-running OpenCode session.</p>
+        <p className="models-save-scope">Applies to this project’s model settings and managed profiles. Running OpenCode sessions stay unchanged.</p>
         {saving && <p className="models-feedback" role="status" aria-live="polite">Saving project settings and refreshing managed profiles… Editing is paused until the save finishes.</p>}
         <button className="models-save" type="submit" disabled={saving || hasProviderModelMismatch(project, baseSettings)}>
           {saving ? 'Saving…' : 'Save project models'}

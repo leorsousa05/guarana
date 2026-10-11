@@ -1,8 +1,7 @@
 'use strict';
 
 const fs = require('fs');
-const path = require('path');
-const { advisorCommandTarget, advisorAgentsTarget, advisorSubagentTarget, legacyAdvisorAgentsTarget } = require('./paths.js');
+const { advisorCommandTarget, advisorAgentsTarget, advisorSubagentTarget } = require('./paths.js');
 const { effectiveSettings, isConfigured, isAdvisorConfigured } = require('./advisor-settings.js');
 
 const ADVISOR_MARKER = '<!-- guarana-managed-advisor-artifact -->';
@@ -110,63 +109,19 @@ function managedTargets(useProject, options = {}) {
 }
 
 function assertInstallable(useProject, options = {}) {
-  for (const artifact of artifacts(useProject, options)) {
-    if (!fs.existsSync(artifact.target)) continue;
-    const current = fs.readFileSync(artifact.target, 'utf8');
-    if (!current.includes(ADVISOR_MARKER)) {
-      throw new Error(`refuse to install ${artifact.name}: ${artifact.target} exists and is not managed by Guarana`);
-    }
-  }
+  require('./profile-artifacts.js').preflight(useProject, 'install', null, { ...options, groups: ['advisor'] });
 }
 
-function cleanEmptyDirectories(useProject, options = {}) {
-  for (const directory of [path.dirname(advisorCommandTarget(useProject, options.projectRoot)), path.dirname(advisorAgentsTarget(useProject, options.projectRoot))]) {
-    try { fs.rmdirSync(directory); } catch { /* shared or non-empty native config directory */ }
-  }
+function preflightInstall(useProject, options = {}) {
+  return require('./profile-artifacts.js').preflight(useProject, 'install', null, { ...options, groups: ['advisor'] });
 }
 
 function installAdvisorArtifacts(useProject, options = {}) {
-  const configured = isConfigured(effectiveSettings(useProject, options));
-  const generated = artifacts(useProject, options);
-  assertInstallable(useProject, options);
-  const legacy = legacyAdvisorAgentsTarget(useProject, options.projectRoot);
-  if (fs.existsSync(legacy) && fs.readFileSync(legacy, 'utf8').includes(ADVISOR_MARKER)) fs.unlinkSync(legacy);
-  if (!isAdvisorConfigured(effectiveSettings(useProject, options))) {
-    for (const artifact of managedTargets(useProject, options).slice(1)) {
-      if (!fs.existsSync(artifact.target)) continue;
-      const current = fs.readFileSync(artifact.target, 'utf8');
-      if (current.includes(ADVISOR_MARKER)) fs.unlinkSync(artifact.target);
-    }
-  }
-  for (const artifact of generated) {
-    fs.mkdirSync(path.dirname(artifact.target), { recursive: true });
-    fs.writeFileSync(artifact.target, artifact.content, 'utf8');
-  }
-  return {
-    installed: generated.map(({ name, target }) => ({ name, target })),
-    setupOnly: !configured,
-    skipped: undefined,
-  };
+  return require('./profile-artifacts.js').installAdvisorArtifacts(useProject, options);
 }
 
 function uninstallAdvisorArtifacts(useProject, options = {}) {
-  const removed = [];
-  const preserved = [];
-  // Uninstall relies only on fixed paths and ownership markers, not on settings;
-  // malformed or cleared preferences must not strand managed native files.
-  const targets = [...managedTargets(useProject, options), { name: 'legacy primary agent', target: legacyAdvisorAgentsTarget(useProject, options.projectRoot) }];
-  for (const artifact of targets) {
-    if (!fs.existsSync(artifact.target)) continue;
-    const current = fs.readFileSync(artifact.target, 'utf8');
-    if (!current.includes(ADVISOR_MARKER)) {
-      preserved.push(artifact.target);
-      continue;
-    }
-    fs.unlinkSync(artifact.target);
-    removed.push(artifact.target);
-  }
-  cleanEmptyDirectories(useProject, options);
-  return { removed, preserved };
+  return require('./profile-artifacts.js').uninstallAdvisorArtifacts(useProject, options);
 }
 
 function advisorArtifactStatus(useProject, options = {}) {
@@ -183,4 +138,4 @@ function advisorArtifactStatus(useProject, options = {}) {
   });
 }
 
-module.exports = { ADVISOR_MARKER, artifacts, assertInstallable, installAdvisorArtifacts, uninstallAdvisorArtifacts, advisorArtifactStatus };
+module.exports = { ADVISOR_MARKER, artifacts, managedTargets, assertInstallable, preflightInstall, installAdvisorArtifacts, uninstallAdvisorArtifacts, advisorArtifactStatus };

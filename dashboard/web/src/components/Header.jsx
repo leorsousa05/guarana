@@ -5,9 +5,12 @@ export function Header({ lastEventTs, tickerTick }) {
   void tickerTick;
   return (
     <header className="header">
-      <h1 className="wordmark">
-        guarana <span className="wordmark-sub">— system of record</span>
-      </h1>
+      <div className="header-brand">
+        <p className="header-eyebrow">Engineering workflow</p>
+        <h1 className="wordmark">
+          guarana <span className="wordmark-sub">/ system of record</span>
+        </h1>
+      </div>
       <div className="header-meta">
         <span className={`pill ${lastEventTs != null && Date.now() - lastEventTs < 15000 ? 'pill--live' : ''}`}>
           last event {fmtAge(lastEventTs)}

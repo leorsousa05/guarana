@@ -1,3 +1,13 @@
 #!/usr/bin/env node
 'use strict';
-require('../cli/main').main(process.argv.slice(2));
+
+(async () => {
+  try {
+    const { main } = require('../cli/main');
+    process.exitCode = await main(process.argv.slice(2));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`${message}\n`);
+    process.exitCode = 1;
+  }
+})();

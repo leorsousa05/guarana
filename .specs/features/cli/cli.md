@@ -37,7 +37,7 @@ A Node.js CLI named `guarana` that installs/uninstalls/lists/updates the guarana
 ## Addendum 2026-08-21b: `web` command
 - `guarana web [--port N]` — start the guarana dashboard and open it in the browser.
 - The CLI bundles the dashboard: `cli/dashboard/` contains `server/` source + the **prebuilt** frontend (`web/dist/`, committed at build time).
-- On run: if `cli/dashboard/server/node_modules` is missing → run `npm install --omit=dev` there once (network required, print a clear message); then spawn `node server/index.js` with **cwd = user's current project dir**, env `GUARANA_DASH_PORT` (default 4200, `--port` overrides).
+- On run: if `cli/dashboard/server/node_modules` is missing → run `npm ci --omit=dev` there once (network required, print a clear message); then spawn `node server/index.js` with **cwd = user's current project dir**, env `GUARANA_DASH_PORT` (default 4200, `--port` overrides).
 - Open browser: `xdg-open` (Linux) / `open` (macOS), best-effort, never fail the command if opening fails. `--no-open` flag skips it.
 - Server runs in foreground; Ctrl+C stops it (child process is killed).
 
@@ -45,7 +45,7 @@ A Node.js CLI named `guarana` that installs/uninstalls/lists/updates the guarana
 13. With deps pre-installed in the bundled server dir: `guarana web --port 4399 --no-open` from a temp project dir → server answers on 4399 with correct tracker data for THAT temp project's `.specs/` (proves cwd forwarding).
 14. `--help` documents `web`.
 15. Ctrl+C / SIGTERM to the CLI stops the child server (port freed).
-16. Missing-deps path: with node_modules absent, command runs `npm install --omit=dev` (verifiable by output/message; may be checked with a stubbed npm on PATH to avoid network in tests).
+16. Missing-deps path: with node_modules absent, command runs `npm ci --omit=dev` (verifiable by output/message; may be checked with a stubbed npm on PATH to avoid network in tests).
 
 ### Acceptance (automatic activation)
 17. `guarana install` installs the orchestrator and memory plugins without a second plugin command.

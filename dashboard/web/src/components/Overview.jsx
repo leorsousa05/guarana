@@ -26,10 +26,9 @@ function WorkflowSection({ workflow }) {
   const state = workflow?.state || 'idle';
   const idx = STATE_ORDER.indexOf(state);
   return (
-    <section className="ov-section" aria-label="Workflow">
+    <section className="ov-section ov-section--workflow" aria-label="Workflow">
       <header className="ov-section-head">
         <h3>Workflow</h3>
-        <Stamp word={state} />
       </header>
       <div className="ov-wf">
         {STATE_ORDER.map((s, i) => (
@@ -109,18 +108,21 @@ function DecisionsSection({ decisions }) {
 
 function MemorySection({ memory }) {
   const d = memory?.data;
-  if (!d) return <p className="loading" role="status">loading…</p>;
   return (
-    <section className="ov-section" aria-label="Memory">
+    <section className="ov-section ov-section--memory" aria-label="Memory">
       <header className="ov-section-head">
         <h3>Memory</h3>
       </header>
-      <dl className="ov-grid">
-        <div><dt>nodes</dt><dd>{d.nodes?.total ?? 0}</dd></div>
-        <div><dt>confirmed</dt><dd>{d.nodes?.confirmed ?? 0}</dd></div>
-        <div><dt>supernodes</dt><dd>{d.supernodes ?? 0}</dd></div>
-        <div><dt>edges</dt><dd>{d.edges ?? 0}</dd></div>
-      </dl>
+      {!d ? (
+        <p className="loading" role="status">loading…</p>
+      ) : (
+        <dl className="ov-grid ov-memory-grid">
+          <div><dt>nodes</dt><dd>{d.nodes?.total ?? 0}</dd></div>
+          <div><dt>confirmed</dt><dd>{d.nodes?.confirmed ?? 0}</dd></div>
+          <div><dt>supernodes</dt><dd>{d.supernodes ?? 0}</dd></div>
+          <div><dt>edges</dt><dd>{d.edges ?? 0}</dd></div>
+        </dl>
+      )}
     </section>
   );
 }
@@ -135,54 +137,79 @@ function roadmapItems(tracker, key, workflow) {
 }
 
 function RoadmapSection({ tracker, workflow }) {
-  if (!tracker) return <p className="loading" role="status">loading…</p>;
   return (
     <section className="ov-section ov-section--roadmap" aria-label="Roadmap">
       <header className="ov-section-head">
         <h3>Roadmap</h3>
       </header>
-      {['BLOCKED', 'NEXT', 'DONE'].map((k) => {
-        const items = roadmapItems(tracker, k, workflow);
-        return items.length ? (
-          items.map((item, i) => (
-            <div key={`${k}-${i}`} className="flag-line">
-              <Stamp word={k} />
-              <Markdown text={item} />
-            </div>
-          ))
-        ) : null;
-      })}
-      {!['BLOCKED', 'NEXT', 'DONE'].some((k) => roadmapItems(tracker, k, workflow).length) && (
-        <p className="ov-empty">No roadmap flags recorded.</p>
+      {!tracker ? (
+        <p className="loading" role="status">loading…</p>
+      ) : (
+        <>
+          {['BLOCKED', 'NEXT', 'DONE'].map((k) => {
+            const items = roadmapItems(tracker, k, workflow);
+            return items.length ? (
+              items.map((item, i) => (
+                <div key={`${k}-${i}`} className="flag-line">
+                  <Stamp word={k} />
+                  <Markdown text={item} />
+                </div>
+              ))
+            ) : null;
+          })}
+          {!['BLOCKED', 'NEXT', 'DONE'].some((k) => roadmapItems(tracker, k, workflow).length) && (
+            <p className="ov-empty">No roadmap flags recorded.</p>
+          )}
+        </>
       )}
     </section>
+  );
+}
+
+export function OverviewContent({ summary, state, tracker, workflow, memory, decisions }) {
+  const goal = workflow?.goal || workflow?.activeTask || parseGoal(state?.projectState);
+
+  return (
+    <div className="ov" aria-label="Overview">
+      <div className="ov-lede">
+        <div className="ov-lede-head">
+          <span>Current workflow</span>
+          <Stamp word={workflow?.state || 'idle'} />
+        </div>
+        {goal ? (
+          <div className="ov-current-goal">
+            <strong>Open goal:</strong>
+            <Markdown text={goal} />
+          </div>
+        ) : (
+          <div className="ov-current-goal">System of record — no active goal recorded.</div>
+        )}
+      </div>
+      <div className="ov-ledger">
+        <WorkflowSection workflow={workflow} />
+        <RunsSection summary={summary} />
+        <div className="ov-supporting">
+          <MemorySection memory={memory} />
+          <DecisionsSection decisions={decisions} />
+          <RoadmapSection tracker={tracker} workflow={workflow} />
+        </div>
+      </div>
+    </div>
   );
 }
 
 export function Overview({ summary, state, tracker, workflow }) {
   const memory = usePoll('/api/memory/summary', 5000);
   const decisions = usePoll('/api/decisions/pending', 5000);
-  const goal = workflow?.goal || workflow?.activeTask || parseGoal(state?.projectState);
 
   return (
-    <div className="ov" aria-label="Overview">
-      <div className="ov-lede">
-        {goal ? (
-          <>
-            <strong>Open goal:</strong>
-            <Markdown text={goal} />
-          </>
-        ) : (
-          'System of record — no active goal recorded.'
-        )}
-      </div>
-      <div className="ov-ledger">
-        <WorkflowSection workflow={workflow} />
-        <RunsSection summary={summary} />
-        <MemorySection memory={memory} />
-        <DecisionsSection decisions={decisions} />
-        <RoadmapSection tracker={tracker} workflow={workflow} />
-      </div>
-    </div>
+    <OverviewContent
+      summary={summary}
+      state={state}
+      tracker={tracker}
+      workflow={workflow}
+      memory={memory}
+      decisions={decisions}
+    />
   );
 }

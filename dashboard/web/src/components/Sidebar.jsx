@@ -12,6 +12,7 @@ const SECTIONS = [
 export function Sidebar({ active, onSelect }) {
   return (
     <aside className="sidebar" aria-label="Dashboard sections">
+      <p className="sidebar-label">Sections</p>
       <nav className="sect-nav">
         {SECTIONS.map(([id, label]) => (
           <button

@@ -6,6 +6,7 @@ const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const specs = require('./specs.js');
 const { validateSpecs } = require('../lib/specs-validator.js');
 
 const BIN = path.join(__dirname, '..', '..', 'bin', 'guarana.js');
@@ -54,6 +55,32 @@ Expose a JSON API.
 
 See [ADR-001](../../decisions/ADR-001-api-shape.md).
 `);
+}
+
+function captureOutput(callback) {
+  let stdout = '';
+  let stderr = '';
+  const streams = {
+    stdout: { write: (chunk) => { stdout += chunk.toString(); } },
+    stderr: { write: (chunk) => { stderr += chunk.toString(); } },
+  };
+  const result = callback(streams);
+  return { result, stdout, stderr };
+}
+
+function runDirect(root, args) {
+  const cwd = process.cwd();
+  const previousExitCode = process.exitCode;
+  process.chdir(root);
+  process.exitCode = 23;
+  try {
+    const output = captureOutput((streams) => specs.run(args, streams));
+    assert.equal(process.exitCode, 23, `process.exitCode changed while running specs ${args.join(' ')}`);
+    return output;
+  } finally {
+    process.chdir(cwd);
+    process.exitCode = previousExitCode;
+  }
 }
 
 describe('guarana specs validate', () => {
@@ -125,6 +152,41 @@ No actual criterion here.
     }
   });
 
+  it('run returns numeric validation statuses without mutating process.exitCode and preserves output', () => {
+    const validRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-specs-direct-valid-'));
+    const invalidRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-specs-direct-invalid-'));
+    try {
+      validProject(validRoot);
+      const valid = runDirect(validRoot, ['validate', validRoot, '--json']);
+      assert.equal(valid.result, 0);
+      assert.equal(valid.stdout, `${JSON.stringify(validateSpecs(validRoot), null, 2)}\n`);
+      assert.equal(valid.stderr, '');
+
+      const invalid = runDirect(invalidRoot, ['validate', invalidRoot, '--json']);
+      assert.equal(invalid.result, 1);
+      assert.equal(invalid.stdout, `${JSON.stringify(validateSpecs(invalidRoot), null, 2)}\n`);
+      assert.equal(invalid.stderr, '');
+
+      const noArgs = runDirect(validRoot, []);
+      assert.equal(noArgs.result, 0);
+      assert.equal(noArgs.stdout, specs.HELP);
+      assert.equal(noArgs.stderr, '');
+
+      const unknown = runDirect(validRoot, ['unknown']);
+      assert.equal(unknown.result, 1);
+      assert.equal(unknown.stdout, specs.HELP);
+      assert.equal(unknown.stderr, 'unknown specs command: unknown\n');
+
+      const extraArgs = runDirect(validRoot, ['validate', validRoot, 'extra']);
+      assert.equal(extraArgs.result, 1);
+      assert.equal(extraArgs.stdout, '');
+      assert.equal(extraArgs.stderr, 'usage: guarana specs validate [project-root] [--json]\n');
+    } finally {
+      fs.rmSync(validRoot, { recursive: true, force: true });
+      fs.rmSync(invalidRoot, { recursive: true, force: true });
+    }
+  });
+
 });
 
 describe('guarana specs record --stdin', () => {
@@ -176,6 +238,33 @@ describe('guarana specs record --stdin', () => {
       assert.equal(JSON.parse(res.stdout).error,'invalid JSON');
       files.forEach((file,i)=>assert.deepEqual(fs.readFileSync(file),before[i]));
       assert.equal(fs.existsSync(path.join(root,'.specs/state/worker-specs-handoff.json')),false);
+    } finally { fs.rmSync(root,{recursive:true,force:true}); }
+  });
+  it('run returns explicit record statuses without mutating process.exitCode or changing JSON', () => {
+    const root=fs.mkdtempSync(path.join(os.tmpdir(),'guarana-record-direct-'));
+    const handoffPath=path.join(root,'.specs/state/worker-specs-handoff.json');
+    try {
+      validProject(root);
+      fs.mkdirSync(path.dirname(handoffPath),{recursive:true});
+      fs.writeFileSync(handoffPath,JSON.stringify(handoff()));
+      const success=runDirect(root,['record','--file','.specs/state/worker-specs-handoff.json']);
+      assert.equal(success.result,0);
+      const report=JSON.parse(success.stdout);
+      assert.equal(report.ok,true);
+      assert.equal(report.validator.ok,true);
+      assert.equal(success.stdout,`${JSON.stringify(report)}\n`);
+      assert.equal(success.stderr,'');
+
+      fs.writeFileSync(handoffPath,'{');
+      const failure=runDirect(root,['record','--file','.specs/state/worker-specs-handoff.json']);
+      assert.equal(failure.result,1);
+      assert.equal(failure.stdout,`${JSON.stringify({ok:false,changed:[],error:'invalid JSON',validator:null})}\n`);
+      assert.equal(failure.stderr,'');
+
+      const invalidUsage=runDirect(root,['record','--stdin','extra']);
+      assert.equal(invalidUsage.result,1);
+      assert.equal(invalidUsage.stdout,`${JSON.stringify({ok:false,changed:[],error:'usage: guarana specs record --stdin | --file .specs/state/worker-specs-handoff.json',validator:null})}\n`);
+      assert.equal(invalidUsage.stderr,'');
     } finally { fs.rmSync(root,{recursive:true,force:true}); }
   });
   it('rejects alternate paths and symlinks without deleting their targets', () => {
@@ -260,6 +349,27 @@ describe('guarana specs record --stdin', () => {
       for (const input of ['{',JSON.stringify(handoff({featurePath:'../escape.md'})),JSON.stringify(handoff({featurePath:'.specs/features/api/other.md'})),JSON.stringify(handoff({changePath:'.specs/README.md'})),JSON.stringify(handoff({status:'VALIDATED'})),JSON.stringify(handoff({status:'SHIPPED'})),JSON.stringify(handoff({trackerName:'x|y'}))]) {
         const res=invoke(root,input); assert.equal(res.status,1); assert.equal(JSON.parse(res.stdout).ok,false);
         assert.equal(fs.readFileSync(path.join(root,'.specs/README.md'),'utf8'),before);
+      }
+    } finally { fs.rmSync(root,{recursive:true,force:true}); }
+  });
+  it('normalizes safe backslash change paths and rejects traversal and absolute paths without writes', () => {
+    const root=fs.mkdtempSync(path.join(os.tmpdir(),'guarana-record-change-path-'));
+    try {
+      validProject(root);
+      const files=['README.md','state/project-state.md','features/api/api.md'].map((p)=>path.join(root,'.specs',p));
+      const accepted=invoke(root,JSON.stringify(handoff({changePath:'.specs\\changes\\example.md'})));
+      assert.equal(accepted.status,0,accepted.stdout);
+      const tracker=fs.readFileSync(files[0],'utf8');
+      const feature=fs.readFileSync(files[2],'utf8');
+      assert.match(tracker,/\| api \| IMPLEMENTED \| npm test \| \.specs\/changes\/example\.md \|/);
+      assert.match(feature,/Change: \.specs\/changes\/example\.md\n/);
+
+      const before=files.map((file)=>fs.readFileSync(file));
+      for (const changePath of ['.specs/changes/../example.md','/tmp/example.md','C:\\outside\\example.md']) {
+        const rejected=invoke(root,JSON.stringify(handoff({changePath})));
+        assert.equal(rejected.status,1,rejected.stdout);
+        assert.equal(JSON.parse(rejected.stdout).ok,false);
+        files.forEach((file,i)=>assert.deepEqual(fs.readFileSync(file),before[i]));
       }
     } finally { fs.rmSync(root,{recursive:true,force:true}); }
   });

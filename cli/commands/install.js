@@ -1,22 +1,30 @@
-const fs = require('fs');
-const path = require('path');
-const { copyDir } = require('../lib/fs.js');
-const { assertGuard, STAMP } = require('../lib/guard.js');
-const { SOURCE, VERSION, SKILLS } = require('../constants.js');
+const { VERSION, SKILLS } = require('../constants.js');
+const skillArtifacts = require('../lib/skill-artifacts.js');
+const { targetDir } = require('../lib/paths.js');
+const artifactTransaction = require('../lib/artifact-transaction.js');
+const { stdoutLine } = require('../lib/io.js');
 
-function run(args, { useProject, quiet = false }) {
-  const target = require('../lib/paths.js').targetDir(useProject);
-  const existed = fs.existsSync(target);
-  assertGuard(target, 'install');
-  copyDir(SOURCE, target);
-  fs.writeFileSync(path.join(target, STAMP), VERSION + '\n');
-  if (!quiet) {
-    console.log(`${existed ? 'updated' : 'installed'} guarana ${VERSION} -> ${target}`);
-    console.log(`skills: ${SKILLS.map((s) => 'guarana:' + s).join(', ')}`);
-  }
-  // The orchestrator and memory hooks are part of automatic operation, not a
-  // second opt-in installation step.
-  require('./plugin.js').install(useProject, { quiet });
+function run(args, { useProject, quiet = false, stdout = process.stdout, stderr = process.stderr } = {}) {
+  const context = { stdout, stderr };
+  const target = targetDir(useProject);
+  const plugin = require('./plugin.js');
+  const pluginPlan = plugin.preflightInstall(useProject);
+  const skillPlan = skillArtifacts.preflight(useProject, 'install', pluginPlan.engines);
+  const existed = skillPlan.rootExisted;
+  artifactTransaction.run([
+    ...artifactTransaction.skillTargets(skillPlan),
+    ...artifactTransaction.pluginTargets(pluginPlan),
+  ], () => {
+    skillArtifacts.applyInstall(skillPlan);
+    if (!quiet) {
+      stdoutLine(context, `${existed ? 'updated' : 'installed'} guarana ${VERSION} -> ${target}`);
+      stdoutLine(context, `skills: ${SKILLS.map((s) => 'guarana:' + s).join(', ')}`);
+    }
+    // The orchestrator and memory hooks are part of automatic operation, not a
+    // second opt-in installation step.
+    plugin.install(useProject, { quiet, preflight: pluginPlan, skipTransaction: true, stdout, stderr });
+  });
+  return 0;
 }
 
 module.exports = { run };

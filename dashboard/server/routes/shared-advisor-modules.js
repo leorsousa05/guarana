@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const SHARED_MODULES = new Set(['advisor-settings.js', 'advisor-profiles.js', 'opencode-model-catalog.js']);
+const SHARED_MODULES = new Set(['advisor-settings.js', 'advisor-profiles.js', 'artifact-transaction.js', 'paths.js', 'opencode-model-catalog.js']);
 
 export function resolveSharedAdvisorModule(name, routeUrl = import.meta.url) {
   if (!SHARED_MODULES.has(name)) throw new Error(`Unsupported shared advisor module: ${name}`);

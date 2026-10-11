@@ -3,11 +3,33 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { pluginIsOurs, MEMORY_PLUGIN_MARKER } = require('./guard.js');
+const { assertGuard, pluginIsOurs, MEMORY_PLUGIN_MARKER, STAMP } = require('./guard.js');
 
 const BUNDLE_TEXT = '// guarana telemetry plugin (Component A)\n// current bundle\n';
 const OLD_VERSION_TEXT = '// guarana telemetry plugin (Component A)\n// older version, different bytes\n';
 const FOREIGN_TEXT = '// some other plugin entirely\n';
+
+describe('assertGuard', () => {
+  let dir;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-guard-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('throws the exact refusal for an existing unmarked target', () => {
+    const target = path.join(dir, 'foreign');
+    fs.mkdirSync(target);
+
+    assert.throws(
+      () => assertGuard(target, 'install'),
+      new Error(`refuse to install: ${target} exists but is not a guarana install (no ${STAMP} stamp or guarana SKILL.md)`)
+    );
+  });
+});
 
 describe('pluginIsOurs', () => {
   let dir;

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ErrorBanner } from './common.jsx';
 import { Markdown } from '../lib/markdown.jsx';
 
@@ -7,17 +7,38 @@ const focusables = (root) =>
     ? [...root.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter((el) => !el.disabled)
     : [];
 
+const useFocusLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
+
+export function scheduleFocusRestore(opener, schedule = (callback) => requestAnimationFrame(callback)) {
+  schedule(() => {
+    if (opener?.isConnected) opener.focus?.();
+  });
+}
+
 export function SpecsMarkdownModal({ title, text, path, onClose, onOpenFile, canOpen }) {
   const boxRef = useRef(null);
+  const originalTriggerRef = useRef(null);
+  const originalTriggerCapturedRef = useRef(false);
+  const displayedDocumentRef = useRef({ title, text, path });
   const [content, setContent] = useState(text ?? null);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    const previous = document.activeElement;
+  useFocusLayoutEffect(() => {
+    if (!originalTriggerCapturedRef.current) {
+      originalTriggerRef.current = document.activeElement;
+      originalTriggerCapturedRef.current = true;
+    }
     const box = boxRef.current;
     (box?.querySelector('.modal-close') || box)?.focus();
-    return () => previous?.focus?.();
   }, []);
+
+  useFocusLayoutEffect(() => {
+    const previous = displayedDocumentRef.current;
+    if (previous.title !== title || previous.text !== text || previous.path !== path) {
+      (boxRef.current?.querySelector('.modal-close') || boxRef.current)?.focus();
+    }
+    displayedDocumentRef.current = { title, text, path };
+  }, [title, text, path]);
 
   useEffect(() => {
     if (text != null) {
@@ -43,10 +64,16 @@ export function SpecsMarkdownModal({ title, text, path, onClose, onOpenFile, can
     };
   }, [path, text]);
 
+  const handleClose = () => {
+    const opener = originalTriggerRef.current;
+    onClose();
+    scheduleFocusRestore(opener);
+  };
+
   const onKeyDown = (event) => {
     if (event.key === 'Escape') {
       event.preventDefault();
-      onClose();
+      handleClose();
       return;
     }
     if (event.key !== 'Tab') return;
@@ -67,7 +94,7 @@ export function SpecsMarkdownModal({ title, text, path, onClose, onOpenFile, can
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" onClick={handleClose}>
       <div
         ref={boxRef}
         className="modal modal--specs"
@@ -80,7 +107,7 @@ export function SpecsMarkdownModal({ title, text, path, onClose, onOpenFile, can
       >
         <header className="specs-modal-head">
           <h2 id="specs-modal-title">{title}</h2>
-          <button type="button" className="modal-close" onClick={onClose}>close</button>
+          <button type="button" className="modal-close" onClick={handleClose}>close</button>
         </header>
         <div className="modal-body specs-modal-body">
           {error ? <ErrorBanner text={`Unable to load document: ${error}`} /> : null}

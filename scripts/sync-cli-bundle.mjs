@@ -19,15 +19,81 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
 const EXCLUDED_DIRECTORIES = new Set(['node_modules']);
 
-function copyDir(src, dest) {
-  fs.rmSync(dest, { recursive: true, force: true });
+function lstatIfExists(target) {
+  try {
+    return fs.lstatSync(target);
+  } catch (error) {
+    if (error.code === 'ENOENT') return undefined;
+    throw error;
+  }
+}
+
+function isPreservedNodeModules(target) {
+  if (path.basename(target) !== 'node_modules') return false;
+  const stat = lstatIfExists(target);
+  if (stat?.isDirectory()) return true;
+  if (!stat?.isSymbolicLink()) return false;
+  try {
+    return fs.statSync(target).isDirectory();
+  } catch (error) {
+    if (error.code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
+function removePathPreservingNodeModules(target) {
+  if (isPreservedNodeModules(target)) return;
+  const stat = lstatIfExists(target);
+  if (!stat) return;
+  if (!stat.isDirectory()) {
+    fs.rmSync(target, { force: true });
+    return;
+  }
+
+  for (const entry of fs.readdirSync(target, { withFileTypes: true })) {
+    const child = path.join(target, entry.name);
+    if (isPreservedNodeModules(child)) continue;
+    removePathPreservingNodeModules(child);
+  }
+
+  try {
+    fs.rmdirSync(target);
+  } catch (error) {
+    if (error.code !== 'ENOTEMPTY' && error.code !== 'EEXIST') throw error;
+  }
+}
+
+function syncDir(src, dest) {
+  if (isPreservedNodeModules(dest)) return;
+  const destStat = lstatIfExists(dest);
+  if (destStat && !destStat.isDirectory()) removePathPreservingNodeModules(dest);
   fs.mkdirSync(dest, { recursive: true });
-  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    if (entry.isDirectory() && EXCLUDED_DIRECTORIES.has(entry.name)) continue;
-    const s = path.join(src, entry.name);
-    const d = path.join(dest, entry.name);
-    if (entry.isDirectory()) copyDir(s, d);
-    else fs.copyFileSync(s, d);
+  const sourceEntries = fs.readdirSync(src, { withFileTypes: true })
+    .filter((entry) => !(entry.isDirectory() && EXCLUDED_DIRECTORIES.has(entry.name)));
+  const sourceNames = new Set(sourceEntries.map((entry) => entry.name));
+
+  for (const entry of fs.readdirSync(dest, { withFileTypes: true })) {
+    const destPath = path.join(dest, entry.name);
+    if (isPreservedNodeModules(destPath) || sourceNames.has(entry.name)) continue;
+    removePathPreservingNodeModules(destPath);
+  }
+
+  for (const entry of sourceEntries) {
+    const sourcePath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    const destStat = lstatIfExists(destPath);
+    if (isPreservedNodeModules(destPath)) continue;
+
+    if (entry.isDirectory()) {
+      if (destStat && !destStat.isDirectory()) removePathPreservingNodeModules(destPath);
+      syncDir(sourcePath, destPath);
+    } else {
+      if (destStat?.isDirectory()) removePathPreservingNodeModules(destPath);
+      if (lstatIfExists(destPath)?.isDirectory()) {
+        throw new Error(`Cannot replace ${destPath}: it contains a preserved node_modules directory.`);
+      }
+      fs.copyFileSync(sourcePath, destPath);
+    }
   }
 }
 
@@ -48,13 +114,19 @@ const mappings = [
   { from: 'skill-engine', to: 'cli/skill-engine' },
 ];
 
-for (const { from, to } of mappings) {
-  const src = path.join(root, from);
-  const dest = path.join(root, to);
-  const stat = fs.statSync(src);
-  if (stat.isDirectory()) copyDir(src, dest);
-  else copyFile(src, dest);
-  console.log(`synced ${from} -> ${to}`);
+export function syncCliBundle(syncRoot = root, syncMappings = mappings) {
+  for (const { from, to } of syncMappings) {
+    const src = path.join(syncRoot, from);
+    const dest = path.join(syncRoot, to);
+    const stat = fs.statSync(src);
+    if (stat.isDirectory()) syncDir(src, dest);
+    else copyFile(src, dest);
+    console.log(`synced ${from} -> ${to}`);
+  }
+
+  console.log('CLI bundle is in sync.');
 }
 
-console.log('CLI bundle is in sync.');
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  syncCliBundle();
+}

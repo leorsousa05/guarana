@@ -12,8 +12,7 @@ function assertGuard(target, action) {
     const content = fs.readFileSync(skillMd, 'utf8');
     if (/^name:\s*guarana\s*$/m.test(content)) return;
   }
-  console.error(`refuse to ${action}: ${target} exists but is not a guarana install (no ${STAMP} stamp or guarana SKILL.md)`);
-  process.exit(1);
+  throw new Error(`refuse to ${action}: ${target} exists but is not a guarana install (no ${STAMP} stamp or guarana SKILL.md)`);
 }
 
 // Markers present in every guarana-authored version of each plugin.

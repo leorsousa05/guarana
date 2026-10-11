@@ -6,6 +6,10 @@ function opencodeConfigDir() {
   return path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'opencode');
 }
 
+function openCodeRootTarget(useProject, projectRoot = process.cwd()) {
+  return useProject ? path.join(projectRoot, '.opencode') : opencodeConfigDir();
+}
+
 function targetDir(useProject) {
   return useProject
     ? path.join(process.cwd(), '.opencode', 'skills', 'guarana')
@@ -33,6 +37,13 @@ function orchestratorEngineTarget(useProject) {
 function skillEngineTarget(useProject) {
   const pluginsParent = path.dirname(path.dirname(pluginTarget(useProject)));
   return path.join(pluginsParent, 'skill-engine');
+}
+
+function installManifestTarget(useProject, projectRoot = process.cwd()) {
+  const root = useProject
+    ? path.join(projectRoot, '.guarana')
+    : path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'guarana');
+  return path.join(root, 'install-manifest.json');
 }
 
 function workerAgentsTarget(useProject, projectRoot = process.cwd()) {
@@ -69,10 +80,12 @@ function advisorSubagentTarget(useProject, projectRoot = process.cwd()) {
 module.exports = {
   targetDir,
   opencodeConfigDir,
+  openCodeRootTarget,
   pluginTarget,
   memoryEngineTarget,
   orchestratorEngineTarget,
   skillEngineTarget,
+  installManifestTarget,
   workerAgentsTarget,
   advisorSettingsTarget,
   advisorCommandTarget,

@@ -35,6 +35,33 @@ maintainer action.
 - Newly bootstrapped project specifications include the required master tracker
   and goal fields, so the shipped validator accepts a fresh project.
 
+## [1.2.0] - 2026-10-11 (unpublished candidate)
+
+### Added
+- A complete responsive redesign of the Overview, Activity, Runs, Specs,
+  Workflow, Memory, Skills, and Models dashboard views.
+- A shared CLI command registry and help metadata, plus pure argument parsers
+  for the top-level and documented subcommands.
+- Per-scope ownership manifests for installed skills, plugins, engines, worker
+  profiles, and Advisor artifacts, with preservation of unrelated files.
+
+### Changed
+- CLI handlers now share awaited execution, numeric exit codes, and injectable
+  stdout/stderr streams; web child processes preserve signal and exit behavior.
+- `memory search --project HASH` treats `--project` as its documented filter,
+  while existing global project-target selectors remain available elsewhere.
+- Lifecycle operations preflight owned artifacts and roll back managed files,
+  manifests, and Advisor settings after ordinary filesystem failures.
+- CLI bundle synchronization preserves destination-local `node_modules`, while
+  npm packaging excludes them from the published archive.
+
+### Fixed
+- Specs record paths normalize safe backslash separators without weakening
+  traversal checks, and Specs document navigation keeps modal focus reliable.
+- Advisor settings/profile updates are transactional; foreign or modified
+  installation artifacts are preserved or refused rather than removed.
+- The generated Skills registry can be searched locally by name or description.
+
 ## [Unreleased]
 
 ### Added

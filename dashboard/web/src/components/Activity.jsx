@@ -52,6 +52,17 @@ function ActivityEvents({ data }) {
   );
 }
 
+export function RecentActivity({ state }) {
+  return (
+    <section className="activity-ledger activity-recent" aria-label="Recent activity">
+      <h2 className="section-title">Recent activity</h2>
+      {state.error && <p className="activity-error" role="alert">Unable to load root-session events.</p>}
+      {!state.data && !state.error && <p className="loading" role="status">Loading root-session activity…</p>}
+      {state.data && <ActivityEvents data={state.data} />}
+    </section>
+  );
+}
+
 function configuredAdvisor(settings) {
   return settings?.effective?.advisor || {};
 }
@@ -76,9 +87,9 @@ function advisorComparisons(observed, configured) {
   return comparisons;
 }
 
-export function AdvisorSquare({ latestAdvisor, advisorStatus, configured, history, onShowHistory }) {
+export function AdvisorPanel({ latestAdvisor, advisorStatus, configured, history, onShowHistory }) {
   return (
-    <section className="activity-area" aria-labelledby="activity-advisor-title">
+    <section className="activity-advisor" aria-labelledby="activity-advisor-title">
       <header className="activity-area-head">
         <h3 id="activity-advisor-title">Advisor</h3>
         <Stamp word={advisorStatus || 'loading'} />
@@ -119,17 +130,21 @@ export function Activity({ summary, workflow, tick = 0 }) {
 
   return (
     <section id="now" className="activity" aria-label="Activity" tabIndex={-1}>
-      <h2 className="section-title">Activity</h2>
-      <div className="activity-workareas">
-        <section className="activity-area" aria-labelledby="activity-session-title">
+      <header className="activity-page-head">
+        <p className="activity-kicker">Live operations</p>
+        <h2 className="section-title">Activity</h2>
+      </header>
+      <div className="activity-primary">
+        <section className="activity-session" aria-labelledby="activity-session-title">
           <header className="activity-area-head">
             <h3 id="activity-session-title">Current session</h3>
             <Stamp word={root ? sessionLabel(root.status) : 'waiting'} />
           </header>
           {root ? <>
-            <p className="activity-session-id">{root.sessionID}</p>
+            <p className="activity-session-id"><code>{root.sessionID}</code></p>
             <p className="activity-observed-at">
-              {root.status === 'busy' || root.status === 'running' ? 'Observed as running' : `Last seen${root.status && root.status !== 'created' ? ` · reported ${sessionLabel(root.status)}` : ''}`}
+              {root.status === 'busy' || root.status === 'running' ? 'Observed as running · last seen' : `Last seen${root.status && root.status !== 'created' ? ` · reported ${sessionLabel(root.status)}` : ''}`}
+              {' · '}{fmtTs(root.end ?? root.start)}
             </p>
             <dl className="activity-meta-grid">
               <div><dt>started</dt><dd>{fmtTs(root.start)}</dd></div>
@@ -143,24 +158,19 @@ export function Activity({ summary, workflow, tick = 0 }) {
           </> : <EmptyState copy="No root session telemetry observed yet." />}
         </section>
 
-        <AdvisorSquare latestAdvisor={latestAdvisor} advisorStatus={advisorStatus} configured={configured} history={history} onShowHistory={() => setShowHistory(true)} />
+        <AdvisorPanel latestAdvisor={latestAdvisor} advisorStatus={advisorStatus} configured={configured} history={history} onShowHistory={() => setShowHistory(true)} />
       </div>
 
-      <div className="activity-support">
-        <Workflow data={workflow} />
-        <section className="activity-ledger" aria-label="Recent activity">
-          <h2 className="section-title">Recent activity</h2>
-          {events.error && <p className="activity-error" role="alert">Unable to load root-session events.</p>}
-          {!events.data && !events.error && <p className="loading" role="status">Loading root-session activity…</p>}
-          {events.data && <ActivityEvents data={events.data} />}
-        </section>
-        <section className="activity-ledger" aria-label="Injected memory for current root session">
-          <h2 className="section-title">Injected memory</h2>
-          {root
-            ? <MemoryInjections sessionID={root.sessionID} tick={tick} />
-            : <p role="status">No root session is available to match injected memories.</p>}
-        </section>
+      <div className="activity-evidence">
+        <div className="activity-workflow"><Workflow data={workflow} /></div>
+        <RecentActivity state={events} />
       </div>
+      <section className="activity-memory" aria-label="Injected memory for current root session">
+        <h2 className="section-title">Memory evidence</h2>
+        {root
+          ? <MemoryInjections sessionID={root.sessionID} tick={tick} />
+          : <p role="status">No root session is available to match injected memories.</p>}
+      </section>
       {showHistory && <AdvisorHistoryModal state={history} onClose={() => setShowHistory(false)} />}
     </section>
   );

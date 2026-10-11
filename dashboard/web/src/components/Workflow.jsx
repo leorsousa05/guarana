@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Stamp, EmptyState } from './common.jsx';
+import { EmptyState } from './common.jsx';
 import { fmtTs } from '../lib/format.js';
 
 const STATE_ORDER = ['idle', 'planning', 'building', 'coding', 'verifying', 'debugging', 'completed'];
@@ -31,13 +31,12 @@ function activeIndex(state) {
 function EdgeArrow({ state }) {
   const ev = TRANSITIONS[state];
   if (!ev) return null;
-  return <span className="wf-edge">{ev}</span>;
+  return <span className="wf-edge"><span aria-hidden="true">→</span> {ev}</span>;
 }
 
 export function Workflow({ data }) {
   const state = data?.state || 'idle';
   const idx = activeIndex(state);
-  const hasHistory = Array.isArray(data?.history) && data.history.length > 0;
   const [selectedPhase, setSelectedPhase] = useState(state);
   useEffect(() => setSelectedPhase(state), [state]);
   const selectedIndex = activeIndex(selectedPhase);
@@ -55,18 +54,21 @@ export function Workflow({ data }) {
       ) : (
         <>
           <div className="wf-current">
-            <div>
+            <div className="wf-current-task-block">
               <p className="wf-current-label">Active task</p>
               <p className="wf-current-task">{data?.activeTask || 'No active task'}</p>
             </div>
-            <Stamp word={state} />
+            <div className="wf-current-phase">
+              <p className="wf-current-label">Current phase</p>
+              <h3>{STATE_LABEL[state]}</h3>
+            </div>
           </div>
 
           <ol className="wf-strip" aria-label="Workflow phases">
             {STATE_ORDER.map((s, i) => (
               <li
                 key={s}
-                className={`wf-node${i < idx ? ' wf-node--passed' : ''}${s === state ? ' wf-node--current' : ''}${s === selectedPhase ? ' wf-node--selected' : ''}`}
+                className={`wf-node wf-node--${s === state ? 'current' : i < idx ? 'passed' : 'upcoming'}${s === selectedPhase ? ' wf-node--selected' : ''}`}
               >
                 <button
                   type="button"
@@ -76,67 +78,77 @@ export function Workflow({ data }) {
                   onClick={() => setSelectedPhase(s)}
                 >
                   <span className="wf-step-index">{i + 1}</span>
-                  <span className="wf-node-label">{STATE_LABEL[s]}</span>
-                  <EdgeArrow state={s} />
+                  <span className="wf-node-content">
+                    <span className="wf-node-label">{STATE_LABEL[s]}</span>
+                    <span className={`wf-node-status wf-node-status--${s === state ? 'current' : i < idx ? 'passed' : 'upcoming'}`}>
+                      {s === state ? 'Current' : i < idx ? 'Passed' : 'Upcoming'}
+                    </span>
+                    <EdgeArrow state={s} />
+                  </span>
                 </button>
               </li>
             ))}
           </ol>
 
-          <section className={`wf-phase-detail wf-phase-detail--${phaseStatus}`} aria-live="polite" aria-label={`${STATE_LABEL[selectedPhase]} phase details`}>
-            <div>
-              <p className="wf-current-label">{phaseStatus === 'current' ? 'Current phase' : phaseStatus === 'passed' ? 'Completed phase' : 'Upcoming phase'}</p>
-              <h3>{STATE_LABEL[selectedPhase]}</h3>
-              <p className="wf-phase-next">
-                {TRANSITIONS[selectedPhase]
-                  ? `Advances on ${TRANSITIONS[selectedPhase]}.`
-                  : selectedPhase === 'completed' ? 'This run is complete.' : 'Waiting for a task to begin.'}
-              </p>
+          <section className="wf-evidence" aria-label="Workflow evidence">
+            <div className="wf-phase-record">
+              <section className={`wf-phase-detail wf-phase-detail--${phaseStatus}`} aria-live="polite" aria-label={`${STATE_LABEL[selectedPhase]} phase details`}>
+                <div>
+                  <p className="wf-current-label">{phaseStatus === 'current' ? 'Current phase' : phaseStatus === 'passed' ? 'Completed phase' : 'Upcoming phase'}</p>
+                  <h3>{STATE_LABEL[selectedPhase]}</h3>
+                  <p className="wf-phase-next">
+                    {TRANSITIONS[selectedPhase]
+                      ? `Advances on ${TRANSITIONS[selectedPhase]}.`
+                      : selectedPhase === 'completed' ? 'This run is complete.' : 'Waiting for a task to begin.'}
+                  </p>
+                </div>
+                <p className="wf-phase-records">
+                  {phaseHistory.length ? `${phaseHistory.length} related transition${phaseHistory.length === 1 ? '' : 's'}.` : 'No transition recorded for this phase yet.'}
+                </p>
+              </section>
+
+              <section className="wf-history" aria-label={`${STATE_LABEL[selectedPhase]} transitions`}>
+                <h3>Transitions · {STATE_LABEL[selectedPhase]}</h3>
+                <ul>
+                  {phaseHistory.map((h, i) => (
+                    <li key={`${h.ts || i}-${h.event}`} className="wf-history-entry">
+                      <span className="wf-history-path">
+                        <span className="wf-h-from">{h.from}</span>
+                        <span aria-hidden="true">→</span>
+                        <span className="wf-h-to">{h.to}</span>
+                      </span>
+                      <code className="wf-history-event">{h.event}</code>
+                      {h.note ? <span className="wf-h-note">{h.note}</span> : <span className="wf-h-note" />}
+                      {h.ts ? <time className="wf-h-ts" dateTime={new Date(h.ts).toISOString()}>{fmtTs(h.ts)}</time> : <span />}
+                    </li>
+                  ))}
+                </ul>
+                {phaseHistory.length === 0 && <p className="wf-history-empty">No recorded transitions for this phase.</p>}
+              </section>
             </div>
-            <p className="wf-phase-records">
-              {phaseHistory.length ? `${phaseHistory.length} related transition${phaseHistory.length === 1 ? '' : 's'}.` : 'No transition recorded for this phase yet.'}
-            </p>
+
+            <aside className="wf-metadata" aria-label="Task metadata">
+              <h3 className="wf-evidence-title">Task details</h3>
+              <dl className="wf-grid">
+                <div>
+                  <dt>skill</dt>
+                  <dd>{data?.skill ? `guarana:${data.skill}` : '—'}</dd>
+                </div>
+                <div>
+                  <dt>goal</dt>
+                  <dd>{data?.goal || '—'}</dd>
+                </div>
+                <div>
+                  <dt>condition</dt>
+                  <dd>{data?.condition || '—'}</dd>
+                </div>
+                <div>
+                  <dt>updated</dt>
+                  <dd>{data?.updatedAt ? fmtTs(data.updatedAt) : '—'}</dd>
+                </div>
+              </dl>
+            </aside>
           </section>
-
-          <dl className="wf-grid">
-            <div>
-              <dt>skill</dt>
-              <dd>{data?.skill ? `guarana:${data.skill}` : '—'}</dd>
-            </div>
-            <div>
-              <dt>goal</dt>
-              <dd>{data?.goal || '—'}</dd>
-            </div>
-            <div>
-              <dt>condition</dt>
-              <dd>{data?.condition || '—'}</dd>
-            </div>
-            <div>
-              <dt>updated</dt>
-              <dd>{data?.updatedAt ? fmtTs(data.updatedAt) : '—'}</dd>
-            </div>
-          </dl>
-
-          {hasHistory && (
-            <div className="wf-history">
-              <h3>Transitions · {STATE_LABEL[selectedPhase]}</h3>
-              <ul>
-                {phaseHistory.map((h, i) => (
-                  <li key={`${h.ts || i}-${h.event}`} className="wf-history-entry">
-                    <span className="wf-history-path">
-                      <span className="wf-h-from">{h.from}</span>
-                      <span aria-hidden="true">→</span>
-                      <span className="wf-h-to">{h.to}</span>
-                    </span>
-                    <code className="wf-history-event">{h.event}</code>
-                    {h.note ? <span className="wf-h-note">{h.note}</span> : <span className="wf-h-note" />}
-                    {h.ts ? <time className="wf-h-ts" dateTime={new Date(h.ts).toISOString()}>{fmtTs(h.ts)}</time> : <span />}
-                  </li>
-                ))}
-              </ul>
-              {phaseHistory.length === 0 && <p className="wf-history-empty">No recorded transitions for this phase.</p>}
-            </div>
-          )}
         </>
       )}
     </section>
