@@ -24,7 +24,7 @@ Last updated: 2026-10-11 (dashboard redesign validated; CLI refactor remains TAS
 | Guarana optional model advisor | **VALIDATED** — UI criteria 11–14 and ADR-027 runtime proof |
 
 ## Current step
-COMPLETE/VALIDATED (not SHIPPED): final independent worker-verify PASS confirms both pushed commits; HEAD and origin/main equal c3a47723e0882c1297493d1907a8f663ea5fbff1. The candidate remains VALIDATED; no release action occurred. Post-commit proof edits were included in and pushed by the docs follow-up commit.
+COMPLETE/VALIDATED (not SHIPPED): independent worker-verify PASS confirms candidate commit 7322e3db322585109fdab08922c6a6d6a733ca38 and documentation proof follow-up c3a47723e0882c1297493d1907a8f663ea5fbff1 were pushed. Additional docs-only final status record commit b818819be3bc0f4b9ac10d5d02902e6494028847 was pushed; primary confirmed HEAD==origin/main at that commit. No independent review of the third documentation commit is claimed; it only persisted a correction/update to those proof records. Specs validation passed: 158 files, 41 feature specs, 30 ADRs, 205 links, 0 issues. The final worktree contains only modified operational .specs/state/workflow.json and untracked archive-0w9fZ3/, both excluded from the candidate commit set. No tag or npm publish occurred; the candidate remains VALIDATED, not SHIPPED.
 
 ## Dashboard redesign final validation — 2026-10-11
 
