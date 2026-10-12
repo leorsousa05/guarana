@@ -35,6 +35,9 @@ human-gate-validation.md
 # Playwright MCP browser-test artifacts
 .playwright-mcp/
 
+# Local archive artifact (kept on disk, not tracked)
+archive-0w9fZ3/
+
 # Runtime telemetry (produced by the plugin during runs; not source)
 .specs/state/telemetry/
 .guarana/memory/
