@@ -1,6 +1,6 @@
 # Feature spec: Ignore local Advisor and workflow state
 
-**Status: VALIDATED**
+**Status: SHIPPED**
 
 ## Goal
 Ignore and untrack the local Advisor settings and operational workflow state while preserving both files on disk.
@@ -22,7 +22,7 @@ Ignore and untrack the local Advisor settings and operational workflow state whi
 4. No other paths are generalized by the ignore rules.
 
 <!-- guarana:record:start -->
-Status: VALIDATED
-Proof: Independent worker-verify overall PASS.; guarana specs validate . --json: ok true, 162 files, 0 issues.; Root-anchored .gitignore entries at lines 47-48; git check-ignore -v matched both requested paths.; git ls-files lists neither requested path; both local files exist.; Git status shows .gitignore modified and index deletions only; local contents are preserved.; No commit or push was made.
+Status: SHIPPED
+Proof: Commit 99ea06b (chore(gitignore): ignore local Advisor and workflow state) is on origin/main; HEAD equals origin/main at 99ea06b.; Independent worker-verify PASS confirmed the commit contains only intended .gitignore rules, index removals, and spec bookkeeping.; Both local files remain present, ignored, and untracked; working tree is clean.; Specs validator: 162 files, 0 issues.; User explicitly authorized commit and push.
 Change: none
 <!-- guarana:record:end -->
