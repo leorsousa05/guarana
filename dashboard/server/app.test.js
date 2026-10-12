@@ -307,6 +307,8 @@ describe('GET /api/skills', () => {
     assert.deepEqual(body.global.map((skill) => skill.name), ['review-release-candidate']);
     assert.deepEqual(body.project.map((skill) => skill.name), ['project-build-review']);
     assert.equal(body.project[0].content, shared.content);
+    assert.equal('revision' in body.global[0], false);
+    assert.equal('revision' in body.project[0], false);
     assert.equal(JSON.stringify(body).includes(tmp), false);
     assert.equal(JSON.stringify(body).includes('manual-skill'), false);
   });

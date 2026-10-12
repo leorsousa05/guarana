@@ -20,16 +20,18 @@ const MEMORY_POLICY = [
   '- Global preferences are injected at session start and after context compaction; project memories are task-relevant. Do not claim a save succeeded unless the memory tool succeeds.',
   '',
   '## Guarana automatic skills',
-  'After completing task work and before the final response, assess whether what surfaced is likely to help with similar future work. One task can reveal reusable context; do not wait for repeated requests, an explicit checklist, or an explicit skill-creation command.',
-  '- Create a concise skill when work surfaces reusable workflow, project knowledge, conventions, or context, including explanations of application architecture/components and how to work with or change them. This is a positive trigger even when the user did not explicitly ask for or document a procedure.',
-  '- Repeatable sequences/checklists, specialized recurring checks, and corrections meant to guide similar future work are also positive triggers.',
-  '- Example to create: "For dashboard changes in this repo, inspect the component and API, preserve ledger styling and keyboard behavior, then rebuild and test." This is a project skill.',
+  'After completing task work and before the final response, assess whether what surfaced is likely to help with similar future work.',
+  '- A skill is a durable domain or workflow playbook: reusable procedures, conventions, focused checks, or stable project context that helps with future work.',
+  '- For every candidate skill, always call `skill_list` across both scopes and compare existing generated skills semantically before choosing an action.',
+  '- Prefer enriching a semantically fitting existing macro skill with `skill_update`; use the exact `revision` value from that `skill_list` entry as `expectedRevision` so stale edits are rejected.',
+  '- Use `skill_create` only for a genuinely distinct reusable domain or workflow, not merely a screen, route, or task-specific detail. Add narrow guidance to the broader fitting skill instead of creating a micro-skill.',
+  '- A single task is sufficient only when it reveals a durable, broad procedure likely to guide similar future work; repeated requests are not required.',
   '- Do not create for one-off deliverables, temporary acceptance criteria, generic best practices, or a simple task. A request being long, technical, or complex is not itself a signal. Example: "Rewrite this paragraph as three bullets" is one-off.',
   '- If future reuse is ambiguous, do not create a skill. Durable preferences and decisions belong in memory; skills capture reusable procedures or project context. Do not duplicate the same content across both.',
-  '- Call `skill_list` to check Guarana-generated skills in both scopes and avoid semantic duplicates. The create tool rejects name collisions with any existing skill; if that happens, choose a distinct name and never overwrite the existing skill.',
-  '- When a reusable procedure or project context is clear, call `skill_create` with concise, complete OpenCode skill instructions. Do not wait for a special command or extra approval, and never claim creation unless the tool succeeds.',
+  '- When no existing skill fits and the reusable domain or workflow is clear, call `skill_create` with concise, complete OpenCode skill instructions. Never overwrite a manual skill or claim success unless the skill tool succeeds.',
+  '- Never update manual skills. `skill_update` only accepts an existing Guarana-generated skill with matching name and scope.',
+  '- Never copy secrets, credentials, private data, or raw conversation transcripts into a skill.',
   '- Choose `project` for repository-specific conventions, tools, or architecture. Choose `global` for portable procedures that apply across projects or the user’s general workflow.',
-  '- Never copy secrets, credentials, private data, or raw conversation transcripts into a skill. If the skill already exists, improve the existing procedure in conversation rather than overwriting it.',
   '- A new skill is saved in an OpenCode-discoverable directory and will be available through normal skill discovery on later turns/sessions.',
 ].join('\n');
 
@@ -219,9 +221,11 @@ export const GuaranaMemory = async ({ directory }) => {
         const scope = options.scope || 'both';
         if (!['project', 'global', 'both'].includes(scope))
           return JSON.stringify({ error: 'scope must be project, global, or both' });
-        const skills = e.skills.listSkills({ projectDir: directory });
+        const skills = e.skills.listSkills({ projectDir: directory, includeRevision: true });
         return JSON.stringify(scope === 'both' ? skills : { [scope]: skills[scope] });
       }
+      if (handlerName === 'skillUpdate')
+        return JSON.stringify(e.skills.updateSkill({ ...options, projectDir: directory }));
       return JSON.stringify(e.skills.createSkill({ ...options, projectDir: directory }));
     } catch (err) {
       try { recordError(err); } catch { /* swallow */ }
@@ -238,7 +242,7 @@ export const GuaranaMemory = async ({ directory }) => {
       execute: runSkillTool('skillList'),
     },
     skill_create: {
-      description: 'Create a reusable OpenCode skill when task work surfaces a clear procedure or reusable application/project context. Never use for one-off work; inspect skill_list first.',
+      description: 'Create a skill only for a genuinely distinct reusable domain or workflow after inspecting skill_list; do not create screen-, route-, or task-specific duplicates.',
       args: {
         name: { type: 'string', description: 'lowercase kebab-case skill name' },
         description: { type: 'string', description: 'one-line OpenCode skill description' },
@@ -246,6 +250,17 @@ export const GuaranaMemory = async ({ directory }) => {
         content: { type: 'string', description: 'complete Markdown procedure for the SKILL.md body, without frontmatter' },
       },
       execute: runSkillTool('skillCreate'),
+    },
+    skill_update: {
+      description: 'Enrich an existing Guarana-generated skill after inspecting skill_list; expectedRevision must be copied from that listed skill to reject stale updates. Manual skills are never overwritten.',
+      args: {
+        name: { type: 'string', description: 'lowercase kebab-case name of the existing skill' },
+        description: { type: 'string', description: 'updated one-line OpenCode skill description' },
+        scope: { type: 'string', enum: ['project', 'global'], description: 'must match the existing skill scope' },
+        content: { type: 'string', description: 'complete replacement Markdown procedure, without frontmatter' },
+        expectedRevision: { type: 'string', description: 'SHA-256 revision for this skill from skill_list; required optimistic-concurrency token' },
+      },
+      execute: runSkillTool('skillUpdate'),
     },
     memory_search: {
       description:

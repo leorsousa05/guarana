@@ -60,15 +60,13 @@ describe('GuaranaMemory', () => {
     assert.match(output.system.join('\n'), /Guarana automatic skills/);
     assert.match(output.system.join('\n'), /skill_list/);
     assert.match(output.system.join('\n'), /After completing task work and before the final response, assess/i);
-    assert.match(output.system.join('\n'), /One task can reveal reusable context/i);
-    assert.match(output.system.join('\n'), /do not wait for repeated requests, an explicit checklist, or an explicit skill-creation command/i);
-    assert.match(output.system.join('\n'), /reusable workflow, project knowledge, conventions, or context/i);
-    assert.match(output.system.join('\n'), /application architecture\/components and how to work with or change them/i);
-    assert.match(output.system.join('\n'), /positive trigger even when the user did not explicitly ask/i);
-    assert.match(output.system.join('\n'), /Repeatable sequences\/checklists/);
-    assert.match(output.system.join('\n'), /specialized recurring checks/);
-    assert.match(output.system.join('\n'), /corrections meant to guide similar future work are also positive triggers/);
-    assert.match(output.system.join('\n'), /Example to create:/);
+    assert.match(output.system.join('\n'), /A skill is a durable domain or workflow playbook/i);
+    assert.match(output.system.join('\n'), /always call `skill_list` across both scopes/i);
+    assert.match(output.system.join('\n'), /Prefer enriching a semantically fitting existing macro skill with `skill_update`/i);
+    assert.match(output.system.join('\n'), /`revision` value .* as `expectedRevision`/i);
+    assert.match(output.system.join('\n'), /only for a genuinely distinct reusable domain or workflow/i);
+    assert.match(output.system.join('\n'), /not merely a screen, route, or task-specific detail/i);
+    assert.match(output.system.join('\n'), /single task is sufficient only when it reveals a durable, broad procedure/i);
     assert.match(output.system.join('\n'), /is one-off\./);
     assert.match(output.system.join('\n'), /temporary acceptance criteria/);
     assert.match(output.system.join('\n'), /generic best practices/);
@@ -77,10 +75,9 @@ describe('GuaranaMemory', () => {
     assert.match(output.system.join('\n'), /If future reuse is ambiguous, do not create a skill/i);
     assert.match(output.system.join('\n'), /preferences and decisions belong in memory/i);
     assert.match(output.system.join('\n'), /Do not duplicate the same content across both/);
-    assert.match(output.system.join('\n'), /Call `skill_list` to check Guarana-generated skills in both scopes and avoid semantic duplicates/i);
-    assert.match(output.system.join('\n'), /choose a distinct name and never overwrite the existing skill/i);
-    assert.match(output.system.join('\n'), /skill_create/);
-    assert.match(output.system.join('\n'), /When a reusable procedure or project context is clear, call `skill_create`/);
+    assert.match(output.system.join('\n'), /When no existing skill fits .* call `skill_create`/i);
+    assert.match(output.system.join('\n'), /Never update manual skills/i);
+    assert.match(output.system.join('\n'), /only accepts an existing Guarana-generated skill with matching name and scope/i);
     assert.match(output.system.join('\n'), /Choose `project`/);
     assert.match(output.system.join('\n'), /Choose `global`/);
     assert.match(output.system.join('\n'), /Never copy secrets, credentials, private data, or raw conversation transcripts/i);
@@ -175,7 +172,30 @@ describe('GuaranaMemory', () => {
 
     const listing = JSON.parse(await api.tool.skill_list.execute({}));
     assert.deepEqual(listing.project.map((skill) => skill.name), ['node-red-review']);
+    assert.match(listing.project[0].revision, /^[a-f0-9]{64}$/);
     assert.equal(JSON.stringify(listing).includes(tmpDir), false);
+    assert.equal(api.tool.skill_update.args.expectedRevision.type, 'string');
+    assert.match(api.tool.skill_update.description, /skill_list.*expectedRevision/i);
+    const updated = JSON.parse(await api.tool.skill_update.execute({
+      name: 'node-red-review',
+      description: 'Review, validate, and document Node-RED flows.',
+      scope: 'project',
+      content: '# Node-RED review\n\nInspect nodes, validate wiring, run focused checks, and record the outcome.',
+      expectedRevision: listing.project[0].revision,
+    }));
+    assert.equal(updated.updated, true);
+    const updatedListing = JSON.parse(await api.tool.skill_list.execute({}));
+    assert.equal(updatedListing.project[0].description, 'Review, validate, and document Node-RED flows.');
+    assert.match(updatedListing.project[0].content, /record the outcome/);
+    const stale = JSON.parse(await api.tool.skill_update.execute({
+      name: 'node-red-review',
+      description: 'A stale replacement.',
+      scope: 'project',
+      content: '# Stale\n\nThis must not replace the current skill.',
+      expectedRevision: listing.project[0].revision,
+    }));
+    assert.match(stale.error, /changed since skill_list/);
+    assert.equal(JSON.parse(await api.tool.skill_list.execute({})).project[0].description, updatedListing.project[0].description);
   });
 
   it('stores portable skills globally and keeps them out of the project scope', async () => {
