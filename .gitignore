@@ -42,3 +42,7 @@ archive-0w9fZ3/
 .specs/state/telemetry/
 .guarana/memory/
 .guarana/install-manifest.json
+
+# Local Guarana settings and operational workflow state
+/.guarana/advisor.json
+/.specs/state/workflow.json
