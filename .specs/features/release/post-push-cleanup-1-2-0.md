@@ -1,6 +1,6 @@
 # Feature spec: Guarana 1.2.0 post-push worktree cleanup
 
-**Status: TASKED**
+**Status: VALIDATED**
 
 ## Goal
 Record the bounded post-push worktree cleanup: preserve the local archive, ignore only its exact directory, and keep tracked workflow state as active operational data while preparing a narrowly scoped cleanup commit.
@@ -15,7 +15,7 @@ Record the bounded post-push worktree cleanup: preserve the local archive, ignor
 - This worker-specs handoff updates human-readable records only and performs no source edits, workflow-state writes/restoration, staging, commit, push, or independent verification.
 - Implementation is complete: .gitignore contains the exact archive-0w9fZ3/ rule, git check-ignore confirms the tarball is ignored, and the archive remains on disk.
 - .specs/state/workflow.json is tracked operational state; active workflow transitions regenerated it after an earlier restoration. Leave its current diff alone and keep the file outside the index; do not restore it again during this task.
-- Final primary Git review and commit/push remain pending. The 1.2.0 candidate remains VALIDATED, not SHIPPED; no tag or npm publish is in scope.
+- The cleanup implementation was committed as 98ec5dd67a74d58b03fe32601b2e12b1f6c91415 (`chore(gitignore): ignore local archive artifact`) and the independent verifier confirms HEAD and origin/main both equal that commit. The commit contains only the intended ignore rule and cleanup records. Independent worker-verify has since passed; its exact result is recorded below. The 1.2.0 candidate remains VALIDATED, not SHIPPED; no 1.2.0 tag exists and `npm view` returned E404.
 
 ## Acceptance criteria
 1. git check-ignore confirms archive-0w9fZ3/ is ignored by the exact .gitignore entry, and the local archive remains present.
@@ -24,7 +24,7 @@ Record the bounded post-push worktree cleanup: preserve the local archive, ignor
 4. No Git tag or npm publish occurs, and the 1.2.0 candidate remains VALIDATED rather than SHIPPED.
 
 <!-- guarana:record:start -->
-Status: TASKED
-Proof: none
+Status: VALIDATED
+Proof: Independent worker-verify PASS: HEAD and origin/main both equal 98ec5dd67a74d58b03fe32601b2e12b1f6c91415 (chore(gitignore): ignore local archive artifact).; git diff-tree shows exactly four committed paths: .gitignore, .specs/README.md, .specs/features/release/post-push-cleanup-1-2-0.md, and .specs/state/project-state.md; .specs/state/workflow.json and archive-0w9fZ3/ are absent from the commit.; git check-ignore -v confirms .gitignore:39:archive-0w9fZ3/ matches the tarball; archive remains on disk.; No 1.2.0 tag exists; npm view returned E404; the candidate remains VALIDATED, not SHIPPED.; Specs validation PASS: 159 files, 42 feature specs, 30 ADRs, 205 links, 0 issues.; Worker-verify observed post-commit changes in the three human-readable records plus operational workflow.json; these are not in HEAD, and no subsequent push is claimed.
 Change: none
 <!-- guarana:record:end -->
