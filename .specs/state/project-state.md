@@ -24,7 +24,7 @@ Last updated: 2026-10-11 (dashboard redesign validated; CLI refactor remains TAS
 | Guarana optional model advisor | **VALIDATED** — UI criteria 11–14 and ADR-027 runtime proof |
 
 ## Current step
-Final independent end-to-end verification completed; feature status is VALIDATED, not SHIPPED.
+Post-push milestone recorded: HEAD and origin/main both equal 4b7a9a6c2814dffd18cbafe28d4af795617257a5.
 
 ## Dashboard redesign final validation — 2026-10-11
 

@@ -1,6 +1,6 @@
 # Feature spec: Dashboard telemetry refresh performance refactor
 
-**Status: VALIDATED**
+**Status: SHIPPED**
 
 ## Goal
 Stop dashboard refresh stalls by avoiding repeated full-history telemetry parsing and redundant SSE-triggered requests.
@@ -25,7 +25,7 @@ Stop dashboard refresh stalls by avoiding repeated full-history telemetry parsin
 5. Telemetry tests, app/API tests, npm test, npm run build, npm run check-cli, and npm run specs:validate pass.
 
 <!-- guarana:record:start -->
-Status: VALIDATED
-Proof: Independent native worker-verify, separate from worker-code: overall PASS.; Cache PASS: unchanged readJsonl requests invoke fs.readSync for zero bytes; append, partial-line completion, malformed lines, truncation, replacement, same-size rewrite (8-byte-to-8-byte direct runtime check), missing and recreation tested. Paths: dashboard/server/lib/telemetry.test.js:24-58, dashboard/server/lib/telemetry.js:13-35.; API PASS: legacy single-session GET returns {events:[...]}; repeated session params return union. Paths: dashboard/server/app.test.js:89-95, dashboard/server/routes/telemetry.js:22-26.; UI PASS: App uses one multi-session request, effect deps exclude liveTick, initial and 5-second polling remain; Activity still gets liveTick. Path: dashboard/web/src/App.jsx:51-77,92-94.; Payload/cache aggregation PASS: summary/history tests at dashboard/server/lib/telemetry.test.js:62-149.; Bundle PASS: npm run check-cli says canonical sources match.; Focused node --test dashboard/server/lib/telemetry.test.js dashboard/server/app.test.js: 34 passed, 0 failed; npm test: 443 passed, 0 failed (one WebSocket port-in-use warning, exit 0); npm run build, npm run check-cli, npm run specs:validate, git diff --check all passed; guarana specs validate . --json: ok true, 160 files, 0 issues.; No live service restart. The intermediate verification failure is superseded by the independent overall PASS.
+Status: SHIPPED
+Proof: Commit 4b7a9a6c2814dffd18cbafe28d4af795617257a5 was pushed successfully to origin/main.; git rev-parse HEAD and origin/main both equal 4b7a9a6c2814dffd18cbafe28d4af795617257a5.; The 23-path commit includes the validated proactive Advisor guidance and telemetry refresh refactor plus stale managed-profile hash reconciliation.; Human explicitly authorized commit/push.
 Change: none
 <!-- guarana:record:end -->

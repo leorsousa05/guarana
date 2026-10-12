@@ -1,6 +1,6 @@
 # Feature spec: Advisor proactive consultation guidance
 
-**Status: VALIDATED**
+**Status: SHIPPED**
 
 ## Goal
 Update the generated Guarana primary profile policy to proactively encourage useful read-only Advisor consultation during planning and other meaningful decision points when Advisor is enabled and configured.
@@ -25,7 +25,7 @@ Update the generated Guarana primary profile policy to proactively encourage use
 4. node --test cli/lib/advisor.test.js and relevant orchestrator tests pass.
 
 <!-- guarana:record:start -->
-Status: VALIDATED
-Proof: Independent native worker-verify result ses_ecebd5162ffevYgBGn2dxeVMq9: overall PASS on all criteria.; Both direct opencode run --agent guarana --format json --dir <temp> --auto <same synthetic planning prompt> runs exited 0; worker-code execution result ses_ececa9d36ffegAJB8RQBm0bWk5.; Persisted exports /tmp/opencode/enabled.json and /tmp/opencode/disabled.json prove both parents are guarana and finish stop; enabled parent has completed native Task targeting guarana-advisor, whose child session /tmp/opencode/advisor-child.json finishes stop with nonempty assistant response; disabled parent has zero Task calls or children.; Persisted user prompts are byte-identical, one each, 658 bytes, SHA-256 9997503f615ea52053717011b029d29f1b428d9e324695129ab0f5ccf3a4084e; the earlier disabled attempt with a different prompt was superseded.; Fixture project advisor.enabled was the only setting difference; effective models matched. Temporary roots were deleted; read-only current check confirms root Advisor remains enabled/configured and all artifacts ok (up to date).; No user/project settings or source files were changed by the runs; traces contain no shell/edit calls.
+Status: SHIPPED
+Proof: Commit 4b7a9a6c2814dffd18cbafe28d4af795617257a5 was pushed successfully to origin/main.; git rev-parse HEAD and origin/main both equal 4b7a9a6c2814dffd18cbafe28d4af795617257a5.; The 23-path commit includes the validated proactive Advisor guidance and telemetry refresh refactor plus stale managed-profile hash reconciliation.; Human explicitly authorized commit/push.
 Change: none
 <!-- guarana:record:end -->
