@@ -73,6 +73,11 @@ function preflight(useProject, action, suppliedManifestPlan, options = {}) {
     group,
     entriesByGroup[group] ? new Map(entriesByGroup[group].map((entry) => [entry.path, entry.sha256])) : null,
   ]));
+  const desired = { workers: workerProfiles, advisor: advisorProfilesToWrite };
+  const desiredByPath = Object.fromEntries(GROUPS.map((group) => [
+    group,
+    new Map(desired[group].map((artifact) => [artifact.path, artifact.content])),
+  ]));
 
   const seen = new Set();
   for (const group of GROUPS) {
@@ -88,12 +93,13 @@ function preflight(useProject, action, suppliedManifestPlan, options = {}) {
     for (const [relative, expected] of tracked) {
       const current = engineArtifacts.inspectArtifact(root, relative, action, group);
       if (current && current.sha256 !== expected) {
+        const desiredContent = action === 'install' ? desiredByPath[group].get(relative) : undefined;
+        if (desiredContent !== undefined && fs.readFileSync(current.target).equals(Buffer.from(desiredContent, 'utf8'))) continue;
         throw new Error(`refuse to ${action}: managed ${group} profile was modified: ${current.target}`);
       }
     }
   }
 
-  const desired = { workers: workerProfiles, advisor: advisorProfilesToWrite };
   const desiredByGroup = Object.fromEntries(GROUPS.map((group) => [
     group,
     new Set(desired[group].map((artifact) => artifact.path)),

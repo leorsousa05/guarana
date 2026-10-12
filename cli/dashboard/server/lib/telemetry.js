@@ -1,24 +1,52 @@
 import fs from 'node:fs';
 import { EVENTS_FILE } from './constants.js';
 
+const snapshots = new Map();
+const MAX_SNAPSHOTS = 16;
+function parseLines(text, events) {
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try { events.push(JSON.parse(trimmed)); } catch { /* skip malformed line */ }
+  }
+}
+function snapshotFor(file) {
+  let stat;
+  try { stat = fs.statSync(file, { bigint: true }); } catch { snapshots.delete(file); return null; }
+  const old = snapshots.get(file);
+  const reload = !old || old.ino !== stat.ino || old.dev !== stat.dev || stat.size < BigInt(old.offset) || (old.offset > 0 && (old.mtimeNs !== stat.mtimeNs || old.ctimeNs !== stat.ctimeNs) && stat.size === BigInt(old.offset));
+  const snap = reload ? { events: [], offset: 0, pending: '', ino: stat.ino, dev: stat.dev, mtimeNs: stat.mtimeNs, ctimeNs: stat.ctimeNs } : old;
+  if (stat.size > BigInt(snap.offset)) {
+    const fd = fs.openSync(file, 'r');
+    try {
+      const length = Number(stat.size - BigInt(snap.offset));
+      const bytes = Buffer.alloc(length);
+      fs.readSync(fd, bytes, 0, length, snap.offset);
+      snap.offset += length;
+      const text = snap.pending + bytes.toString('utf8');
+      const newline = text.lastIndexOf('\n');
+      if (newline < 0) snap.pending = text;
+      else { parseLines(text.slice(0, newline), snap.events); snap.pending = text.slice(newline + 1); }
+    } finally { fs.closeSync(fd); }
+  }
+  snap.ino = stat.ino; snap.dev = stat.dev; snap.mtimeNs = stat.mtimeNs; snap.ctimeNs = stat.ctimeNs;
+  snapshots.delete(file); snapshots.set(file, snap);
+  if (snapshots.size > MAX_SNAPSHOTS) snapshots.delete(snapshots.keys().next().value);
+  return snap;
+}
+
 /**
  * Read a newline-delimited JSON file into an array of objects.
  * Malformed lines are skipped; missing files return an empty array.
  */
 export function readJsonl(file) {
   try {
-    const text = fs.readFileSync(file, 'utf8');
-    const events = [];
-    for (const line of text.split('\n')) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      try {
-        events.push(JSON.parse(trimmed));
-      } catch {
-        // skip malformed line
-      }
+    const snapshot = snapshotFor(file);
+    if (!snapshot) return [];
+    if (snapshot.pending.trim()) {
+      try { return [...snapshot.events, JSON.parse(snapshot.pending.trim())]; } catch { /* incomplete or malformed trailing line */ }
     }
-    return events;
+    return snapshot.events;
   } catch {
     return [];
   }

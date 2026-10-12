@@ -20,6 +20,43 @@ describe('readJsonl', () => {
     assert.equal(events[1].type, 'tokens');
     fs.rmSync(dir, { recursive: true, force: true });
   });
+
+  it('caches unchanged reads, completes partial lines, and reloads rewrites and recovered files', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-cache-'));
+    const file = path.join(dir, 'events.jsonl');
+    fs.writeFileSync(file, '{"n":1}\n{"n":', 'utf8');
+    assert.deepEqual(readJsonl(file), [{ n: 1 }]);
+    const originalRead = fs.readSync;
+    let bytesRead = 0;
+    fs.readSync = function (...args) {
+      const count = originalRead.apply(this, args);
+      bytesRead += count;
+      return count;
+    };
+    try {
+      readJsonl(file);
+      assert.equal(bytesRead, 0, 'unchanged snapshots must not read file bytes');
+      fs.appendFileSync(file, '2}\nnot json\n{"n":3}\n', 'utf8');
+      assert.deepEqual(readJsonl(file), [{ n: 1 }, { n: 2 }, { n: 3 }]);
+      fs.writeFileSync(file, '{"n":4}\n{"n":5}\n', 'utf8');
+      assert.deepEqual(readJsonl(file), [{ n: 4 }, { n: 5 }]);
+      fs.truncateSync(file, 0);
+      assert.deepEqual(readJsonl(file), []);
+      fs.writeFileSync(file, '{"n":7}\n', 'utf8');
+      assert.deepEqual(readJsonl(file), [{ n: 7 }]);
+      const replacement = path.join(dir, 'replacement.jsonl');
+      fs.writeFileSync(replacement, '{"n":8}\n', 'utf8');
+      fs.renameSync(replacement, file);
+      assert.deepEqual(readJsonl(file), [{ n: 8 }]);
+      fs.unlinkSync(file);
+      assert.deepEqual(readJsonl(file), []);
+      fs.writeFileSync(file, '{"n":6}\n', 'utf8');
+      assert.deepEqual(readJsonl(file), [{ n: 6 }]);
+    } finally {
+      fs.readSync = originalRead;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('summarize', () => {

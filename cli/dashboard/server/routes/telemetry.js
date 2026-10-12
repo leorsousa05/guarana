@@ -20,9 +20,9 @@ export function createTelemetryRouter({ root }) {
   });
 
   router.get('/events', (req, res) => {
-    const session = req.query.session;
+    const sessions = (Array.isArray(req.query.session) ? req.query.session : [req.query.session]).filter((s) => typeof s === 'string').slice(0, 5);
     const events = readJsonl(telemetryFile);
-    const filtered = typeof session === 'string' ? events.filter((e) => e.sessionID === session) : events;
+    const filtered = sessions.length ? events.filter((e) => sessions.includes(e.sessionID)) : events;
     res.json({ events: filtered });
   });
 

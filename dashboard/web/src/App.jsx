@@ -25,9 +25,9 @@ export function viewFromHash() {
 export default function App() {
   const liveTick = useLiveTick('/api/telemetry/stream');
   const summary = usePoll('/api/telemetry/summary', 5000, liveTick);
-  const state = usePoll('/api/specs/state', 5000, liveTick);
-  const tracker = usePoll('/api/specs/tracker', 5000, liveTick);
-  const workflow = usePoll('/api/workflow/current', 5000, liveTick);
+  const state = usePoll('/api/specs/state', 5000);
+  const tracker = usePoll('/api/specs/tracker', 5000);
+  const workflow = usePoll('/api/workflow/current', 5000);
   const [active, setActive] = useState(viewFromHash);
   const [mergedEvents, setMergedEvents] = useState([]);
 
@@ -59,11 +59,10 @@ export default function App() {
     const load = async () => {
       const ids = recentIDs.split(',');
       try {
-        const results = await Promise.all(
-          ids.map((id) => fetch(`/api/telemetry/events?session=${encodeURIComponent(id)}`).then((r) => r.json()))
-        );
+        const query = ids.map((id) => `session=${encodeURIComponent(id)}`).join('&');
+        const result = await fetch(`/api/telemetry/events?${query}`).then((r) => r.json());
         if (cancelled) return;
-        const merged = results.flatMap((r) => r.events || []).sort((a, b) => (a.ts ?? 0) - (b.ts ?? 0));
+        const merged = (result.events || []).sort((a, b) => (a.ts ?? 0) - (b.ts ?? 0));
         setMergedEvents(merged);
       } catch {
         /* keep last good data */
@@ -75,7 +74,7 @@ export default function App() {
       cancelled = true;
       clearInterval(id);
     };
-  }, [recentIDs, liveTick]);
+  }, [recentIDs]);
 
   const lastEventTs = mergedEvents.length ? mergedEvents[mergedEvents.length - 1].ts : null;
   return (

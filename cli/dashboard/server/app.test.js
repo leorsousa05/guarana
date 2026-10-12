@@ -85,6 +85,14 @@ describe('GET /api/telemetry/stream (SSE)', () => {
     controller.abort();
     await pump.catch(() => {});
   });
+
+  it('keeps single-session events compatible and supports up to five repeated sessions', async () => {
+    fs.writeFileSync(eventsFile, ['a', 'b', 'c', 'd', 'e', 'f'].map((sessionID, ts) => JSON.stringify({ sessionID, ts })).join('\n') + '\n');
+    const one = await (await fetch(`${base}/api/telemetry/events?session=b`)).json();
+    assert.deepEqual(one, { events: [{ sessionID: 'b', ts: 1 }] });
+    const many = await (await fetch(`${base}/api/telemetry/events?session=a&session=b&session=c&session=d&session=e&session=f`)).json();
+    assert.deepEqual(many.events.map((event) => event.sessionID), ['a', 'b', 'c', 'd', 'e']);
+  });
 });
 
 describe('GET/POST /api/memory', () => {

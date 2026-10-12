@@ -9,7 +9,8 @@ const settings = require('./advisor-settings.js');
 const profiles = require('./advisor-profiles.js');
 const advisorCommand = require('../commands/advisor.js');
 const pluginCommand = require('../commands/plugin.js');
-const { advisorSettingsTarget, advisorCommandTarget, advisorAgentsTarget, advisorSubagentTarget, legacyAdvisorAgentsTarget } = require('./paths.js');
+const { advisorSettingsTarget, advisorCommandTarget, advisorAgentsTarget, advisorSubagentTarget, legacyAdvisorAgentsTarget, installManifestTarget } = require('./paths.js');
+const engineArtifacts = require('./engine-artifacts.js');
 const { HELP } = require('../help.js');
 
 function captureStreams() {
@@ -141,12 +142,15 @@ test('generated project/global native command and agents carry configured models
     assert.match(primary, /configured model and variant are agent\/profile defaults only/);
     assert.match(primary, /Explicit or remembered OpenCode session model\/variant selections prevail; do not override them/);
     assert.match(command, /configured Guarana primary profile/i);
-    assert.match(primary, /only when you cannot make feasible progress/i);
-    assert.match(primary, /relevant tool failures\/retries show that you are blocked/i);
+    assert.match(primary, /substantial or ambiguous tasks, consider proactively consulting/i);
+    assert.match(primary, /meaningful question, assumption, risk, architecture choice, or trade-off/i);
+    assert.match(primary, /At later consequential stages—including execution, debugging, or verification/i);
+    assert.match(primary, /do not wait until blocked/i);
+    assert.match(primary, /Keep trivial and routine tasks consultation-free/i);
     assert.match(primary, /exact relevant failure\/tool output/i);
     assert.match(primary, /Task description to a brief reason advice is needed now \(3–5 words\), not the overall task title/i);
     assert.match(primary, /For a consultation, send only a concise summary containing the request\/goal, current workflow state and progress, meaningful attempts already made, and the exact relevant failure\/tool output/);
-    assert.match(primary, /at most one Task consultation for an unchanged blocking episode/i);
+    assert.match(primary, /at most one Task consultation for an unchanged context/i);
     assert.match(primary, /unavailable, denied, or fails/i);
     assert.match(primary, /continue independently if feasible or ask the user/i);
     assert.match(primary, /Never invent advice or claim a handoff succeeded/i);
@@ -223,6 +227,39 @@ test('foreign files block generation; modified tracked profile content blocks un
   });
 });
 
+test('install accepts a stale tracked profile hash only when bytes match desired content', () => {
+  isolated(() => {
+    profiles.installAdvisorArtifacts(true);
+    const manifestFile = installManifestTarget(true);
+    const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+    const command = manifest.advisor.find(({ path: relative }) => relative.endsWith('commands/guarana-advisor.md'));
+    assert.ok(command);
+    command.sha256 = '0'.repeat(64);
+    engineArtifacts.writeManifest(manifestFile, manifest);
+
+    profiles.installAdvisorArtifacts(true);
+    const updated = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+    const updatedCommand = updated.advisor.find(({ path: relative }) => relative === command.path);
+    assert.equal(updatedCommand.sha256, engineArtifacts.hash(fs.readFileSync(advisorCommandTarget(true))));
+  });
+});
+
+test('install refuses stale tracked profile hash when current bytes differ from desired content', () => {
+  isolated(() => {
+    profiles.installAdvisorArtifacts(true);
+    const manifestFile = installManifestTarget(true);
+    const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+    const command = manifest.advisor.find(({ path: relative }) => relative.endsWith('commands/guarana-advisor.md'));
+    assert.ok(command);
+    command.sha256 = '0'.repeat(64);
+    engineArtifacts.writeManifest(manifestFile, manifest);
+    fs.appendFileSync(advisorCommandTarget(true), 'modified');
+
+    assert.throws(() => profiles.installAdvisorArtifacts(true), /managed advisor profile was modified/);
+    assert.equal(fs.readFileSync(advisorCommandTarget(true), 'utf8').endsWith('modified'), true);
+  });
+});
+
 test('missing Primary settings install an actionable setup-only command without binding or processing task arguments', () => {
   isolated(() => {
     const result = profiles.installAdvisorArtifacts(true);
@@ -254,6 +291,8 @@ test('Primary-only settings generate the guarana primary profile but no Advisor 
     assert.equal(result.installed.length, 2);
     assert.match(fs.readFileSync(advisorCommandTarget(true), 'utf8'), /agent: guarana/);
     assert.match(fs.readFileSync(advisorAgentsTarget(true), 'utf8'), /mode: primary/);
+    assert.match(fs.readFileSync(advisorAgentsTarget(true), 'utf8'), /Do not consult or encourage consultation while Advisor is disabled or unconfigured/i);
+    assert.doesNotMatch(fs.readFileSync(advisorAgentsTarget(true), 'utf8'), /consider proactively consulting/i);
     assert.equal(fs.existsSync(advisorSubagentTarget(true)), false);
     assert.deepEqual(profiles.advisorArtifactStatus(true).map(({ status }) => status), [
       'ok (up to date)', 'ok (up to date)', 'not installed',
@@ -271,6 +310,9 @@ test('disabling Advisor removes its managed profile and retains the Guarana prim
     settings.setSetting(true, 'advisor.enabled', false);
     profiles.installAdvisorArtifacts(true);
     assert.equal(fs.existsSync(advisorAgentsTarget(true)), true);
+    const primary = fs.readFileSync(advisorAgentsTarget(true), 'utf8');
+    assert.match(primary, /Do not consult or encourage consultation while Advisor is disabled or unconfigured/i);
+    assert.doesNotMatch(primary, /consider proactively consulting/i);
     assert.equal(fs.existsSync(advisorSubagentTarget(true)), false);
     assert.match(fs.readFileSync(advisorCommandTarget(true), 'utf8'), /agent: guarana/);
     assert.deepEqual(profiles.advisorArtifactStatus(true).map(({ status }) => status), [

@@ -168,6 +168,6 @@ Record a complete, phased, behavior-preserving plan to refactor the Guarana CLI 
 
 <!-- guarana:record:start -->
 Status: VALIDATED
-Proof: Independent worker-verify overall PASS, criteria A-G; exact combined-tree verification covered registry/help/pure parsers and selector semantics, numeric handler contract and injected I/O, lifecycle ownership manifests and full rollback across project/global install/update/uninstall/plugin/dashboard, and specs parser/domain/changePath safety.; npm test PASS (431/431) on Node 24.20.0 and via ephemeral node@22 Node 22.23.3; no repository dependency was added. npm run check-cli PASS.; npm pack --dry-run --json produced guarana-1.1.0.tgz with 122 files, no packaged node_modules, and required assets; npm run smoke:pack PASS.; Final specs validator PASS: 149 files, 33 feature specs, 30 ADRs, 219 links, 0 issues.; Recorded package, foreign-artifact, Advisor, and changePath issues are resolved; stale Advisor-test caveat remains documented.; OpenCode host smoke is release-only and was not run. ADR-031 write was denied by worker edit ACL and not retried; selector decision remains in the feature plan and confirmed project memory. No commit, release, or SHIPPED claim is made.
+Proof: Independent worker-verify PASSED all three criteria for this bounded slice.; node --test cli/lib/advisor.test.js: 18 passed, 0 failed.; guarana specs validate . --json: ok true, 159 files scanned, 0 issues.; Evidence: cli/lib/profile-artifacts.js:93-99,185-188; cli/lib/advisor.test.js:220-259.
 Change: none
 <!-- guarana:record:end -->

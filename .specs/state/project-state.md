@@ -24,7 +24,7 @@ Last updated: 2026-10-11 (dashboard redesign validated; CLI refactor remains TAS
 | Guarana optional model advisor | **VALIDATED** — UI criteria 11–14 and ADR-027 runtime proof |
 
 ## Current step
-Independent worker-verify PASS: HEAD and origin/main both equal 98ec5dd67a74d58b03fe32601b2e12b1f6c91415 (chore(gitignore): ignore local archive artifact). git diff-tree lists exactly .gitignore, .specs/README.md, .specs/features/release/post-push-cleanup-1-2-0.md, and .specs/state/project-state.md; workflow.json and archive-0w9fZ3/ are absent from the commit. git check-ignore -v confirms .gitignore:39:archive-0w9fZ3/ matches the tarball; archive remains on disk. No 1.2.0 tag exists; npm view returned E404. Specs validation PASS: 159 files, 42 feature specs, 30 ADRs, 205 links, 0 issues. The verifier observed post-commit changes in the three human-readable records plus operational workflow.json; these are not in HEAD, and no subsequent push is claimed. The candidate remains VALIDATED, not SHIPPED.
+Final independent end-to-end verification completed; feature status is VALIDATED, not SHIPPED.
 
 ## Dashboard redesign final validation — 2026-10-11
 

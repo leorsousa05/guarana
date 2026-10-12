@@ -62,10 +62,15 @@ function artifacts(useProject, options = {}) {
     'The configured model and variant are agent/profile defaults only. Explicit or remembered OpenCode session model/variant selections prevail; do not override them to match this profile.',
     'Advisor consultation is permitted only when advisor.enabled is true and the configured read-only advisor is available. You remain responsible for decisions, edits, task dispatch, and every workflow_tick. Never delegate execution or workflow ownership to the advisor.',
     '',
-    'Consult the native Task subagent guarana-advisor only when you cannot make feasible progress, or relevant tool failures/retries show that you are blocked. Do not consult it for routine work or failures from which you have recovered.',
+    ...(advisorConfigured ? [
+      'For substantial or ambiguous tasks, consider proactively consulting the native Task subagent guarana-advisor during planning when a meaningful question, assumption, risk, architecture choice, or trade-off would benefit from advice. Keep trivial and routine tasks consultation-free.',
+      'At later consequential stages—including execution, debugging, or verification—consult only when advice could materially help; do not wait until blocked. Relevant failures or retries are also valid reasons when they show you are blocked, but do not consult for failures from which you have recovered.',
+    ] : [
+      'Advisor consultation is unavailable unless advisor.enabled is true and a configured read-only advisor is available. Do not consult or encourage consultation while Advisor is disabled or unconfigured.',
+    ]),
     'For a consultation, send only a concise summary containing the request/goal, current workflow state and progress, meaningful attempts already made, and the exact relevant failure/tool output. Do not forward the full conversation or unrelated data.',
     'When consulting guarana-advisor, set the native Task description to a brief reason advice is needed now (3–5 words), not the overall task title. Include no secrets or IDs; keep the bounded summary in the Task prompt unchanged.',
-    'Ask only for feasible next steps, tradeoffs, limitations, and uncertainty based on that summary. Make at most one Task consultation for an unchanged blocking episode; do not repeat it for the same failure. A materially different blocker may be considered only after meaningful progress or new evidence.',
+    'Ask only for feasible next steps, tradeoffs, limitations, and uncertainty based on that summary. Make at most one Task consultation for an unchanged context; do not repeat the same consultation. A materially different question or blocker may be considered only after meaningful progress or new evidence.',
     'Use any recommendations as advice, decide what to do yourself, then continue the existing workflow. If Task is unavailable, denied, or fails, say clearly that no advisor recommendation was obtained; continue independently if feasible or ask the user. Never invent advice or claim a handoff succeeded when it did not.',
     '',
   ].join('\n');
