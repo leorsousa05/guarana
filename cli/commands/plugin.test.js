@@ -152,6 +152,168 @@ it('installs and updates the three engines through a project ownership manifest,
   }
 });
 
+it('installs project plugins and engines only without creating native profiles', () => {
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-plugin-only-project-'));
+  try {
+    const result = spawnSync(process.execPath, [BIN, 'plugin', 'install', '--plugins-only', '--project'], {
+      cwd: project,
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, 0, result.stderr);
+    for (const name of [PLUGIN_NAME, MEMORY_PLUGIN_NAME, ORCHESTRATOR_PLUGIN_NAME]) {
+      assert.ok(fs.existsSync(path.join(project, '.opencode', 'plugins', name)));
+    }
+    assert.ok(fs.existsSync(path.join(project, '.opencode', 'memory', 'capture.js')));
+    assert.ok(fs.existsSync(path.join(project, '.opencode', 'orchestrator', 'state.js')));
+    assert.ok(fs.existsSync(path.join(project, '.opencode', 'skill-engine', 'index.js')));
+    assert.equal(fs.existsSync(path.join(workerAgentsTarget(true, project), 'worker-specs.md')), false);
+    assert.equal(fs.existsSync(advisorCommandTarget(true, project)), false);
+    const manifest = JSON.parse(fs.readFileSync(installManifestTarget(true, project), 'utf8'));
+    assert.ok(manifest.engines);
+    assert.ok(manifest.plugins);
+    assert.equal(manifest.workers, undefined);
+    assert.equal(manifest.advisor, undefined);
+
+    const uninstalled = spawnSync(process.execPath, [BIN, 'plugin', 'uninstall', '--plugins-only', '--project'], {
+      cwd: project,
+      encoding: 'utf8',
+    });
+    assert.equal(uninstalled.status, 0, uninstalled.stderr);
+    for (const name of [PLUGIN_NAME, MEMORY_PLUGIN_NAME, ORCHESTRATOR_PLUGIN_NAME]) {
+      assert.equal(fs.existsSync(path.join(project, '.opencode', 'plugins', name)), false);
+    }
+    assert.ok(fs.existsSync(path.join(project, '.opencode', 'memory', 'capture.js')));
+    assert.ok(fs.existsSync(path.join(project, '.opencode', 'orchestrator', 'state.js')));
+    assert.ok(fs.existsSync(path.join(project, '.opencode', 'skill-engine', 'index.js')));
+    const afterUninstall = JSON.parse(fs.readFileSync(installManifestTarget(true, project), 'utf8'));
+    assert.deepEqual(afterUninstall.engines, manifest.engines);
+    assert.equal(afterUninstall.plugins, undefined);
+  } finally {
+    fs.rmSync(project, { recursive: true, force: true });
+  }
+});
+
+it('uninstalls only plugins in project and global scopes, preserving modified profiles and all other manifest groups', () => {
+  const originalCwd = process.cwd();
+  const oldHome = process.env.HOME;
+  const oldXdg = process.env.XDG_CONFIG_HOME;
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-plugin-only-uninstall-home-'));
+  const xdg = path.join(home, 'xdg');
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-plugin-only-uninstall-project-'));
+  try {
+    process.env.HOME = home;
+    process.env.XDG_CONFIG_HOME = xdg;
+    process.chdir(project);
+
+    for (const useProject of [true, false]) {
+      plugin.install(useProject, { quiet: true });
+      const worker = path.join(workerAgentsTarget(useProject), 'worker-specs.md');
+      const advisor = advisorCommandTarget(useProject);
+      const workerBytes = Buffer.concat([fs.readFileSync(worker), Buffer.from('\nuser-owned worker change\n')]);
+      const advisorBytes = Buffer.concat([fs.readFileSync(advisor), Buffer.from('\nuser-owned advisor change\n')]);
+      fs.writeFileSync(worker, workerBytes);
+      fs.writeFileSync(advisor, advisorBytes);
+
+      const manifestFile = installManifestTarget(useProject);
+      const before = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+      before.skills = { guarana: [{ path: 'skills/keep.md', sha256: 'a'.repeat(64) }] };
+      before.future = { installMetadata: { enabled: true } };
+      fs.writeFileSync(manifestFile, `${JSON.stringify(before, null, 2)}\n`);
+      const preservedGroups = Object.fromEntries(['engines', 'workers', 'advisor', 'skills', 'future']
+        .map((group) => [group, before[group]]));
+      const engineRoots = ['memory', 'orchestrator', 'skill-engine'].map((name) =>
+        snapshotTree(path.join(openCodeRootTarget(useProject), name)));
+
+      plugin.uninstall(useProject, null, { pluginsOnly: true });
+
+      for (const name of [PLUGIN_NAME, MEMORY_PLUGIN_NAME, ORCHESTRATOR_PLUGIN_NAME]) {
+        assert.equal(fs.existsSync(pluginTarget(useProject, name)), false);
+      }
+      assert.deepEqual(fs.readFileSync(worker), workerBytes);
+      assert.deepEqual(fs.readFileSync(advisor), advisorBytes);
+      assert.deepEqual(['memory', 'orchestrator', 'skill-engine'].map((name) =>
+        snapshotTree(path.join(openCodeRootTarget(useProject), name))), engineRoots);
+      const after = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+      for (const [group, entries] of Object.entries(preservedGroups)) assert.deepEqual(after[group], entries);
+      assert.equal(after.plugins, undefined);
+    }
+  } finally {
+    process.chdir(originalCwd);
+    if (oldHome === undefined) delete process.env.HOME;
+    else process.env.HOME = oldHome;
+    if (oldXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = oldXdg;
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(project, { recursive: true, force: true });
+  }
+});
+
+it('refuses plugins-only uninstall of a modified tracked plugin without changing any files', () => {
+  const originalCwd = process.cwd();
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-plugin-only-modified-'));
+  try {
+    process.chdir(project);
+    plugin.install(true, { quiet: true });
+    const target = pluginTarget(true, PLUGIN_NAME);
+    const modified = Buffer.from('user-owned plugin revision\0\xff');
+    fs.writeFileSync(target, modified);
+    const before = snapshotTree(project);
+
+    assert.throws(() => plugin.uninstall(true, null, { pluginsOnly: true }), /managed plugin file was modified/);
+    assert.deepEqual(snapshotTree(project), before);
+    assert.deepEqual(fs.readFileSync(target), modified);
+  } finally {
+    process.chdir(originalCwd);
+    fs.rmSync(project, { recursive: true, force: true });
+  }
+});
+
+it('refreshes global plugins and engines without reading or changing modified tracked profiles', () => {
+  const originalCwd = process.cwd();
+  const oldHome = process.env.HOME;
+  const oldXdg = process.env.XDG_CONFIG_HOME;
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-plugin-only-global-home-'));
+  const xdg = path.join(home, 'xdg');
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-plugin-only-global-project-'));
+  try {
+    process.env.HOME = home;
+    process.env.XDG_CONFIG_HOME = xdg;
+    process.chdir(project);
+    plugin.install(false, { quiet: true });
+
+    const worker = path.join(workerAgentsTarget(false), 'worker-specs.md');
+    const advisor = advisorCommandTarget(false);
+    const workerBytes = Buffer.concat([fs.readFileSync(worker), Buffer.from('\nuser-owned worker change\n')]);
+    const advisorBytes = Buffer.concat([fs.readFileSync(advisor), Buffer.from('\nuser-owned advisor change\n')]);
+    fs.writeFileSync(worker, workerBytes);
+    fs.writeFileSync(advisor, advisorBytes);
+    const manifestFile = installManifestTarget(false);
+    const beforeManifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+    const beforeGroups = { workers: beforeManifest.workers, advisor: beforeManifest.advisor };
+    const beforeTree = snapshotTree(home);
+
+    const result = spawnSync(process.execPath, [BIN, 'plugin', 'install', '--plugins-only'], {
+      cwd: project,
+      env: { ...process.env, HOME: home, XDG_CONFIG_HOME: xdg },
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(snapshotTree(home), beforeTree);
+    assert.deepEqual(fs.readFileSync(worker), workerBytes);
+    assert.deepEqual(fs.readFileSync(advisor), advisorBytes);
+    const afterManifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+    assert.deepEqual({ workers: afterManifest.workers, advisor: afterManifest.advisor }, beforeGroups);
+  } finally {
+    process.chdir(originalCwd);
+    if (oldHome === undefined) delete process.env.HOME;
+    else process.env.HOME = oldHome;
+    if (oldXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = oldXdg;
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(project, { recursive: true, force: true });
+  }
+});
+
 it('tracks worker and Advisor profile hashes relative to project and XDG OpenCode roots', () => {
   const originalCwd = process.cwd();
   const oldHome = process.env.HOME;

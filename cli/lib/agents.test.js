@@ -21,10 +21,13 @@ function inProject(callback) {
 test('worker profiles include canonical skill procedures and distinct permissions', () => {
   const generated = agents.profiles(true);
   assert.deepEqual(generated.map(({ name }) => name), ['worker-code', 'worker-verify', 'worker-debug', 'worker-specs']);
+  for (const { content } of generated) {
+    assert.match(content, /mode: subagent/);
+    assert.match(content, /^hidden: false$/m);
+  }
 
   const code = generated[0].content;
   assert.match(code, /mode: subagent/);
-  assert.match(code, /hidden: true/);
   assert.match(code, /task: deny/);
   assert.match(code, /workflow_tick: deny/);
   assert.match(code, /edit: allow/);
@@ -44,7 +47,6 @@ test('worker profiles include canonical skill procedures and distinct permission
 
   const specs = generated[3].content;
   assert.match(specs, /mode: subagent/);
-  assert.match(specs, /hidden: true/);
   assert.match(specs, /task: deny/);
   assert.match(specs, /workflow_tick: deny/);
   assert.doesNotMatch(specs, /^  bash: allow$/m);
@@ -117,6 +119,9 @@ test('global worker profiles deploy below the OpenCode agents root', () => {
   try {
     process.env.HOME = home;
     delete process.env.XDG_CONFIG_HOME;
+    for (const { content } of agents.profiles(false)) {
+      assert.match(content, /^hidden: true$/m);
+    }
     const installed = agents.installWorkerAgents(false);
     assert.equal(path.dirname(installed[0].target), path.join(home, '.config', 'opencode', 'agents'));
     assert.equal(fs.existsSync(path.join(home, '.config', 'opencode', 'agents', 'worker-verify.md')), true);

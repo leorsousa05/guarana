@@ -23,7 +23,9 @@ export function createTelemetryRouter({ root }) {
     const sessions = (Array.isArray(req.query.session) ? req.query.session : [req.query.session]).filter((s) => typeof s === 'string').slice(0, 5);
     const events = readJsonl(telemetryFile);
     const filtered = sessions.length ? events.filter((e) => sessions.includes(e.sessionID)) : events;
-    res.json({ events: filtered });
+    const rawLimit = Number(req.query.limit);
+    const limit = Number.isInteger(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 200) : null;
+    res.json({ events: limit ? filtered.slice(-limit) : filtered });
   });
 
   // Server-Sent Events: push a message the moment the telemetry file changes

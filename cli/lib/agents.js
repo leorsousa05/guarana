@@ -11,7 +11,7 @@ function skillInstructions(skill) {
   return content.replace(/^---\s*\r?\n[\s\S]*?\r?\n---\s*\r?\n/, '').trim();
 }
 
-function profileText(worker) {
+function profileText(worker, useProject) {
   const bashPermission = worker.name === 'worker-specs'
       ? '  bash:\n    "*": deny\n    "guarana specs record --file .specs/state/worker-specs-handoff.json": allow\n    "node bin/guarana.js specs record --file .specs/state/worker-specs-handoff.json": allow\n'
       : '  bash: allow\n';
@@ -26,7 +26,7 @@ function profileText(worker) {
     '---',
     `description: ${worker.description}`,
     'mode: subagent',
-    'hidden: true',
+    `hidden: ${useProject ? 'false' : 'true'}`,
     'permission:',
     '  task: deny',
     '  workflow_tick: deny',
@@ -53,7 +53,7 @@ function profiles(useProject) {
   return WORKER_AGENTS.map((worker) => ({
     ...worker,
     target: path.join(target, `${worker.name}.md`),
-    content: profileText(worker),
+    content: profileText(worker, useProject),
   }));
 }
 

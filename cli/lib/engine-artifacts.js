@@ -300,6 +300,12 @@ function applyUninstall(plan, removePlugins = false, removeProfiles = false) {
   }
 }
 
+function applyPluginOnlyUninstall(plan) {
+  if (!plan.manifestExists) return;
+  delete plan.manifest.plugins;
+  writeManifest(plan.manifestFile, plan.manifest);
+}
+
 module.exports = {
   MANIFEST_VERSION,
   hash,
@@ -311,4 +317,5 @@ module.exports = {
   preflight,
   applyInstall,
   applyUninstall,
+  applyPluginOnlyUninstall,
 };

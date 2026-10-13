@@ -70,8 +70,10 @@ const COMMANDS = [
     name: 'plugin',
     handler: 'plugin',
     globalUsage: [
-      '  guarana plugin install [--project]    Install the telemetry, memory, and orchestrator plugins (+ engines)',
-      '  guarana plugin uninstall [--project]  Remove the telemetry, memory, and orchestrator plugins (+ engines)',
+      '  guarana plugin install [--project]    Install plugins, engines, and native profiles',
+      '  guarana plugin install --plugins-only [--project]  Install plugins and engines only',
+      '  guarana plugin uninstall [--project]  Remove plugins, engines, and native profiles',
+      '  guarana plugin uninstall --plugins-only [--project]  Remove only the three plugins',
       '  guarana plugin status [--project]     Check plugin/engine/vault install health',
     ],
   },

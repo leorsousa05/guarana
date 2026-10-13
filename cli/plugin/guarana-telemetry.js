@@ -283,4 +283,38 @@ export const GuaranaTelemetry = async ({ directory }) => {
   };
 };
 
-export default GuaranaTelemetry;
+async function setupGuaranaTelemetry(ctx) {
+  const hooks = await GuaranaTelemetry({ directory: ctx.location.directory });
+  const toolInput = (event) => ({
+    tool: event.tool,
+    sessionID: event.sessionID,
+    callID: event.callID,
+    args: event.input,
+  });
+
+  await ctx.tool.hook('execute.before', async (event) => {
+    await hooks['tool.execute.before'](toolInput(event), { args: event.input });
+  });
+  await ctx.tool.hook('execute.after', async (event) => {
+    await hooks['tool.execute.after'](toolInput(event), event.output);
+  });
+
+  const controller = new AbortController();
+  void (async () => {
+    try {
+      for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
+        await hooks.event({ event });
+      }
+    } catch {
+      // Telemetry is best-effort and must not affect the host runtime.
+    }
+  })();
+  return () => controller.abort();
+}
+
+export default {
+  id: 'guarana.telemetry',
+  setup: setupGuaranaTelemetry,
+  // V1 calls server(ctx); V2 calls setup(ctx).
+  server: async (ctx = {}) => GuaranaTelemetry({ directory: ctx.directory || process.cwd() }),
+};

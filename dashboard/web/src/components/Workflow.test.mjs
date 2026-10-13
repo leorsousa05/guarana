@@ -80,6 +80,9 @@ test('Workflow SSR preserves phase semantics, selected transition evidence, task
   assert.doesNotMatch(noEngine, /wf-strip|Task details/);
 
   const css = fs.readFileSync(path.join(webRoot, 'src/style.css'), 'utf8');
+  const activityTriggerRule = css.match(/\.activity-more\s*>\s*summary\s*,\s*\.activity-secondary\s*>\s*summary\s*\{[^}]*\}/s)?.[0];
+  assert.ok(activityTriggerRule, 'Activity disclosure trigger styles exist');
+  assert.doesNotMatch(css, /\.activity-(?:more|secondary)\s+summary\s*\{/);
   const workflowCss = css.slice(css.indexOf('/* ---------- workflow state machine ----------'), css.indexOf('/* ---------- overview / home ----------'));
   assert.match(workflowCss, /\.wf-strip\s*\{[^}]*grid-template-columns:\s*repeat\(7,\s*minmax\(0,\s*1fr\)\)/s);
   assert.match(workflowCss, /\.wf-evidence\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1\.45fr\)\s+minmax\(0,\s*0\.85fr\)/s);
@@ -92,4 +95,24 @@ test('Workflow SSR preserves phase semantics, selected transition evidence, task
   assert.match(workflowCss, /\.wf-h-note\s*\{[^}]*overflow-wrap:\s*anywhere/s);
   assert.match(workflowCss, /\.wf-node-button:focus-visible\s*\{[^}]*outline:\s*2px/s);
   assert.match(mediaBlock(workflowCss, 'prefers-reduced-motion: reduce'), /\.workflow/s);
+});
+
+test('long task metadata and transition notes are compact by default with full values in keyboard disclosures', async (t) => {
+  const vite = await createServer({ root: webRoot, server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
+  t.after(() => vite.close());
+  const { Workflow } = await vite.ssrLoadModule('/src/components/Workflow.jsx');
+  const goal = 'Long goal metadata '.repeat(80);
+  const condition = 'Long acceptance condition '.repeat(80);
+  const note = 'Transition explanation '.repeat(80);
+  const html = render(React.createElement(Workflow, { data: {
+    state: 'coding', goal, condition,
+    history: [{ ts: 1, event: 'run_start', from: 'building', to: 'coding', note }],
+  } }));
+  assert.ok(html.includes(`<summary class="wf-detail-summary">${goal}</summary>`));
+  assert.ok(html.includes(`<summary class="wf-detail-summary">${condition}</summary>`));
+  assert.ok(html.includes(`<summary class="wf-h-note">${note}</summary>`));
+  assert.ok(html.includes(`<p>${goal}</p>`));
+  assert.ok(html.includes(`<p>${condition}</p>`));
+  assert.ok(html.includes(`<p>${note}</p>`));
+  assert.match(html, /<details class="wf-text-disclosure">/);
 });

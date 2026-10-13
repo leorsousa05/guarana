@@ -18,7 +18,7 @@ function excerpt(text, limit = 190) {
   return plain.length > limit ? `${plain.slice(0, limit).trimEnd()}…` : plain || '(empty)';
 }
 
-function LedgerPage({ title, text, onOpen }) {
+export function LedgerPage({ title, text, onOpen }) {
   return (
     <section className="spec-state-page" aria-labelledby={`spec-${title}`}>
       <div className="spec-state-copy">
@@ -38,6 +38,10 @@ function LedgerPage({ title, text, onOpen }) {
 }
 
 const isDocPath = (rel) => isSpecPath(rel);
+export const flattenDocumentPaths = (groups) => groups.flatMap((group) => [
+  ...group.items,
+  ...flattenDocumentPaths(group.children),
+]);
 
 export async function postDecisionResolution(file, statement, outcome, request = fetch) {
   const response = await request('/api/decisions/resolve', {
@@ -122,31 +126,41 @@ export function PendingDecisionQueue({
   );
 }
 
-function Roadmap({ tracker, onOpen }) {
+export function Roadmap({ tracker, onOpenText }) {
   const statuses = ['BLOCKED', 'NEXT', 'DONE'];
   const hasItems = statuses.some((status) => tracker[status]?.length);
   return (
     <section className="spec-roadmap" aria-labelledby="spec-roadmap-title">
       <header className="spec-section-head">
         <div>
-          <p className="spec-kicker">Priority and progress</p>
+          <p className="spec-kicker">Priority and next actions</p>
           <h3 id="spec-roadmap-title">Roadmap</h3>
         </div>
       </header>
       {hasItems ? statuses.map((status) => {
         const items = tracker[status] || [];
         if (!items.length) return null;
+        const itemList = (
+          <ul>
+            {items.map((item, index) => (
+              <li key={`${status}-${index}`}>
+                <p className="spec-text-preview" title={excerpt(item, 500)}>{excerpt(item)}</p>
+                <button type="button" className="spec-read-button" onClick={() => onOpenText(`Roadmap — ${status.toLowerCase()}`, item)}>Read</button>
+              </li>
+            ))}
+          </ul>
+        );
+        const heading = (
+          <h4><Stamp word={status} /><span>{status === 'BLOCKED' ? 'Blocked' : status === 'NEXT' ? 'Next' : 'Done'}</span><span className="spec-roadmap-count">{items.length}</span></h4>
+        );
         return (
           <section key={status} className={`spec-roadmap-group spec-roadmap-group--${status.toLowerCase()}`} aria-label={`${status} roadmap items`}>
-            <h4><Stamp word={status} /><span>{status === 'BLOCKED' ? 'Blocked' : status === 'NEXT' ? 'Next' : 'Done'}</span><span className="spec-roadmap-count">{items.length}</span></h4>
-            <ul>
-              {items.map((item, index) => (
-                <li key={`${status}-${index}`}>
-                  <p className="spec-text-preview" title={excerpt(item, 500)}>{excerpt(item)}</p>
-                  <button type="button" className="spec-read-button" onClick={() => onOpen(`Roadmap — ${status.toLowerCase()}`, item)}>Read</button>
-                </li>
-              ))}
-            </ul>
+            {status === 'DONE' && items.length > 3 ? (
+              <details className="spec-roadmap-collapsible">
+                <summary><Stamp word={status} /><span>Done</span><span className="spec-roadmap-count">{items.length}</span><span className="spec-roadmap-hint">Show completed items</span></summary>
+                {itemList}
+              </details>
+            ) : <>{heading}{itemList}</>}
           </section>
         );
       }) : <p className="spec-roadmap-empty">No roadmap items recorded.</p>}
@@ -154,56 +168,106 @@ function Roadmap({ tracker, onOpen }) {
   );
 }
 
-function Overview({ tracker, state, onOpen }) {
+const LIFECYCLE_STAGES = ['SPECIFIED', 'TASKED', 'IMPLEMENTED', 'VALIDATED', 'SHIPPED'];
+const TRACKER_BUCKETS = [...LIFECYCLE_STAGES, 'Unspecified', 'Other'];
+
+function lifecycleBucket(status) {
+  if (status == null || (typeof status === 'string' && !status.trim())) return 'Unspecified';
+  if (typeof status !== 'string') return 'Other';
+  let finalStage = null;
+  for (const match of status.matchAll(/\b(SPECIFIED|TASKED|IMPLEMENTED|VALIDATED|SHIPPED)\b/gi)) {
+    finalStage = match[1].toUpperCase();
+  }
+  return finalStage || 'Other';
+}
+
+function TrackerStatusStrip({ tracker }) {
+  if (!tracker) {
+    return <p className="loading spec-tracker-loading" role="status">loading tracker…</p>;
+  }
+  const rows = Array.isArray(tracker.rows) ? tracker.rows : [];
+  const statusCounts = Object.fromEntries(TRACKER_BUCKETS.map((status) => [status, 0]));
+  rows.forEach((row) => { statusCounts[lifecycleBucket(row?.status)] += 1; });
+  return (
+    <section className="spec-status-strip" aria-label="Tracker status summary" data-tracked-count={rows.length}>
+      <div className="spec-status-total">
+        <span className="spec-kicker">Tracked rows</span>
+        <strong>{rows.length}</strong>
+        <span>implementation records</span>
+      </div>
+      <ul className="spec-status-counts" aria-label="Tracker rows grouped by lifecycle status">
+        {TRACKER_BUCKETS.map((status) => (
+          <li className="spec-status-count" data-status={status} key={status}>
+            <span>{status}</span><b>{statusCounts[status]}</b>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function Overview({ tracker, state, decisions, pending, resolving, resolution, onResolve, onOpen, onOpenText, onReadDecision }) {
   return (
     <div className="spec-overview">
-      <section className="spec-block" aria-labelledby="spec-tracker-title">
-        <header className="spec-section-head spec-block-head">
+      <TrackerStatusStrip tracker={tracker} />
+      <div className="spec-priority-grid">
+        {tracker && tracker.schema !== 'unknown' && <Roadmap tracker={tracker} onOpenText={onOpenText} />}
+        <PendingDecisionQueue
+          decisions={decisions}
+          error={pending.error}
+          loading={!pending.data && !pending.error}
+          resolving={resolving}
+          resolution={resolution}
+          onRead={onReadDecision}
+          onResolve={onResolve}
+        />
+      </div>
+      <section className="spec-state spec-context" aria-labelledby="spec-state-title">
+        <header className="spec-section-head">
           <div>
-            <p className="spec-kicker">Implementation status</p>
-            <h3 id="spec-tracker-title">Implementation tracker</h3>
+            <p className="spec-kicker">Working context</p>
+            <h3 id="spec-state-title">Project state &amp; known issues</h3>
           </div>
-          {tracker?.rows && <span>{tracker.rows.length} entries</span>}
         </header>
-        {tracker ? (
-          tracker.schema === 'unknown' ? (
-            <div className="ledger-note" role="note">
-              {tracker.message || 'This project does not follow the Guarana spec schema; the tracker cannot be rendered here.'}
-            </div>
-          ) : (
+        <div className="spec-state-pages">
+          <LedgerPage title="project-state.md" text={state ? state.projectState : 'loading…'} onOpen={onOpenText} />
+          <LedgerPage title="known-issues.md" text={state ? state.knownIssues : 'loading…'} onOpen={onOpenText} />
+        </div>
+      </section>
+      <section className="spec-register" aria-label="Full implementation tracker">
+        {!tracker ? null : tracker.schema === 'unknown' ? (
+          <div className="ledger-note" role="note">
+            {tracker.message || 'This project does not follow the Guarana spec schema; the tracker cannot be rendered here.'}
+          </div>
+        ) : (
+          <details className="spec-tracker-details">
+            <summary className="spec-tracker-summary">
+              <span className="spec-tracker-summary-copy">
+                <span className="spec-kicker">Implementation register</span>
+                <span className="spec-tracker-title" id="spec-tracker-title">Implementation tracker</span>
+              </span>
+              <span className="spec-tracker-entry-count">{Array.isArray(tracker.rows) ? tracker.rows.length : 0} entries</span>
+            </summary>
             <div className="table-scroll spec-tracker-scroll" role="region" aria-label="Implementation tracker; scroll horizontally to see every field" tabIndex={0}>
               <table className="ledger spec-tracker-table">
                 <thead>
                   <tr><th scope="col">skill</th><th scope="col">status</th><th scope="col">proof</th><th scope="col">change</th></tr>
                 </thead>
                 <tbody>
-                  {tracker.rows.map((row, index) => (
+                  {(Array.isArray(tracker.rows) ? tracker.rows : []).map((row, index) => (
                     <tr key={index}>
                       <td>{row.skill}</td>
-                      <td><Stamp word={row.status} /></td>
+                      <td><span className="spec-tracker-raw-status">{typeof row.status === 'string' ? row.status : '—'}</span></td>
                       <td><MdLink text={row.proof} onOpenFile={onOpen} canOpen={isDocPath} /></td>
                       <td><MdLink text={row.change} onOpenFile={onOpen} canOpen={isDocPath} /></td>
                     </tr>
                   ))}
-                  {tracker.rows.length === 0 && <tr><td colSpan={4}>no tracker rows</td></tr>}
+                  {(!Array.isArray(tracker.rows) || tracker.rows.length === 0) && <tr><td colSpan={4}>no tracker rows</td></tr>}
                 </tbody>
               </table>
             </div>
-          )
-        ) : <p className="loading" role="status">loading tracker…</p>}
-      </section>
-      {tracker && tracker.schema !== 'unknown' && <Roadmap tracker={tracker} onOpen={onOpen} />}
-      <section className="spec-state" aria-labelledby="spec-state-title">
-        <header className="spec-section-head">
-          <div>
-            <p className="spec-kicker">Current project record</p>
-            <h3 id="spec-state-title">Project state and known issues</h3>
-          </div>
-        </header>
-        <div className="spec-state-pages">
-          <LedgerPage title="project-state.md" text={state ? state.projectState : 'loading…'} onOpen={onOpen} />
-          <LedgerPage title="known-issues.md" text={state ? state.knownIssues : 'loading…'} onOpen={onOpen} />
-        </div>
+          </details>
+        )}
       </section>
     </div>
   );
@@ -255,7 +319,7 @@ export function Specs({ tracker, state, tick = 0 }) {
     return () => { cancelled = true; };
   }, []);
 
-  const docPaths = useMemo(() => buildGroups(tree).flatMap((group) => group.items), [tree]);
+  const docPaths = useMemo(() => flattenDocumentPaths(buildGroups(tree)), [tree]);
   useEffect(() => {
     let cancelled = false;
     const need = docPaths.filter((path) => !(path in titles));
@@ -299,16 +363,6 @@ export function Specs({ tracker, state, tick = 0 }) {
         <p>Implementation evidence, priority, and working documents.</p>
       </header>
 
-      <PendingDecisionQueue
-        decisions={pending.data?.decisions ?? null}
-        error={pending.error}
-        loading={!pending.data && !pending.error}
-        resolving={resolving}
-        resolution={resolution}
-        onRead={(statement) => openText('Pending decision', statement)}
-        onResolve={resolveDecision}
-      />
-
       <div className="spec-tabs" role="tablist" aria-label="Specs views" onKeyDown={(event) => handleTabKeyDown(event, ['overview', 'documents'], setView)}>
         <button
           type="button" role="tab" id="spec-tab-overview" data-tab-id="overview"
@@ -327,7 +381,18 @@ export function Specs({ tracker, state, tick = 0 }) {
       </div>
 
       <div id="spec-panel-overview" role="tabpanel" aria-labelledby="spec-tab-overview" tabIndex={0} hidden={view !== 'overview'}>
-        <Overview tracker={tracker} state={state} onOpen={openDoc} />
+        <Overview
+          tracker={tracker}
+          state={state}
+          decisions={pending.data?.decisions ?? null}
+          pending={pending}
+          resolving={resolving}
+          resolution={resolution}
+          onResolve={resolveDecision}
+          onOpen={openDoc}
+          onOpenText={openText}
+          onReadDecision={(statement) => openText('Pending decision', statement)}
+        />
       </div>
       <div id="spec-panel-documents" role="tabpanel" aria-labelledby="spec-tab-documents" tabIndex={0} hidden={view !== 'documents'}>
         {tree === null ? (

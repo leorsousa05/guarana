@@ -377,4 +377,57 @@ export const GuaranaMemory = async ({ directory }) => {
   };
 };
 
-export default GuaranaMemory;
+async function setupGuaranaMemory(ctx) {
+  const hooks = await GuaranaMemory({ directory: ctx.location.directory });
+  await ctx.tool.transform((editor) => {
+    for (const [name, definition] of Object.entries(hooks.tool)) {
+      editor.add({
+        name,
+        description: definition.description,
+        input: {
+          type: 'object',
+          properties: definition.args,
+          additionalProperties: false,
+        },
+        execute: async (input, context) => ({
+          content: await definition.execute(input, context),
+        }),
+      });
+    }
+  });
+
+  await ctx.session.hook('context', async (event) => {
+    const output = { system: [] };
+    await hooks['experimental.chat.system.transform'](
+      { sessionID: event.sessionID, agent: event.agent },
+      output,
+    );
+    event.system ??= [];
+    const existing = new Set((event.system || []).map((item) => item?.text || ''));
+    for (const text of output.system) {
+      if (![...existing].some((value) => value.includes(text))) {
+        event.system.push({ type: 'text', text });
+      }
+    }
+  });
+
+  const controller = new AbortController();
+  void (async () => {
+    try {
+      for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
+        const handler = hooks[event.type];
+        if (handler) await handler(event);
+      }
+    } catch {
+      // Memory lifecycle observation must not affect the host runtime.
+    }
+  })();
+  return () => controller.abort();
+}
+
+export default {
+  id: 'guarana.memory',
+  setup: setupGuaranaMemory,
+  // V1 calls server(ctx); V2 calls setup(ctx).
+  server: async (ctx = {}) => GuaranaMemory({ directory: ctx.directory || process.cwd() }),
+};

@@ -695,4 +695,103 @@ export const GuaranaOrchestrator = async ({ directory }) => {
   };
 };
 
-export default GuaranaOrchestrator;
+async function setupGuaranaOrchestrator(ctx) {
+  const hooks = await GuaranaOrchestrator({ directory: ctx.location.directory });
+  const directory = ctx.location.directory;
+
+  await ctx.agent.transform((editor) => {
+    try {
+      const settings = effectiveAdvisorSettings(directory);
+      if (settings.primary.provider && settings.primary.model && hasManagedPrimaryProfile(directory)) {
+        editor.default('guarana');
+      }
+    } catch {
+      // Runtime configuration must remain non-fatal.
+    }
+  });
+
+  await ctx.tool.transform((editor) => {
+    for (const [name, definition] of Object.entries(hooks.tool)) {
+      editor.add({
+        name,
+        description: definition.description,
+        input: {
+          type: 'object',
+          properties: definition.args,
+          additionalProperties: false,
+        },
+        execute: async (input, context) => ({
+          content: await definition.execute(input, context),
+        }),
+      });
+    }
+  });
+
+  await ctx.session.hook('prompt', async (event) => {
+    await hooks['chat.message'](
+      {
+        sessionID: event.sessionID,
+        messageID: event.messageID,
+        agent: event.agent,
+      },
+      {
+        message: { id: event.messageID, agent: event.agent },
+        parts: [{ type: 'text', text: event.prompt?.text || '' }],
+      },
+    );
+  });
+
+  await ctx.session.hook('context', async (event) => {
+    event.system ??= [];
+    const textItems = event.system
+      .map((item, index) => ({ item, index, text: typeof item === 'string' ? item : item?.text }))
+      .filter(({ text }) => typeof text === 'string');
+    const output = { system: textItems.map(({ text }) => text) };
+    await hooks['experimental.chat.system.transform'](
+      { sessionID: event.sessionID, agent: event.agent },
+      output,
+    );
+    for (let i = 0; i < output.system.length; i++) {
+      const existing = textItems[i];
+      if (existing) {
+        if (typeof existing.item === 'string') event.system[existing.index] = output.system[i];
+        else existing.item.text = output.system[i];
+      } else {
+        event.system.push({ type: 'text', text: output.system[i] });
+      }
+    }
+  });
+
+  const toolInput = (event) => ({
+    tool: event.tool,
+    sessionID: event.sessionID,
+    callID: event.callID,
+    agent: event.agent,
+    args: event.input,
+  });
+  await ctx.tool.hook('execute.before', async (event) => {
+    await hooks['tool.execute.before'](toolInput(event), { args: event.input });
+  });
+  await ctx.tool.hook('execute.after', async (event) => {
+    await hooks['tool.execute.after'](toolInput(event), event.output);
+  });
+
+  const controller = new AbortController();
+  void (async () => {
+    try {
+      for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
+        await hooks.event({ event });
+      }
+    } catch {
+      // Event observation is best-effort; core hooks remain non-fatal.
+    }
+  })();
+  return () => controller.abort();
+}
+
+export default {
+  id: 'guarana.orchestrator',
+  setup: setupGuaranaOrchestrator,
+  // V1 calls server(ctx); V2 calls setup(ctx).
+  server: async (ctx = {}) => GuaranaOrchestrator({ directory: ctx.directory || process.cwd() }),
+};

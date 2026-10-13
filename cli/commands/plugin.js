@@ -8,7 +8,7 @@ const {
   ORCHESTRATOR_PLUGIN_BUNDLE, ORCHESTRATOR_PLUGIN_NAME,
 } = require('../constants.js');
 const { pluginIsOurs, PLUGIN_MARKER, MEMORY_PLUGIN_MARKER, ORCHESTRATOR_PLUGIN_MARKER } = require('../lib/guard.js');
-const { pluginTarget, memoryEngineTarget, orchestratorEngineTarget, skillEngineTarget } = require('../lib/paths.js');
+const { pluginTarget, memoryEngineTarget, orchestratorEngineTarget, skillEngineTarget, installManifestTarget } = require('../lib/paths.js');
 const engineArtifacts = require('../lib/engine-artifacts.js');
 const agents = require('../lib/agents.js');
 const advisorProfiles = require('../lib/advisor-profiles.js');
@@ -76,55 +76,73 @@ function preflightPlugins(useProject, action, enginePlan) {
   });
 }
 
-function preflightInstall(useProject) {
-  agents.assertInstallable(useProject);
-  advisorProfiles.assertInstallable(useProject);
+function preflightInstall(useProject, { pluginsOnly = false } = {}) {
+  if (!pluginsOnly) {
+    agents.assertInstallable(useProject);
+    advisorProfiles.assertInstallable(useProject);
+  }
   const engines = engineArtifacts.preflight(useProject, 'install');
   const plugins = preflightPlugins(useProject, 'install', engines);
-  const profiles = profileArtifacts.preflight(useProject, 'install', engines);
-  return { engines, plugins, profiles };
+  const profiles = pluginsOnly
+    ? { action: 'install', workers: [], advisor: [], groups: {}, removePaths: [] }
+    : profileArtifacts.preflight(useProject, 'install', engines);
+  return { engines, plugins, profiles, profilesEnabled: !pluginsOnly };
 }
 
-function pluginInstall(useProject, { quiet = false, preflight = null, skipTransaction = false, stdout = process.stdout } = {}) {
+function pluginInstall(useProject, { quiet = false, preflight = null, pluginsOnly = false, skipTransaction = false, stdout = process.stdout } = {}) {
   const context = { stdout };
-  const plan = preflight || preflightInstall(useProject);
+  const plan = preflight || preflightInstall(useProject, { pluginsOnly });
   const { engines, plugins, profiles } = plan;
+  const profilesEnabled = plan.profilesEnabled !== false;
   const apply = () => {
     for (const { name, bundle, target, exists } of plugins) {
       fs.mkdirSync(path.dirname(target), { recursive: true });
       fs.copyFileSync(bundle, target);
       if (!quiet) stdoutLine(context, `${exists ? 'updated' : 'installed'} plugin ${name.replace(/\.js$/, '')} -> ${target}`);
     }
-    profileArtifacts.applyInstall(profiles);
-    engineArtifacts.applyInstall(engines, plugins.map(({ name, sha256 }) => ({ path: name, sha256 })), profiles.groups);
+    if (profilesEnabled) profileArtifacts.applyInstall(profiles);
+    engineArtifacts.applyInstall(
+      engines,
+      plugins.map(({ name, sha256 }) => ({ path: name, sha256 })),
+      profilesEnabled ? profiles.groups : undefined,
+    );
     if (!quiet) {
       const [memory, orchestrator, skills] = engines.engines;
       stdoutLine(context, `updated memory engine -> ${memory.root}`);
       stdoutLine(context, `updated orchestrator engine -> ${orchestrator.root}`);
       stdoutLine(context, `updated skill engine -> ${skills.root}`);
     }
-    for (const { name, target } of profiles.workers) {
-      if (!quiet) stdoutLine(context, `installed/updated subagent ${name} -> ${target}`);
+    if (profilesEnabled) {
+      for (const { name, target } of profiles.workers) {
+        if (!quiet) stdoutLine(context, `installed/updated subagent ${name} -> ${target}`);
+      }
+      for (const { name, target } of profiles.advisor) {
+        if (!quiet) stdoutLine(context, `installed/updated ${name} -> ${target}`);
+      }
+      if (!quiet && profiles.setupOnly) stdoutLine(context, `advisor setup-only command installed; model profiles unavailable: undefined`);
     }
-    for (const { name, target } of profiles.advisor) {
-      if (!quiet) stdoutLine(context, `installed/updated ${name} -> ${target}`);
-    }
-    if (!quiet && profiles.setupOnly) stdoutLine(context, `advisor setup-only command installed; model profiles unavailable: undefined`);
   };
   if (skipTransaction) return apply();
   return artifactTransaction.run(artifactTransaction.pluginTargets(plan), apply);
 }
 
-function preflightUninstall(useProject) {
+function preflightUninstall(useProject, { pluginsOnly = false } = {}) {
+  if (pluginsOnly) {
+    const manifestFile = installManifestTarget(useProject);
+    const state = engineArtifacts.manifestState(manifestFile);
+    const manifest = { ...state, manifestFile, manifestExists: state.exists };
+    const plugins = preflightPlugins(useProject, 'uninstall', manifest);
+    return { manifest, plugins, pluginsOnly: true };
+  }
   const engines = engineArtifacts.preflight(useProject, 'uninstall');
   const plugins = preflightPlugins(useProject, 'uninstall', engines);
   const profiles = profileArtifacts.preflight(useProject, 'uninstall', engines);
   return { engines, plugins, profiles };
 }
 
-function pluginUninstall(useProject, preflight = null, { skipTransaction = false, stdout = process.stdout } = {}) {
+function pluginUninstall(useProject, preflight = null, { pluginsOnly = false, skipTransaction = false, stdout = process.stdout } = {}) {
   const context = { stdout };
-  const plan = preflight || preflightUninstall(useProject);
+  const plan = preflight || preflightUninstall(useProject, { pluginsOnly });
   const { engines, plugins, profiles } = plan;
   const apply = () => {
     for (const { name, target, exists } of plugins) {
@@ -134,6 +152,10 @@ function pluginUninstall(useProject, preflight = null, { skipTransaction = false
       }
       fs.rmSync(target);
       stdoutLine(context, `uninstalled plugin ${name.replace(/\.js$/, '')} from ${target}`);
+    }
+    if (plan.pluginsOnly) {
+      engineArtifacts.applyPluginOnlyUninstall(plan.manifest);
+      return;
     }
     engineArtifacts.applyUninstall(engines, true, true);
     for (const item of engines.engines) {
@@ -155,6 +177,13 @@ function pluginUninstall(useProject, preflight = null, { skipTransaction = false
     }
   };
   if (skipTransaction) return apply();
+  if (plan.pluginsOnly) {
+    const targets = [
+      ...(plan.manifest.manifestExists ? [plan.manifest.manifestFile] : []),
+      ...plugins.filter(({ exists }) => exists).map(({ target }) => target),
+    ];
+    return artifactTransaction.run(targets, apply);
+  }
   return artifactTransaction.run(artifactTransaction.pluginTargets(plan), apply);
 }
 
@@ -226,8 +255,8 @@ async function run(args, { useProject, stdout = process.stdout, stderr = process
   const context = { stdout, stderr };
   const sub = args[0];
   switch (sub) {
-    case 'install': pluginInstall(useProject, context); break;
-    case 'uninstall': pluginUninstall(useProject, null, context); break;
+    case 'install': pluginInstall(useProject, { ...context, pluginsOnly: args.includes('--plugins-only') }); break;
+    case 'uninstall': pluginUninstall(useProject, null, { ...context, pluginsOnly: args.includes('--plugins-only') }); break;
     case 'status': await pluginStatus(useProject, context); break;
     default:
       stderrLine(context, `unknown plugin command: ${sub === undefined ? '(missing)' : sub}`);

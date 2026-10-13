@@ -182,9 +182,11 @@ guarana update [--project]              Reinstall the bundled version
 guarana list [--project]                Show skills and plugin presence
 guarana uninstall [--project]           Remove the installed runtime
 
-guarana plugin install [--project]       Install or repair OpenCode plugins
+guarana plugin install [--project]       Install plugins, engines, and native profiles
+guarana plugin install --plugins-only [--project]  Install plugins and engines; preserve profiles
 guarana plugin status [--project]        Check plugin and engine health
-guarana plugin uninstall [--project]    Remove plugins and engines
+guarana plugin uninstall [--project]    Remove plugins, engines, and Guarana-managed profiles
+guarana plugin uninstall --plugins-only [--project]  Remove plugin files and the plugins manifest group; preserve engines and profiles
 
 guarana memory init                      Initialize a vault manually
 guarana memory status                    Show node, edge, and draft counts

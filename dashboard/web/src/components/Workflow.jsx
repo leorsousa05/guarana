@@ -34,6 +34,14 @@ function EdgeArrow({ state }) {
   return <span className="wf-edge"><span aria-hidden="true">→</span> {ev}</span>;
 }
 
+function WorkflowText({ text, className }) {
+  if (!text) return '—';
+  return <details className="wf-text-disclosure">
+    <summary className={className}>{text}</summary>
+    <p>{text}</p>
+  </details>;
+}
+
 export function Workflow({ data }) {
   const state = data?.state || 'idle';
   const idx = activeIndex(state);
@@ -118,7 +126,7 @@ export function Workflow({ data }) {
                         <span className="wf-h-to">{h.to}</span>
                       </span>
                       <code className="wf-history-event">{h.event}</code>
-                      {h.note ? <span className="wf-h-note">{h.note}</span> : <span className="wf-h-note" />}
+                      {h.note ? <WorkflowText className="wf-h-note" text={h.note} /> : <span className="wf-h-note" />}
                       {h.ts ? <time className="wf-h-ts" dateTime={new Date(h.ts).toISOString()}>{fmtTs(h.ts)}</time> : <span />}
                     </li>
                   ))}
@@ -136,11 +144,11 @@ export function Workflow({ data }) {
                 </div>
                 <div>
                   <dt>goal</dt>
-                  <dd>{data?.goal || '—'}</dd>
+                  <dd><WorkflowText className="wf-detail-summary" text={data?.goal} /></dd>
                 </div>
                 <div>
                   <dt>condition</dt>
-                  <dd>{data?.condition || '—'}</dd>
+                  <dd><WorkflowText className="wf-detail-summary" text={data?.condition} /></dd>
                 </div>
                 <div>
                   <dt>updated</dt>

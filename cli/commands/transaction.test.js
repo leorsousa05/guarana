@@ -10,7 +10,7 @@ const update = require('./update.js');
 const uninstall = require('./uninstall.js');
 const plugin = require('./plugin.js');
 const { PLUGIN_NAME, STAMP } = require('../constants.js');
-const { targetDir, pluginTarget, advisorSettingsTarget } = require('../lib/paths.js');
+const { targetDir, pluginTarget, advisorSettingsTarget, installManifestTarget } = require('../lib/paths.js');
 
 function treeSnapshot(root, relative = '', result = new Map()) {
   for (const entry of fs.readdirSync(path.join(root, relative), { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
@@ -157,6 +157,20 @@ for (const useProject of [true, false]) {
     const fault = injectAfter('rmSync', (file) => file === target);
     try {
       assert.throws(() => plugin.uninstall(useProject, null, captureStreams()), /injected after rmSync/);
+      assert.ok(fault.injected);
+    } finally {
+      fault.restore();
+    }
+    assertRestored(roots, before);
+  }));
+
+  it(`rolls back plugins-only ${scope} uninstall after the manifest update`, () => withScope(useProject, ({ roots }) => {
+    plugin.install(useProject, { quiet: true });
+    const manifest = installManifestTarget(useProject);
+    const before = snapshotRoots(roots);
+    const fault = injectAfter('renameSync', (_from, to) => to === manifest);
+    try {
+      assert.throws(() => plugin.uninstall(useProject, null, { pluginsOnly: true, ...captureStreams() }), /injected after renameSync/);
       assert.ok(fault.injected);
     } finally {
       fault.restore();

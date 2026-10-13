@@ -1,5 +1,39 @@
 # Known Issues
 
+## 2026-10-13 — blocked Roadmap Read sends inline text title to file endpoint
+- **Symptom:** Clicking `Read` on the BLOCKED Roadmap item fails with `Unable to load document: Error: 400 Bad Request`.
+- **Reproduction trigger:** In the current Specs Overview, click `Read` for the BLOCKED Roadmap entry. The callback invokes `onOpen(title, item)` with title `Roadmap — blocked`; Overview passes `openDoc`, which treats that title as a relative file path and requests `/api/specs/file?path=Roadmap%20%E2%80%94%20blocked`. Reproduced by `/tmp/opencode/roadmap-read-check.mjs`.
+- **Root cause:** The Roadmap Read action supplies inline roadmap text, but its callback is wired to the document-path reader, which ignores the text and fetches a file using the display title.
+- **Possible mitigation:** Route the supplied roadmap title and text through the inline text reader instead of `openDoc`/the file endpoint; add a regression that confirms the text opens and no file fetch is made.
+- **Classification:** Unclassified in the Guarana debug failure-mode matrix; this is a UI callback-contract miswiring, not one of the listed run failure modes.
+- **Implementation update (2026-10-13):** Worker-code routed Roadmap Read's supplied title and exact item text through `openText`, while tracker Markdown links remain on `openDoc`. The regression proves the supplied text opens and a fake file opener is not called. Focused Docs+Specs tests passed 13/13 (exact command not supplied); `npm run build:dashboard` and `git diff --check` passed. This is worker-reported implementation evidence only; independent verification remains pending.
+- **Status:** Fix implemented; independent verification pending. The feature remains IMPLEMENTED; no VALIDATED or SHIPPED status is claimed.
+
+## 2026-10-13 — Specs ADR-order assertion still expects ascending order
+- **Symptom:** Independent verification fails `Specs.test.mjs` lines 223–237 because it asserts ADR-003 appears before ADR-012. The Documents redesign intentionally sorts ADRs newest-first; the new Documents test and live Playwright evidence show ADR-030 first, so this assertion disagrees with the intended app behavior.
+- **Reproduction trigger:** Run the Specs test containing the ADR ordering assertion after the Documents redesign; it fails on the stale ascending-order expectation while app behavior displays the newest ADR first.
+- **Root cause:** The existing test assertion was not updated to match the accepted newest-first ADR ordering. This is stale test expectation, not an application behavior defect.
+- **Possible mitigation:** Update the ordering assertion to verify descending/newest-first order (including ADR-030 before older ADRs) and retain the live Documents ordering regression. No app or test files changed during this diagnosis.
+- **Classification:** Unclassified in the Guarana debug failure-mode matrix; test-contract drift matches none of its listed modes.
+- **Status:** Mitigation identified; test update pending.
+
+## 2026-10-13 — Specs full-text action opens project state as a document path
+- **Symptom:** Clicking “Read full text” for `project-state.md` opens the Documents view with modal title `project-state` and content from the file endpoint rather than displaying the supplied state text.
+- **Reproduction trigger:** In the Specs Overview, click “Read full text” for `project-state.md`. Playwright observed the modal title `project-state` and file-response content instead of the state text.
+- **Root cause:** The action invokes `onOpen(title, text)`, but Overview passes `openDoc`. `openDoc` interprets its first argument as a relative document path, ignores the second argument, switches to Documents, and requests `/api/specs/file?path=project-state.md`; state files are excluded from the document tree.
+- **Possible mitigation:** Route state-file full-text actions to a reader that consumes the supplied title and text directly, or provide a dedicated state-reading path that does not send the title through the document-path handler. Add a Playwright regression asserting the state text appears and no document-file request is made.
+- **Implementation update (2026-10-13):** Specs Overview passes `openText` to the state/known-issues LedgerPage; tracker/roadmap links remain on `openDoc`. A regression test exercises the LedgerPage Read handler title/text and verifies source wiring. Focused Specs tests PASS (9/9); dashboard build PASS. This is implementation evidence only; independent verification remains pending.
+- **Classification:** Unclassified in the Guarana debug failure-mode matrix; this is UI callback-contract miswiring and matches none of its listed modes. Independent verification remains pending.
+- **Status:** Fix implemented; independent verification pending. The previously observed behavior remains recorded above until independently verified; no VALIDATED or SHIPPED status is claimed.
+
+## 2026-10-13 — workflow completion tick rejected after verification transition
+- **Symptom:** After worker-code completed the Activity summary selector fix and worker-specs recorded implementation, the primary called `workflow_tick(action=code_complete)` expecting coding→verifying. The call returned `illegal transition code_complete from verifying`, although a prior `workflow_get` reportedly showed debugging. Current visible state is debugging. Application work, tests, build, and Playwright passed; no application failure was observed.
+- **Reproduction trigger:** A `code_complete` action is issued when the workflow engine's effective state is already `verifying` (or the state changes between inspection and action). It is illegal from `verifying`; the reported discrepancy with the immediately preceding `workflow_get` does not establish why the views differed.
+- **Root cause:** Workflow lifecycle/state disagreement or a stale/misrouted lifecycle action; available evidence does not identify which. This is not runaway, oscillation, context loss, unbounded retry, or loop-as-terrier.
+- **Safe recovery:** Do not retry `code_complete` from `verifying` or force a completion transition. Treat debugging as the current authoritative state; preserve implementation and test evidence, then re-plan/re-enter the normal build/coding lifecycle only if a new code dispatch is actually needed. If implementation is complete, proceed through the supported recovery/re-plan path to verification and record the lifecycle discrepancy rather than editing application code to repair workflow state.
+- **Classification:** Unclassified in the Guarana debug failure-mode matrix; escalate workflow-state inconsistency for human/orchestrator diagnosis.
+- **Status:** Mitigation recorded; root cause of the differing state observations remains unconfirmed. No application code changed.
+
 ## 2026-10-12 — skill update accepts a reused mtime token after content changes
 - **Symptom:** A stale skill update token is accepted when a skill file's body changes but its original modification time is restored; update overwrites the changed content instead of rejecting the stale write.
 - **Reproduction trigger:** In `skill-engine/index.test.js:113-193`, obtain the token for an existing generated skill, modify its body, restore the original mtime, and call update with the original token. Exact reproduction output: `{"token":1700000000125,"beforeUpdate":1700000000125,"staleTokenAccepted":true,"result":{"updated":true,"name":"stable-guide","description":"Updated guide.","scope":"project"}}`. The token is computed from `fs.statSync(file).mtimeMs` in `skill-engine/index.js:179-203`.

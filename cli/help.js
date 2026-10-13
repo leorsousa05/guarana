@@ -28,6 +28,9 @@ const HELP = [
   'Primary:        Agent/profile defaults only; explicit or remembered OpenCode',
   '                session model/variant selections prevail.',
   'Install/update: guarana plugin install [--project] generates configured native OpenCode profiles.',
+  '                Add --plugins-only to refresh only plugins and engines, preserving profiles.',
+  'Uninstall:      guarana plugin uninstall [--plugins-only] [--project] removes the selected scope.',
+  '                Add --plugins-only to preserve engines, profiles, and their manifest groups.',
   '',
 ].join('\n');
 

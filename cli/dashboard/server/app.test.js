@@ -92,6 +92,9 @@ describe('GET /api/telemetry/stream (SSE)', () => {
     assert.deepEqual(one, { events: [{ sessionID: 'b', ts: 1 }] });
     const many = await (await fetch(`${base}/api/telemetry/events?session=a&session=b&session=c&session=d&session=e&session=f`)).json();
     assert.deepEqual(many.events.map((event) => event.sessionID), ['a', 'b', 'c', 'd', 'e']);
+    assert.equal((await (await fetch(`${base}/api/telemetry/events`)).json()).events.length, 6);
+    const bounded = await (await fetch(`${base}/api/telemetry/events?limit=2`)).json();
+    assert.deepEqual(bounded.events.map((event) => event.sessionID), ['e', 'f']);
   });
 });
 

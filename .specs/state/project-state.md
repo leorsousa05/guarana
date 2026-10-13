@@ -24,7 +24,7 @@ Last updated: 2026-10-11 (dashboard redesign validated; CLI refactor remains TAS
 | Guarana optional model advisor | **VALIDATED** — UI criteria 11–14 and ADR-027 runtime proof |
 
 ## Current step
-Reusable skill playbooks and safe skill updates are SHIPPED. Independent worker-verify passed all five criteria; detailed verification evidence and implementation/test proof paths are recorded in .specs/features/skills/reusable-skill-playbooks-and-safe-updates.md:65-75. Independent transport verification PASS confirms commit 9c5be8a55a84a4e29751e2f55cf4ef7caa795658 is on local main, origin/main, and live remote refs/heads/main; its 13 committed paths match intended scope and include no .opencode/ paths. The tracked and untracked worktree was clean before this record update. Exact push command rtk git push returned cb83e0c..9c5be8a main -> main; ok main. .opencode/ remains intentionally ignored and local; ignored skill files are not claimed as pushed. No release, tag, or npm publish was requested or performed.
+Independent worker-verify PASS recorded as VALIDATED; no commit or push has occurred.
 
 ## Dashboard redesign final validation — 2026-10-11
 

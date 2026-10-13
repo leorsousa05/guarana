@@ -10,13 +10,14 @@ import test from 'node:test';
 const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const render = (element) => renderToStaticMarkup(element);
 
-test('Activity foregrounds the selected root and stacks supporting evidence without card symmetry', async (t) => {
+test('Activity presents an active-first parent/child agent inspector with compact supporting signals', async (t) => {
   const vite = await createServer({ root: webRoot, server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
   t.after(() => vite.close());
-  const { Activity, activitySessionIDs, latestAdvisorForRoot, rootSessionFrom } = await vite.ssrLoadModule('/src/components/Activity.jsx');
+  const { Activity, activitySessionIDs, buildSessionTree, latestAdvisorForRoot, rootSessionFrom } = await vite.ssrLoadModule('/src/components/Activity.jsx');
   const { filterInjectionsForSession } = await vite.ssrLoadModule('/src/components/MemoryInjections.jsx');
   const summary = { runs: [
     { sessionID: 'advisor-child', parentSessionID: 'root-1', start: 200, status: 'busy', toolCalls: 1, tokens: 2, errors: 0 },
+    { sessionID: 'old-child', parentSessionID: 'root-1', start: 150, end: 175, status: 'completed', statusTs: 175, toolCalls: 1, tokens: 2, errors: 0 },
     { sessionID: 'root-1', start: 100, end: 175, status: 'created', durationMs: 75, toolCalls: 3, tokens: 40, errors: 0 },
     { sessionID: 'root-0', start: 50, end: 90, status: 'idle', toolCalls: 1, tokens: 10, errors: 0 },
   ] };
@@ -44,6 +45,13 @@ test('Activity foregrounds the selected root and stacks supporting evidence with
     { sessionID: 'child-4', parentSessionID: 'root' },
     { sessionID: 'root' },
   ] }), ['root', 'child-0', 'child-1', 'child-2', 'child-3', 'child-4']);
+  const tree = buildSessionTree([
+    { sessionID: 'old-root', start: 1, status: 'idle' },
+    { sessionID: 'busy-root', start: 2, status: 'idle' },
+    { sessionID: 'busy-child', parentSessionID: 'busy-root', start: 3, status: 'running' },
+  ]);
+  assert.equal(tree[0].run.sessionID, 'busy-root');
+  assert.equal(tree[0].children[0].run.sessionID, 'busy-child');
   assert.deepEqual(filterInjectionsForSession([
     { id: 'root-injection', sessionID: 'root-1' },
     { id: 'child-injection', sessionID: 'advisor-child' },
@@ -51,60 +59,134 @@ test('Activity foregrounds the selected root and stacks supporting evidence with
 
   const html = render(React.createElement(Activity, { summary, workflow: { state: 'coding', activeTask: 'Update dashboard' } }));
   assert.match(html, /aria-label="Activity"/);
-  assert.match(html, /Current session/);
+  assert.match(html, /running subagents/);
+  assert.match(html, /Agent sessions/);
+  assert.match(html, /Selected session/);
+  assert.match(html, /Aggregates · observed/);
+  assert.match(html, /activity-agent-list/);
+  assert.match(html, /advisor-child/);
+  assert.match(html, /Recently completed subagents \(1\)/);
+  assert.match(html, /old-child/);
+  assert.match(html, /activity-status--running/);
   assert.match(html, /root-1/);
-  assert.match(html, /Last seen/);
-  assert.match(html, /workflow phase/);
-  assert.match(html, /Update dashboard/);
+  assert.match(html, /Last observed/);
+  assert.match(html, /Current phase/);
+  assert.doesNotMatch(html, /Update dashboard|current task/);
   assert.match(html, /tool calls/);
   assert.match(html, /tokens/);
   assert.match(html, /errors/);
   assert.match(html, /Advisor/);
   assert.match(html, /Advisor history/);
-  assert.match(html, /Workflow state machine/);
+  assert.match(html, /Workflow status/);
   assert.match(html, /Recent activity/);
-  assert.match(html, /Memory evidence/);
+  assert.match(html, /Injected memory history/);
+  assert.match(html, /aria-expanded="false"/);
+  assert.doesNotMatch(html, /loading memory history/);
   assert.match(html, /Loading Advisor telemetry/);
-  assert.match(html, /Loading root-session activity/);
-  assert.match(html, /loading memory history/);
-  assert.doesNotMatch(html, /advisor-child|root-0/);
-  assert.doesNotMatch(html, /Observed as running/);
-  assert.ok(html.indexOf('Current session') < html.indexOf('Advisor'));
-  assert.ok(html.indexOf('Advisor') < html.indexOf('Workflow state machine'));
+  assert.match(html, /Loading live telemetry/);
+  assert.doesNotMatch(html, /root-0/);
+  assert.ok(html.indexOf('root-1') < html.indexOf('advisor-child'));
+  assert.ok(html.slice(html.indexOf('<code>root-1</code>'), html.indexOf('<code>advisor-child</code>')).includes('</button><ul><li'));
+  assert.ok(html.indexOf('Agent sessions') < html.indexOf('Selected session'));
+  assert.ok(html.indexOf('Selected session') < html.indexOf('Workflow status'));
 
   const busyHtml = render(React.createElement(Activity, {
     summary: { runs: [{ sessionID: 'running-root', start: 100, end: 125, status: 'busy', toolCalls: 1, tokens: 2, errors: 0 }] },
     workflow: { state: 'building', activeTask: 'Run check' },
   }));
-  assert.match(busyHtml, /RUNNING/);
-  assert.match(busyHtml, /Observed as running · last seen/);
-  assert.match(busyHtml, /running-root/);
+  assert.match(busyHtml, /No active subagents/);
+  assert.doesNotMatch(busyHtml, /Agent sessions|Selected session|running-root/);
 
   const noRoot = render(React.createElement(Activity, { summary: { runs: [] }, workflow: { engine: 'not-found' } }));
-  assert.match(noRoot, /No root session telemetry observed yet/);
-  assert.match(noRoot, /No root session is available to match injected memories/);
-  assert.match(noRoot, /WAITING/);
+  assert.match(noRoot, /No active subagents/);
+  assert.doesNotMatch(noRoot, /Agent sessions|Selected session/);
   assert.doesNotMatch(noRoot, /memory-injection-layout/);
 
   const css = fs.readFileSync(path.join(webRoot, 'src/style.css'), 'utf8');
-  assert.match(css, /\.activity-primary\s*\{[^}]*grid-template-columns: minmax\(0, 1\.65fr\) minmax\(16rem, 0\.85fr\)/s);
-  assert.match(css, /\.activity-evidence\s*\{[^}]*grid-template-columns: minmax\(0, 1\.45fr\) minmax\(0, 0\.9fr\)/s);
-  assert.match(css, /@media \(max-width: 700px\)\s*\{\s*\.activity-primary,\s*\.activity-evidence\s*\{\s*grid-template-columns: minmax\(0, 1fr\)/s);
-  assert.match(css, /@media \(max-width: 375px\)\s*\{\s*\.activity-event-list li/);
-  assert.doesNotMatch(css, /\.activity-workareas/);
+  assert.match(css, /\.activity-inspector\s*\{[^}]*grid-template-columns: minmax\(0, \.8fr\) minmax\(0, 1\.2fr\)/s);
+  assert.match(css, /@media \(max-width: 700px\)\s*\{\s*\.activity-inspector,\s*\.activity-supporting\s*\{\s*grid-template-columns: minmax\(0, 1fr\)/s);
+  assert.match(css, /@media \(max-width: 375px\)\s*\{[\s\S]{0,500}\.activity-event-list li/);
   assert.doesNotMatch(css, /\.activity-area\s*\{[^}]*border: 1px solid/s);
 });
 
-test('recent root events have explicit loading, error, empty, and safe-data states', async (t) => {
+test('Activity bounds collapsed completed-child history and omits the active panel when only the root is running', async (t) => {
+  const vite = await createServer({ root: webRoot, server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
+  t.after(() => vite.close());
+  const { Activity } = await vite.ssrLoadModule('/src/components/Activity.jsx');
+  const runs = [
+    { sessionID: 'running-root', status: 'running', start: 1 },
+    ...Array.from({ length: 22 }, (_, index) => ({
+      sessionID: `completed-${index}`,
+      parentSessionID: 'running-root',
+      status: index === 21 ? 'idle' : 'completed',
+      start: index + 10,
+      end: index + 20,
+      statusTs: index === 21 ? null : index + 20,
+    })),
+  ];
+  const html = render(React.createElement(Activity, { summary: { runs }, workflow: {} }));
+  assert.match(html, /No active subagents/);
+  assert.doesNotMatch(html, /Agent sessions|Selected session|running-root/);
+  assert.match(html, /<details class="activity-completed-subagents">/);
+  assert.match(html, /Recently completed subagents \(22\)/);
+  assert.doesNotMatch(html, /<details[^>]*open=/);
+  assert.match(html, /Showing the 20 most recently observed/);
+  assert.match(html, /completed-21/);
+  assert.match(html, /completed-2/);
+  assert.doesNotMatch(html, /<code>completed-(?:1|0)<\/code>/);
+  assert.match(html, /Completed ·/);
+  assert.match(html, /Last observed ·/);
+  assert.match(html, /<button[^>]*aria-pressed="false"[^>]*>[\s\S]*completed-21/);
+});
+
+test('terminal timestamps use statusTs only for terminal states; nonterminal states stay last-observed', async (t) => {
+  const vite = await createServer({ root: webRoot, server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
+  t.after(() => vite.close());
+  const { terminalTimeLabel } = await vite.ssrLoadModule('/src/components/Activity.jsx');
+  const { fmtTs } = await vite.ssrLoadModule('/src/lib/format.js');
+  assert.equal(terminalTimeLabel({ status: 'completed', statusTs: 200, end: 175 }), `Completed · ${fmtTs(200)}`);
+  assert.equal(terminalTimeLabel({ status: 'running', statusTs: 200, end: 175 }), `Last observed · ${fmtTs(175)}`);
+  assert.equal(terminalTimeLabel({ status: 'completed', statusTs: null, end: 175 }), `Last observed · ${fmtTs(175)}`);
+});
+
+test('selected-session timeline and memory history stay scoped and history is opt-in', async (t) => {
+  const vite = await createServer({ root: webRoot, server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
+  t.after(() => vite.close());
+  const { SessionMemoryHistory, SessionTimeline, safeToolName } = await vite.ssrLoadModule('/src/components/Activity.jsx');
+  const events = [
+    { ts: 100, type: 'tool', tool: 'read_file', sessionID: 'selected' },
+    { ts: 101, type: 'tool', tool: 'write_file', sessionID: 'other', args: 'PRIVATE_ARGS' },
+    { ts: 102, type: 'tool', tool: 'api_key=PRIVATE_CREDENTIAL', sessionID: 'selected', error: 'PRIVATE_ERROR' },
+    { ts: 103, type: 'session', status: 'busy', sessionID: 'selected', prompt: 'PRIVATE_PROMPT' },
+  ];
+  const timeline = render(React.createElement(SessionTimeline, { sessionID: 'selected', events }));
+  assert.match(timeline, /read_file/);
+  assert.match(timeline, /Session/);
+  assert.doesNotMatch(timeline, /write_file|PRIVATE_/);
+  assert.equal(safeToolName('browser.navigate'), 'browser.navigate');
+  assert.equal(safeToolName('sk-secretvalue'), null);
+  assert.equal(safeToolName('api_key=PRIVATE_CREDENTIAL'), null);
+  assert.equal(safeToolName('x'.repeat(41)), null);
+
+  const closed = render(React.createElement(SessionMemoryHistory, { sessionID: 'selected', tick: 3, open: false }));
+  assert.match(closed, /hidden=""/);
+  assert.doesNotMatch(closed, /loading memory history/);
+  const opened = render(React.createElement(SessionMemoryHistory, { sessionID: 'selected', tick: 3, open: true }));
+  assert.match(opened, /data-session-id="selected"/);
+  assert.match(opened, /loading memory history/);
+  assert.doesNotMatch(opened, /other/);
+});
+
+test('global events expose safe categories, newest-first order, and older-event disclosure', async (t) => {
   const vite = await createServer({ root: webRoot, server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
   t.after(() => vite.close());
   const { RecentActivity } = await vite.ssrLoadModule('/src/components/Activity.jsx');
 
-  assert.match(render(React.createElement(RecentActivity, { state: { data: null, error: null } })), /role="status">Loading root-session activity/);
+  assert.match(render(React.createElement(RecentActivity, { state: { data: null, error: null } })), /role="status">Loading live telemetry/);
   const error = render(React.createElement(RecentActivity, { state: { data: null, error: 'PRIVATE_ERROR_DETAIL' } }));
-  assert.match(error, /role="alert">Unable to load root-session events/);
+  assert.match(error, /role="alert">Unable to load telemetry events/);
   assert.doesNotMatch(error, /PRIVATE_ERROR_DETAIL/);
-  assert.match(render(React.createElement(RecentActivity, { state: { data: { events: [] }, error: null } })), /No recent tool or session events for this root session/);
+  assert.match(render(React.createElement(RecentActivity, { state: { data: { events: [] }, error: null } })), /No recent telemetry events observed/);
 
   const events = render(React.createElement(RecentActivity, { state: { error: null, data: { events: [
     { ts: 1, type: 'tool', tool: 'read', ok: true, error: 'PRIVATE_TOOL_ERROR', credential: 'PRIVATE_CREDENTIAL' },
@@ -112,13 +194,37 @@ test('recent root events have explicit loading, error, empty, and safe-data stat
     { ts: 3, type: 'advisor-execution', status: 'error', error: 'PRIVATE_ADVISOR_ERROR', output: 'PRIVATE_OUTPUT' },
     { ts: 4, type: 'memory-injected', privateText: 'PRIVATE_MEMORY_TEXT' },
     { ts: 5, type: 'tool', tool: 'write', ok: false, error: 'PRIVATE_TOOL_ERROR' },
+    ...Array.from({ length: 14 }, (_, i) => ({ ts: 10 + i, type: 'workflow', task: 'PRIVATE_TASK', note: 'PRIVATE_NOTE', sessionID: `session-${i}` })),
   ] } } }));
-  assert.match(events, /read/);
-  assert.match(events, /write/);
+  assert.equal((events.match(/Tool call/g) || []).length, 2);
   assert.match(events, /activity-status--error/);
-  assert.match(events, /activity-status--running/);
-  assert.ok(events.indexOf('write') < events.indexOf('read'));
-  assert.doesNotMatch(events, /advisor-execution|memory-injected|PRIVATE_/);
+  assert.match(events, /activity-status--busy/);
+  assert.match(events, /Workflow/);
+  assert.match(events, /Show older events/);
+  assert.ok(events.indexOf('Show older events') > events.indexOf('Workflow'));
+  assert.doesNotMatch(events, /PRIVATE_/);
+});
+
+test('all emitted event categories render safe labels without private payload values', async (t) => {
+  const vite = await createServer({ root: webRoot, server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
+  t.after(() => vite.close());
+  const { RecentActivity } = await vite.ssrLoadModule('/src/components/Activity.jsx');
+  const fixture = [
+    'tool', 'tokens', 'session', 'todo', 'advisor-dispatch', 'advisor-execution',
+    'telemetry-error', 'memory-error', 'memory-session', 'workflow', 'memory-injected', 'orchestrator-error',
+  ].map((type, ts) => ({
+    type, ts, ok: false, status: 'error', tool: 'api_key=PRIVATE_TOOL', error: 'PRIVATE_ERROR',
+    prompt: 'PRIVATE_PROMPT', output: 'PRIVATE_OUTPUT', task: 'PRIVATE_TASK', note: 'PRIVATE_NOTE',
+    todo: 'PRIVATE_TODO', memory: 'PRIVATE_MEMORY', content: 'PRIVATE_CONTENT', credential: 'PRIVATE_CREDENTIAL',
+  }));
+  const html = render(React.createElement(RecentActivity, { state: { error: null, data: { events: fixture } } }));
+  for (const label of ['Tool call', 'Token usage', 'Session', 'Todo', 'Advisor dispatch', 'Advisor execution', 'Telemetry error', 'Memory error', 'Memory session', 'Workflow', 'Memory injected', 'Orchestrator error']) {
+    assert.match(html, new RegExp(label));
+  }
+  for (const category of ['telemetry-error', 'memory-error', 'orchestrator-error']) {
+    assert.match(html, /activity-status--error/);
+  }
+  assert.doesNotMatch(html, /PRIVATE_/);
 });
 
 test('Advisor area keeps parent-scoped reason, configured/observed comparison, and safe status states', async (t) => {
@@ -171,6 +277,25 @@ test('Advisor area keeps parent-scoped reason, configured/observed comparison, a
   }));
   assert.match(unavailable, /role="alert">Advisor telemetry unavailable/);
   assert.doesNotMatch(unavailable, /PRIVATE_HISTORY_ERROR/);
+});
+
+test('Activity omits workflow task payload while retaining Advisor reason metadata', async (t) => {
+  const vite = await createServer({ root: webRoot, server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
+  t.after(() => vite.close());
+  const { Activity, AdvisorPanel } = await vite.ssrLoadModule('/src/components/Activity.jsx');
+  const task = 'task detail '.repeat(500);
+  const reason = 'advisor rationale '.repeat(500);
+  const activityHtml = render(React.createElement(Activity, {
+    summary: { runs: [{ sessionID: 'long-root', status: 'idle', start: 1 }] },
+    workflow: { activeTask: task },
+  }));
+  const advisorHtml = render(React.createElement(AdvisorPanel, {
+    latestAdvisor: { status: 'completed', reason }, advisorStatus: 'completed', configured: {},
+    history: { data: { history: [] } }, onShowHistory() {},
+  }));
+  assert.doesNotMatch(activityHtml, /task detail/);
+  assert.ok(advisorHtml.includes(`<dd>${reason}</dd>`));
+  assert.doesNotMatch(activityHtml, /activity-text-disclosure|activity-task-summary|activity-reason-summary/);
 });
 
 test('Advisor history modal exposes safe metadata and retains Escape/focus behavior', async (t) => {

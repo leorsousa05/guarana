@@ -10,6 +10,18 @@ import test from 'node:test';
 const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const readSource = (name) => fs.readFileSync(path.join(webRoot, 'src/components', name), 'utf8');
 const render = (element) => renderToStaticMarkup(element);
+const findElement = (element, predicate) => {
+  if (Array.isArray(element)) {
+    for (const child of element) {
+      const found = findElement(child, predicate);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (!React.isValidElement(element)) return null;
+  if (predicate(element)) return element;
+  return findElement(element.props.children, predicate);
+};
 
 test('Specs Overview preserves tracker links, priority roadmap, and project-state reading actions', async (t) => {
   const vite = await createServer({ root: webRoot, server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
@@ -45,6 +57,126 @@ test('Specs Overview preserves tracker links, priority roadmap, and project-stat
   assert.match(html, /Read full text/);
 });
 
+test('Specs state readers forward their title and supplied text to the inline reader', async (t) => {
+  const vite = await createServer({ root: webRoot, server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
+  t.after(() => vite.close());
+  const { LedgerPage } = await vite.ssrLoadModule('/src/components/Specs.jsx');
+  for (const [title, text] of [
+    ['project-state.md', '# Current work\n\nRead this exact state.'],
+    ['known-issues.md', '## Open issue\n\nRead this exact issue.'],
+  ]) {
+    const calls = [];
+    const page = LedgerPage({ title, text, onOpen: (...args) => calls.push(args) });
+    const readButton = page.props.children[1];
+    assert.equal(readButton.props.children, 'Read full text');
+    readButton.props.onClick();
+    assert.deepEqual(calls, [[title, text]]);
+  }
+
+  const source = readSource('Specs.jsx');
+  assert.match(source, /<LedgerPage title="project-state\.md"[^>]*onOpen=\{onOpenText\}/);
+  assert.match(source, /<LedgerPage title="known-issues\.md"[^>]*onOpen=\{onOpenText\}/);
+  assert.match(source, /const openText = \(title, text\) => setReader\(\{ title, text \}\)/);
+  assert.match(source, /onOpenText=\{openText\}/);
+  assert.match(source, /onOpen=\{openDoc\}/);
+  assert.match(source, /\/api\/specs\/file\?path=\$\{encodeURIComponent\(path\)\}/);
+});
+
+test('Roadmap Read sends the exact item to the inline reader without requesting a fake file path', async (t) => {
+  const vite = await createServer({ root: webRoot, server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
+  t.after(() => vite.close());
+  const { Roadmap } = await vite.ssrLoadModule('/src/components/Specs.jsx');
+  const item = 'Keep this exact blocked roadmap text, including its details.';
+  const inlineReads = [];
+  const fileRequests = [];
+  const roadmap = Roadmap({
+    tracker: { BLOCKED: [item], NEXT: [], DONE: [] },
+    onOpenText: (...args) => inlineReads.push(args),
+    onOpen: (rel) => fileRequests.push(`/api/specs/file?path=${encodeURIComponent(rel)}`),
+  });
+  const readButton = findElement(roadmap, (element) => element.type === 'button' && element.props.children === 'Read');
+
+  assert.ok(readButton, 'the roadmap item has a Read button');
+  readButton.props.onClick();
+  assert.deepEqual(inlineReads, [['Roadmap — blocked', item]]);
+  assert.deepEqual(fileRequests, [], 'the Read action does not pass its title to the file opener');
+
+  const source = readSource('Specs.jsx');
+  assert.match(source, /<Roadmap tracker=\{tracker\} onOpenText=\{onOpenText\} \/>/);
+  assert.match(source, /<MdLink text=\{row\.proof\} onOpenFile=\{onOpen\} canOpen=\{isDocPath\} \/>/);
+});
+
+test('Specs rollup groups tracker rows by their final recognized stage and prioritizes actions', async (t) => {
+  const vite = await createServer({ root: webRoot, server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
+  t.after(() => vite.close());
+  const { Specs } = await vite.ssrLoadModule('/src/components/Specs.jsx');
+  const html = render(React.createElement(Specs, {
+    tracker: {
+      schema: 'guarana',
+      rows: [
+        {
+          skill: 'latest-stage-wins', status: 'SPECIFIED → IMPLEMENTED → VALIDATED',
+          proof: '[verification](features/dashboard/proofs/specs.md)',
+          change: '[redesign](changes/2026-10-10-specs.md)',
+        },
+        { skill: 'tasked', status: 'TASKED' },
+        { skill: 'implemented', status: 'Design completed; IMPLEMENTED' },
+        { skill: 'validated', status: 'VALIDATED' },
+        { skill: 'shipped', status: 'SHIPPED' },
+        { skill: 'other', status: 'Waiting for design review' },
+        { skill: 'missing' },
+        { skill: 'blank', status: '  ' },
+        { skill: 'null-status', status: null },
+      ],
+      BLOCKED: ['Blocked roadmap entry.'], NEXT: ['Next roadmap entry.'], DONE: ['Done one.', 'Done two.', 'Done three.', 'Done four.'],
+    },
+    state: { projectState: 'Current state.', knownIssues: 'Known issues.' },
+  }));
+  const summaryStart = html.indexOf('class="spec-status-strip"');
+  const summaryEnd = html.indexOf('</section>', summaryStart);
+  const summary = html.slice(summaryStart, summaryEnd);
+  assert.match(summary, /data-tracked-count="9"/);
+  for (const [stage, count] of [
+    ['SPECIFIED', 0], ['TASKED', 1], ['IMPLEMENTED', 1], ['VALIDATED', 2], ['SHIPPED', 1],
+    ['Unspecified', 3], ['Other', 1],
+  ]) {
+    const escaped = stage.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    assert.match(summary, new RegExp(`<li class="spec-status-count" data-status="${escaped}"><span>${escaped}<\\/span><b>${count}<\\/b><\\/li>`));
+  }
+  assert.doesNotMatch(summary, /%|percent|progress/i, 'the ledger makes no percentage or progress claim');
+  assert.doesNotMatch(html, /spec-status-bar|spec-status-segment/);
+  assert.match(html, /SPECIFIED → IMPLEMENTED → VALIDATED/, 'the full source status remains in the register');
+  assert.match(html, /Design completed; IMPLEMENTED/, 'descriptive table status keeps its raw capitalization');
+
+  const statusIndex = html.indexOf('class="spec-status-strip"');
+  const priorityIndex = html.indexOf('class="spec-priority-grid"');
+  const decisionsIndex = html.indexOf('class="spec-decision-queue"');
+  const roadmapIndex = html.indexOf('class="spec-roadmap"');
+  const contextIndex = html.indexOf('class="spec-state spec-context"');
+  const trackerIndex = html.indexOf('class="spec-tracker-details"');
+  assert.ok(statusIndex >= 0 && priorityIndex > statusIndex);
+  assert.ok(priorityIndex > statusIndex && priorityIndex < contextIndex);
+  assert.ok(roadmapIndex > priorityIndex && roadmapIndex < decisionsIndex);
+  assert.ok(decisionsIndex < contextIndex && contextIndex < trackerIndex);
+  assert.ok(priorityIndex < trackerIndex, 'priority and decision actions precede the full register');
+  assert.ok(html.indexOf('role="tablist"') < decisionsIndex, 'decision actions are inside Overview, after the view tabs');
+  assert.match(html, /<details class="spec-roadmap-collapsible">/);
+  assert.match(html, /Done four\./, 'collapsed DONE entries remain reachable in the roadmap');
+  assert.match(html, /Done four\.<\/p><button type="button" class="spec-read-button">Read<\/button>/, 'collapsed DONE entries retain their Read action');
+  assert.equal((html.match(/class="spec-read-button">Read<\/button>/g) || []).length, 6, 'every BLOCKED, NEXT, and DONE item keeps a Read action');
+
+  const trackerDetailsStart = html.indexOf('<details class="spec-tracker-details">');
+  const trackerDetailsEnd = html.indexOf('</details>', trackerDetailsStart);
+  const trackerDetails = html.slice(trackerDetailsStart, trackerDetailsEnd);
+  assert.ok(trackerDetailsStart > contextIndex);
+  assert.doesNotMatch(trackerDetails.slice(0, trackerDetails.indexOf('>')), /\sopen(?:\s|>)/, 'full table is collapsed by default');
+  assert.match(trackerDetails, /Implementation tracker/);
+  assert.equal((trackerDetails.match(/<tr>/g) || []).length, 10, 'the full table retains all nine rows and its header');
+  for (const column of ['skill', 'status', 'proof', 'change']) assert.match(trackerDetails, new RegExp(`<th scope="col">${column}<\\/th>`));
+  assert.match(trackerDetails, /class="md-link">verification<\/button>/);
+  assert.match(trackerDetails, /class="md-link">redesign<\/button>/);
+});
+
 test('Specs keeps Unknown-schema, loading, empty-roadmap, and state-only Overview content', async (t) => {
   const vite = await createServer({ root: webRoot, server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
   t.after(() => vite.close());
@@ -56,6 +188,7 @@ test('Specs keeps Unknown-schema, loading, empty-roadmap, and state-only Overvie
   }));
   assert.match(unknown, /External schema is not renderable\./);
   assert.doesNotMatch(unknown, /spec-roadmap-title/);
+  assert.match(unknown, /Decisions needing you/);
   assert.match(unknown, /Overview state remains visible\./);
 
   const loading = render(React.createElement(Specs, { tracker: null, state: null }));
@@ -70,6 +203,9 @@ test('Specs keeps Unknown-schema, loading, empty-roadmap, and state-only Overvie
   }));
   assert.match(emptyRoadmap, /no tracker rows/);
   assert.match(emptyRoadmap, /No roadmap items recorded\./);
+  assert.match(emptyRoadmap, /data-tracked-count="0"/);
+  assert.match(emptyRoadmap, /data-status="Unspecified"><span>Unspecified<\/span><b>0<\/b>/);
+  assert.match(emptyRoadmap, /<details class="spec-tracker-details">/);
 });
 
 test('Specs decision queue presents pending actions, states, and documents file-wide resolution limits', async (t) => {
@@ -156,17 +292,25 @@ test('Documents excludes state, retains unknown directories, searches titles/pat
   const vite = await createServer({ root: webRoot, server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
   t.after(() => vite.close());
   const { Documents, buildGroups, filterDocumentGroups } = await vite.ssrLoadModule('/src/components/Documents.jsx');
+  const { flattenDocumentPaths } = await vite.ssrLoadModule('/src/components/Specs.jsx');
   const tree = [
     'state/project-state.md', 'state/known-issues.md',
     'decisions/ADR-012-second.md', 'decisions/ADR-003-first.md',
     'features/dashboard/dashboard.md', 'shared/foreign/guide.md',
   ];
   const groups = buildGroups(tree);
-  const allPaths = groups.flatMap((group) => group.items);
+  const flattenGroups = (nodes) => nodes.flatMap((group) => [
+    ...group.items,
+    ...flattenGroups(group.children),
+  ]);
+  const allPaths = flattenGroups(groups);
+  assert.deepEqual(flattenDocumentPaths(groups), allPaths, 'all nested documents are included when Specs loads titles');
   assert.equal(allPaths.includes('state/project-state.md'), false);
   assert.equal(allPaths.includes('state/known-issues.md'), false);
   assert.ok(allPaths.includes('shared/foreign/guide.md'));
-  assert.deepEqual(groups.find((group) => group.key === 'decisions').items, ['decisions/ADR-003-first.md', 'decisions/ADR-012-second.md']);
+  assert.deepEqual(groups.find((group) => group.key === 'decisions').items, ['decisions/ADR-012-second.md', 'decisions/ADR-003-first.md']);
+  assert.equal(groups.find((group) => group.key === 'features').children[0].label, 'Dashboard');
+  assert.equal(groups.find((group) => group.key === 'other').children[0].label, 'Shared');
 
   const titles = {
     'decisions/ADR-003-first.md': 'First decision',
@@ -174,8 +318,8 @@ test('Documents excludes state, retains unknown directories, searches titles/pat
     'features/dashboard/dashboard.md': 'Dashboard overview',
     'shared/foreign/guide.md': 'Shared guide',
   };
-  assert.deepEqual(filterDocumentGroups(groups, titles, 'searchable').flatMap((group) => group.items), ['decisions/ADR-012-second.md']);
-  assert.deepEqual(filterDocumentGroups(groups, titles, 'shared/foreign').flatMap((group) => group.items), ['shared/foreign/guide.md']);
+  assert.deepEqual(flattenGroups(filterDocumentGroups(groups, titles, 'searchable')), ['decisions/ADR-012-second.md']);
+  assert.deepEqual(flattenGroups(filterDocumentGroups(groups, titles, 'shared/foreign')), ['shared/foreign/guide.md']);
 
   const html = render(React.createElement(Documents, {
     tree, titles, active: 'shared/foreign/guide.md', onOpen() {},
@@ -188,7 +332,10 @@ test('Documents excludes state, retains unknown directories, searches titles/pat
   assert.match(html, /Open full document/);
   assert.match(html, /Reading surface/);
   assert.match(html, /shared\/foreign\/guide\.md/);
-  assert.doesNotMatch(html, /doc-toggle-label">Changes/);
+  assert.match(html, /doc-toggle-label">Dashboard/);
+  assert.match(html, /aria-expanded="true" aria-controls="spec-doc-list-other"/);
+  assert.match(html, /aria-expanded="true" aria-controls="spec-doc-list-other%2Fshared"/);
+  assert.match(html, /aria-expanded="true" aria-controls="spec-doc-list-other%2Fshared%2Fforeign"/);
   assert.match(html, /aria-expanded="false" aria-controls="spec-doc-list-decisions"/);
 
   const fallbackHtml = render(React.createElement(Documents, {
@@ -271,9 +418,20 @@ test('Specs modal local-link focus recovery keeps the original opener without re
 
 test('Specs layout keeps narrow content contained, scrolls dense tables locally, and respects reduced motion', () => {
   const css = fs.readFileSync(path.join(webRoot, 'src/style.css'), 'utf8');
+  assert.match(css, /\.spec-priority-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1\.1fr\) minmax\(0, 0\.9fr\)/s);
+  assert.match(css, /@media \(max-width: 700px\)[\s\S]*?\.spec-priority-grid\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\)/);
+  assert.match(css, /@media \(max-width: 700px\)[\s\S]*?\.spec-state-pages\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\)/);
+  assert.match(css, /\.spec-status-counts\s*\{[^}]*flex-wrap:\s*wrap/s);
+  assert.match(css, /\.spec-tracker-summary\s*\{[^}]*cursor:\s*pointer/s);
   assert.match(css, /\.spec-documents\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1\.25fr\) minmax\(15rem, 0\.75fr\)/s);
   assert.match(css, /@media \(max-width: 700px\)[\s\S]*?\.spec-documents\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\)/);
   assert.match(css, /\.spec-tracker-scroll\s*\{[^}]*overflow-x:\s*auto[^}]*overscroll-behavior-inline:\s*contain/s);
   assert.match(css, /\.spec-tracker-scroll:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--guarana\)/s);
+  assert.match(css, /\.spec-tracker-raw-status\s*\{[^}]*overflow-wrap:\s*anywhere/s);
+  assert.match(css, /\.specs-screen,\s*\.specs-screen \*\s*\{\s*min-width:\s*0;/);
+  assert.match(css, /\.specs-screen \.doc-children\s*\{[^}]*margin-left:\s*0\.75rem/s);
+  assert.match(css, /\.specs-screen \.doc-group-content\s*\{\s*min-width:\s*0;/);
+  assert.match(css, /\.specs-screen \.doc-item\s*\{[^}]*overflow-wrap:\s*anywhere/s);
+  assert.match(css, /\.spec-reading-path\s*\{[^}]*overflow-wrap:\s*anywhere/s);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
 });
