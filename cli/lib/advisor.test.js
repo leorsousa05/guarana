@@ -159,6 +159,7 @@ test('generated project/global native command and agents carry configured models
     assert.match(advisor, /mode: subagent/);
     assert.match(advisor, /model: "openrouter\/anthropic\/claude-opus-4"/);
     assert.match(advisor, /variant: "max"/);
+    assert.match(advisor, /^hidden: true$/m);
     assert.match(advisor, /edit: deny/);
     assert.match(advisor, /write: deny/);
     assert.match(advisor, /bash: deny/);
@@ -173,6 +174,7 @@ test('generated project/global native command and agents carry configured models
     const globalOpenCode = path.join(process.env.XDG_CONFIG_HOME, 'opencode');
     assert.ok(fs.existsSync(path.join(globalOpenCode, 'commands', 'guarana-advisor.md')));
     assert.ok(fs.existsSync(path.join(globalOpenCode, 'agents', 'guarana-advisor.md')));
+    assert.match(fs.readFileSync(advisorSubagentTarget(false), 'utf8'), /^hidden: true$/m);
     assert.match(fs.readFileSync(path.join(globalOpenCode, 'agents', 'guarana.md'), 'utf8'), /model: "anthropic\/claude-opus-4"/);
     assert.deepEqual(profiles.advisorArtifactStatus(false).map(({ status }) => status), [
       'ok (up to date)', 'ok (up to date)', 'ok (up to date)',
@@ -528,10 +530,7 @@ test('plugin install/status/uninstall includes configured advisor artifacts', as
 });
 
 test('plugin install/status keeps the setup-only advisor command available without complete settings', async () => {
-  const cwd = process.cwd();
-  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-advisor-setup-project-'));
-  process.chdir(project);
-  try {
+  await isolated(async () => {
     pluginCommand.install(true, { quiet: true });
     assert.ok(fs.existsSync(advisorCommandTarget(true)));
     assert.equal(fs.existsSync(advisorAgentsTarget(true)), false);
@@ -539,8 +538,5 @@ test('plugin install/status keeps the setup-only advisor command available witho
     await pluginCommand.run(['status'], { useProject: true, ...streams });
     assert.ok(streams.stdoutChunks.some((line) => line.includes('advisor command') && line.includes('ok (up to date)')));
     assert.ok(streams.stdoutChunks.some((line) => line.includes('advisor primary agent') && line.includes('settings incomplete')));
-  } finally {
-    process.chdir(cwd);
-    fs.rmSync(project, { recursive: true, force: true });
-  }
+  });
 });

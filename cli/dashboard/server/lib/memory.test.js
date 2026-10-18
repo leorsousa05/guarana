@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
-import { summary, search, graph, drafts, review } from './memory.js';
+import { summary, search, graph, drafts, review, createRelationship, deleteRelationship } from './memory.js';
 import { initVault, initUserVault } from '../../../memory/vault.js';
-import { createNode, createEdge } from '../../../memory/graph.js';
+import { createNode, createEdge, listEdges } from '../../../memory/graph.js';
 
 let oldHome;
 let fakeHome;
@@ -193,6 +193,53 @@ describe('memory lib — graph', () => {
     try {
       const g = await graph(path.join(tmp, '.guarana', 'memory'));
       assert.deepEqual(g, { nodes: [], edges: [] });
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('memory lib — project relationships', () => {
+  it('validates project endpoints, creates typed edges, and deletes only the selected edge', async () => {
+    const { tmp, vaultDir, confirmed, draft, confirmed2 } = seedVault();
+    try {
+      assert.match((await createRelationship(vaultDir, {
+        from: confirmed.id, to: confirmed2.id, rel: 'invalid',
+      })).error, /edge\.rel/);
+      assert.equal((await createRelationship(vaultDir, {
+        from: confirmed.id, to: 'missing-node', rel: 'fixes',
+      })).statusCode, 404);
+      assert.equal((await createRelationship(vaultDir, {
+        from: confirmed.id, to: draft.id, rel: 'fixes',
+      })).statusCode, 400);
+      assert.equal((await createRelationship(vaultDir, {
+        from: confirmed.id, to: confirmed.id, rel: 'fixes',
+      })).statusCode, 400);
+      assert.equal((await createRelationship(vaultDir, {
+        from: confirmed.id, to: confirmed2.id, rel: 'fixes', scope: 'global',
+      })).statusCode, 400);
+
+      const created = await createRelationship(vaultDir, {
+        from: confirmed.id, to: confirmed2.id, rel: 'fixes', scope: 'project',
+      });
+      assert.deepEqual(
+        { from: created.edge.from, to: created.edge.to, rel: created.edge.rel },
+        { from: confirmed.id, to: confirmed2.id, rel: 'fixes' }
+      );
+      assert.equal((await createRelationship(vaultDir, {
+        from: confirmed.id, to: confirmed2.id, rel: 'fixes',
+      })).statusCode, 409);
+
+      const retained = createEdge(vaultDir, {
+        from: confirmed.id, to: confirmed2.id, rel: 'relates-to', ts: created.edge.ts + 1,
+      });
+      assert.equal((await deleteRelationship(vaultDir, { ...created.edge, scope: 'global' })).statusCode, 400);
+      assert.ok(listEdges(vaultDir).some((edge) => edge.ts === created.edge.ts));
+      const deleted = await deleteRelationship(vaultDir, created.edge);
+      assert.deepEqual(deleted.edge, created.edge);
+      assert.deepEqual(listEdges(vaultDir).map(({ rel }) => rel).sort(), ['depends-on', 'relates-to']);
+      assert.equal((await deleteRelationship(vaultDir, created.edge)).statusCode, 404);
+      assert.deepEqual(listEdges(vaultDir).find((edge) => edge.ts === retained.ts), retained);
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }

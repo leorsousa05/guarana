@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { fmtTs } from '../lib/format.js';
 import { buildLineage } from '../lib/lineage.js';
-import { graphSignature, GRAPH_HEIGHT as H, GRAPH_WIDTH as W, layoutGraph, readGraphPositions, saveGraphPositions } from '../lib/memoryGraphLayout.js';
+import { handleMemoryBubbleKeyDown, layoutMemoryBubbles, qualifyMemoryGraph } from '../lib/memoryBubbleLayout.js';
 
 const TYPE_CLASS = (t) => `mem-type mem-type--${t}`;
 const NODE_TYPES = ['decision', 'bug', 'solution', 'refactor', 'preference', 'supernode', 'atom'];
+const noop = () => {};
+export const MEMORY_RELATIONS = ['caused-by', 'depends-on', 'supersedes', 'summarizes', 'fixes', 'relates-to'];
 
-const REL_WHY = {
+export const RELATION_LABEL = {
   'caused-by': 'was caused by',
   'depends-on': 'depends on',
   supersedes: 'supersedes',
@@ -15,288 +17,540 @@ const REL_WHY = {
   'relates-to': 'is related to',
 };
 
-const REL_DESC = {
-  'caused-by': 'this node happened because of the other',
-  'depends-on': 'this node requires the other',
-  supersedes: 'this node replaced the other',
-  summarizes: 'this node condenses the other',
-  fixes: 'this node fixes the other',
-  'relates-to': 'this node is related to the other',
-};
+export function filterMemoryGraph(nodes, edges, filters = {}) {
+  const query = String(filters.query || '').trim().toLocaleLowerCase();
+  const visibleNodes = nodes.filter((node) => {
+    const scope = node.scope || 'project';
+    if (filters.scope && filters.scope !== scope) return false;
+    if (filters.type && filters.type !== node.type) return false;
+    if (query && ![node.intent, node.summary, ...(node.tags || [])].join(' ').toLocaleLowerCase().includes(query)) return false;
+    return true;
+  });
+  const ids = new Set(visibleNodes.map((node) => node.id));
+  const visibleEdges = edges.filter((edge) =>
+    (!filters.rel || edge.rel === filters.rel) && ids.has(edge.from) && ids.has(edge.to)
+  );
+  return { nodes: visibleNodes, edges: visibleEdges };
+}
 
-const shortLabel = (value) => {
-  const text = String(value || 'memory');
-  return text.length > 24 ? `${text.slice(0, 23)}…` : text;
-};
+export function resolveMemorySelection(visibleNodes, selected) {
+  if (visibleNodes.some((node) => node.id === selected)) return selected;
+  return visibleNodes[0]?.id ?? null;
+}
 
-const browserSessionStorage = () => {
-  try {
-    return window.sessionStorage;
-  } catch {
-    return null;
+export function relationshipSuggestions(selectedId, results, edges, nodesById) {
+  const linked = new Set();
+  for (const edge of edges) {
+    if (edge.from === selectedId) linked.add(edge.to);
+    if (edge.to === selectedId) linked.add(edge.from);
   }
-};
+  const seen = new Set();
+  return (Array.isArray(results) ? results : []).flatMap((result) => {
+    const id = `project:${result.id}`;
+    const node = nodesById.get(id);
+    if (!node || id === selectedId || linked.has(id) || seen.has(id)) return [];
+    seen.add(id);
+    return [{
+      ...node,
+      score: typeof result.score === 'number' ? result.score : null,
+      intent: result.intent || node.intent || '',
+      summary: result.summary || node.summary || '',
+    }];
+  });
+}
 
-export function MemoryGraph({ nodes, edges, selected, onSelect }) {
-  const svgRef = useRef(null);
-  const graphNodes = useMemo(() => nodes.map((node) => ({
-    ...node,
-    memoryId: node.id,
-    id: `${node.scope || 'project'}:${node.id}`,
-  })), [nodes]);
-  const graphEdges = useMemo(() => edges.map((edge) => ({
-    ...edge,
-    from: `${edge.scope || 'project'}:${edge.from}`,
-    to: `${edge.scope || 'project'}:${edge.to}`,
-  })), [edges]);
-  const graphKey = useMemo(() => graphSignature(graphNodes, graphEdges), [graphNodes, graphEdges]);
-  const [pos, setPos] = useState(() => layoutGraph(graphNodes, graphEdges, readGraphPositions(browserSessionStorage(), graphNodes)));
-  const positionsRef = useRef(pos);
-  const dragRef = useRef(null);
+export function createRelationshipPayload(source, target, rel) {
+  if (source?.scope !== 'project' || target?.scope !== 'project' || source.id === target.id || !MEMORY_RELATIONS.includes(rel)) return null;
+  return { from: source.memoryId || source.id, to: target.memoryId || target.id, rel, scope: 'project' };
+}
+
+export function deleteRelationshipPayload(edge) {
+  if (edge?.scope !== 'project' || !Number.isFinite(edge.ts) || !MEMORY_RELATIONS.includes(edge.rel)) return null;
+  return {
+    from: edge.memoryFrom,
+    to: edge.memoryTo,
+    rel: edge.rel,
+    ts: edge.ts,
+    scope: 'project',
+  };
+}
+
+export async function sendMemoryRelationship(method, payload, request = (...args) => globalThis.fetch(...args)) {
+  const response = await request('/api/memory/relationships', {
+    method,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const error = new Error('relationship request failed');
+    error.status = response.status;
+    throw error;
+  }
+  return response.json?.().catch?.(() => null) ?? null;
+}
+
+export function MemoryRelationshipSuggestions({ candidates, onChoose }) {
+  if (!candidates?.length) return <p className="mem-graph-muted">No unlinked text matches found.</p>;
+  return (
+    <ol className="mem-suggestion-list" aria-label="Local text-match candidates">
+      {candidates.map((candidate) => (
+        <li key={candidate.id} className="mem-suggestion-row">
+          <div>
+            <span className={`memory-scope memory-scope--${candidate.scope}`}>{candidate.scope}</span>{' '}
+            <span className={TYPE_CLASS(candidate.type)}>{candidate.type}</span>
+            <strong>{candidate.intent || candidate.memoryId}</strong>
+            <span className="mem-suggestion-score">score {typeof candidate.score === 'number' ? candidate.score.toFixed(3) : '—'}</span>
+            {candidate.summary && <p>{candidate.summary}</p>}
+          </div>
+          <button type="button" className="mem-graph-action" onClick={() => onChoose(candidate.id)}>Use this match</button>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+export function MemoryCreateConfirmation({ source, target, rel, onConfirm, onCancel, disabled = false }) {
+  if (!source || !target || !rel) return null;
+  return (
+    <div className="mem-confirmation" role="group" aria-label="Confirm relationship save">
+      <p>Save this project link? <strong>{source.intent || source.memoryId}</strong> {RELATION_LABEL[rel]} <strong>{target.intent || target.memoryId}</strong>.</p>
+      <button type="button" className="mem-graph-action" onClick={onConfirm} disabled={disabled}>Confirm and save link</button>{' '}
+      <button type="button" className="mem-graph-action" onClick={onCancel} disabled={disabled}>Keep editing</button>
+    </div>
+  );
+}
+
+export function MemoryDeleteConfirmation({ edge, source, target, onConfirm, onCancel, disabled = false }) {
+  if (!edge) return null;
+  return (
+    <div className="mem-confirmation" role="group" aria-label="Confirm relationship removal">
+      <p>
+        Remove this project link? <strong>{source?.intent || edge.memoryFrom}</strong> {RELATION_LABEL[edge.rel]}{' '}
+        <strong>{target?.intent || edge.memoryTo}</strong> · {fmtTs(edge.ts)}. It will not be possible to restore it from this screen.
+      </p>
+      <button type="button" className="mem-graph-action" onClick={onConfirm} disabled={disabled}>Confirm removal</button>{' '}
+      <button type="button" className="mem-graph-action" onClick={onCancel} disabled={disabled}>Keep link</button>
+    </div>
+  );
+}
+
+export function MemoryGraph({ nodes, edges, selected, onSelect = noop, onChange = noop }) {
+  const { nodes: graphNodes, edges: graphEdges } = useMemo(() => qualifyMemoryGraph(nodes, edges), [nodes, edges]);
   const nodesById = useMemo(() => new Map(graphNodes.map((n) => [n.id, n])), [graphNodes]);
+  const projectNodes = useMemo(() => graphNodes.filter((node) => node.scope === 'project'), [graphNodes]);
+  const bubbleRefs = useRef(new Map());
+  const bubbleViewportRef = useRef(null);
+  const [query, setQuery] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [scopeFilter, setScopeFilter] = useState('');
+  const [relFilter, setRelFilter] = useState('');
+  const [viewMode, setViewMode] = useState('network');
+  const [focusedBubble, setFocusedBubble] = useState(null);
+  const [targetId, setTargetId] = useState('');
+  const [relation, setRelation] = useState('');
+  const [pendingCreate, setPendingCreate] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [suggestions, setSuggestions] = useState(null);
+  const [suggesting, setSuggesting] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState(null);
 
   useEffect(() => {
-    setPos((previous) => {
-      const next = layoutGraph(graphNodes, graphEdges, previous);
-      positionsRef.current = next;
-      return next;
-    });
-  }, [graphKey]);
+    setTargetId('');
+    setRelation('');
+    setPendingCreate(false);
+    setPendingDelete(null);
+    setSuggestions(null);
+    setNotice(null);
+  }, [selected]);
 
-  const neighbors = useMemo(() => {
-    if (!selected) return { set: new Set(), list: [] };
-    const set = new Set();
-    const list = [];
-    for (const e of graphEdges) {
-      if (e.from === selected) {
-        set.add(e.to);
-        list.push({ other: nodesById.get(e.to), rel: e.rel, dir: 'out', edge: e });
-      } else if (e.to === selected) {
-        set.add(e.from);
-        list.push({ other: nodesById.get(e.from), rel: e.rel, dir: 'in', edge: e });
-      }
-    }
-    return { set, list };
-  }, [selected, graphEdges, nodesById]);
-
-  const onPointerDown = (id, ev) => {
-    ev.preventDefault();
-    const svg = svgRef.current;
-    if (!svg) return;
-    const pt = svg.createSVGPoint();
-    const ctm = svg.getScreenCTM();
-    if (!ctm) return;
-    const toSvg = (x, y) => {
-      pt.x = x;
-      pt.y = y;
-      return pt.matrixTransform(ctm);
+  const visible = useMemo(() => filterMemoryGraph(graphNodes, graphEdges, {
+    query, type: typeFilter, scope: scopeFilter, rel: relFilter,
+  }), [graphNodes, graphEdges, query, typeFilter, scopeFilter, relFilter]);
+  const effectiveSelected = resolveMemorySelection(visible.nodes, selected);
+  useEffect(() => {
+    if (selected !== effectiveSelected) onSelect(effectiveSelected);
+  }, [selected, effectiveSelected, onSelect]);
+  const selectedNode = nodesById.get(effectiveSelected);
+  const bubbleView = useMemo(
+    () => layoutMemoryBubbles(visible.nodes, visible.edges, effectiveSelected, viewMode),
+    [visible.nodes, visible.edges, effectiveSelected, viewMode],
+  );
+  const bubblesById = useMemo(() => new Map(bubbleView.nodes.map((node) => [node.id, node])), [bubbleView.nodes]);
+  const bubbleFocusId = bubbleView.nodes.some((node) => node.id === focusedBubble) ? focusedBubble : bubbleView.selected;
+  const focusedEdges = bubbleView.edges.filter((edge) => edge.from === bubbleView.selected || edge.to === bubbleView.selected);
+  useEffect(() => {
+    if (!focusedBubble || bubbleView.nodes.some((node) => node.id === focusedBubble)) return;
+    const activeId = typeof document === 'undefined' ? null : document.activeElement?.dataset?.memoryId;
+    setFocusedBubble(bubbleView.selected);
+    if (activeId === focusedBubble && bubbleView.selected) bubbleRefs.current.get(bubbleView.selected)?.focus();
+  }, [focusedBubble, bubbleView.nodes, bubbleView.selected]);
+  useEffect(() => {
+    const viewport = bubbleViewportRef.current;
+    if (!viewport || !bubbleView.nodes.length) return undefined;
+    const centerSelected = () => {
+      if (!viewport.clientWidth || !viewport.clientHeight) return;
+      viewport.scrollLeft = Math.max(0, bubbleView.width / 2 - viewport.clientWidth / 2);
+      viewport.scrollTop = Math.max(0, bubbleView.height / 2 - viewport.clientHeight / 2);
     };
-    const start = pos.get(id);
-    if (!start) return;
-    const m = toSvg(ev.clientX, ev.clientY);
-    dragRef.current = { id, dx: start.x - m.x, dy: start.y - m.y, startX: ev.clientX, startY: ev.clientY, moved: false };
-    svg.setPointerCapture(ev.pointerId);
+    if (typeof ResizeObserver === 'undefined') {
+      centerSelected();
+      return undefined;
+    }
+    const observer = new ResizeObserver(centerSelected);
+    observer.observe(viewport);
+    centerSelected();
+    return () => observer.disconnect();
+  }, [bubbleView.width, bubbleView.height, bubbleView.nodes.length, viewMode]);
+  const focusMemory = (id) => {
+    if (!visible.nodes.some((node) => node.id === id)) {
+      setQuery('');
+      setTypeFilter('');
+      setScopeFilter('');
+      setRelFilter('');
+    }
+    onSelect(id);
+  };
+  const neighbors = useMemo(() => {
+    if (!effectiveSelected) return [];
+    return visible.edges.flatMap((edge) => {
+      if (edge.from === effectiveSelected) return [{ other: nodesById.get(edge.to), rel: edge.rel, direction: 'out', edge }];
+      if (edge.to === effectiveSelected) return [{ other: nodesById.get(edge.from), rel: edge.rel, direction: 'in', edge }];
+      return [];
+    }).filter(({ other }) => Boolean(other));
+  }, [effectiveSelected, visible.edges, nodesById]);
+  const source = selectedNode?.scope === 'project' ? selectedNode : null;
+  const target = nodesById.get(targetId);
+  const createPayload = createRelationshipPayload(source, target, relation);
+
+  const findSuggestions = async () => {
+    if (!source) return;
+    const queryText = `${source.intent || ''} ${source.summary || ''}`.trim();
+    if (!queryText) {
+      setSuggestions([]);
+      setNotice(null);
+      return;
+    }
+    setSuggesting(true);
+    setNotice(null);
+    setSuggestions(null);
+    const params = new URLSearchParams({ q: queryText, limit: '20' });
+    try {
+      const response = await fetch(`/api/memory/search?${params.toString()}`);
+      if (!response.ok) throw Object.assign(new Error('request failed'), { status: response.status });
+      const data = await response.json();
+      if (data?.error) throw Object.assign(new Error('request failed'), { status: response.status });
+      setSuggestions(relationshipSuggestions(effectiveSelected, data?.results, graphEdges, nodesById));
+    } catch (error) {
+      setNotice({ kind: 'error', text: `Could not load text matches (HTTP ${Number(error.status) || 0}).` });
+    } finally {
+      setSuggesting(false);
+    }
   };
 
-  const onPointerMove = (ev) => {
-    const drag = dragRef.current;
-    const svg = svgRef.current;
-    if (!drag || !svg) return;
-    if (Math.hypot(ev.clientX - drag.startX, ev.clientY - drag.startY) > 4) drag.moved = true;
-    if (!drag.moved) return;
-    const pt = svg.createSVGPoint();
-    pt.x = ev.clientX;
-    pt.y = ev.clientY;
-    const ctm = svg.getScreenCTM();
-    if (!ctm) return;
-    const m = pt.matrixTransform(ctm);
-    setPos((prev) => {
-      const next = new Map(prev);
-      next.set(drag.id, {
-        x: Math.max(24, Math.min(W - 24, m.x + drag.dx)),
-        y: Math.max(28, Math.min(H - 28, m.y + drag.dy)),
-      });
-      positionsRef.current = next;
-      return next;
-    });
+  const confirmCreate = async () => {
+    if (!createPayload || !pendingCreate || busy) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      await sendMemoryRelationship('POST', createPayload);
+      setNotice({ kind: 'success', text: 'Project link saved.' });
+      setPendingCreate(false);
+      setTargetId('');
+      setRelation('');
+      setSuggestions(null);
+      onChange();
+    } catch (error) {
+      setNotice({ kind: 'error', text: `Could not save this link (HTTP ${Number(error.status) || 0}).` });
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const onPointerUp = () => {
-    const drag = dragRef.current;
-    if (drag && !drag.moved) onSelect(selected === drag.id ? null : drag.id);
-    if (drag?.moved) saveGraphPositions(browserSessionStorage(), positionsRef.current);
-    dragRef.current = null;
+  const confirmDelete = async () => {
+    const payload = deleteRelationshipPayload(pendingDelete);
+    if (!payload || busy) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      await sendMemoryRelationship('DELETE', payload);
+      setNotice({ kind: 'success', text: 'Project link removed.' });
+      setPendingDelete(null);
+      onChange();
+    } catch (error) {
+      setNotice({ kind: 'error', text: `Could not remove this link (HTTP ${Number(error.status) || 0}).` });
+    } finally {
+      setBusy(false);
+    }
   };
-
-  const onPointerCancel = () => {
-    dragRef.current = null;
-  };
-
-  const resetLayout = () => {
-    const next = layoutGraph(graphNodes, graphEdges);
-    positionsRef.current = next;
-    setPos(next);
-    saveGraphPositions(browserSessionStorage(), next);
-  };
-
-  if (!graphNodes.length) return null;
 
   return (
     <div className="mem-graph">
-      <div className="mem-graph-legend" aria-label="Node type colors">
-        {NODE_TYPES.map((type) => (
-          <span key={type} className="mem-graph-legend-item">
-            <span className={`mem-graph-legend-swatch mem-type--${type}`} aria-hidden="true" />
-            {type}
-          </span>
-        ))}
-        <span className="mem-graph-scope-label"><span className="memory-scope memory-scope--project">project</span></span>
-        <span className="mem-graph-scope-label"><span className="memory-scope memory-scope--global">global</span></span>
-      </div>
+      <fieldset className="mem-graph-filters">
+        <legend>Filter memories and relationships</legend>
+        <label>Text<input type="search" value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Filter memories by text" placeholder="intent or summary" /></label>
+        <label>Type<select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} aria-label="Filter memories by type">
+          <option value="">all types</option>
+          {NODE_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+        </select></label>
+        <label>Scope<select value={scopeFilter} onChange={(event) => setScopeFilter(event.target.value)} aria-label="Filter memories by scope">
+          <option value="">all scopes</option><option value="project">project</option><option value="global">global</option>
+        </select></label>
+        <label>Relationship<select value={relFilter} onChange={(event) => setRelFilter(event.target.value)} aria-label="Filter by relationship type">
+          <option value="">all relationships</option>
+          {MEMORY_RELATIONS.map((rel) => <option key={rel} value={rel}>{rel} — {RELATION_LABEL[rel]}</option>)}
+        </select></label>
+      </fieldset>
       <div className="mem-graph-toolbar">
-        <p className="mem-graph-help">Select a node to inspect it; drag to arrange. Positions stay put between refreshes.</p>
-        <button type="button" className="mem-graph-reset" onClick={resetLayout}>reset layout</button>
+        <p className="mem-graph-help">Choose a memory in the index to inspect its connected neighborhood and details.</p>
+        <span className="mem-graph-count" role="status">Showing {visible.nodes.length} of {graphNodes.length} memories · {visible.edges.length} matching links</span>
       </div>
-      <div className="mem-graph-viewport" role="region" aria-label="Memory graph canvas; scroll to explore the full map" tabIndex={0}>
-        <svg
-          ref={svgRef}
-          viewBox={`0 0 ${W} ${H}`}
-          className="mem-graph-svg"
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerCancel={onPointerCancel}
-        >
-          {graphEdges.map((e, i) => {
-            const a = pos.get(e.from);
-            const b = pos.get(e.to);
-            if (!a || !b) return null;
-            const active = selected && (e.from === selected || e.to === selected);
-            const mx = (a.x + b.x) / 2;
-            const my = (a.y + b.y) / 2;
-            return (
-              <g key={i} className={`mem-edge${active ? ' mem-edge--active' : ''}`}>
-                <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
-                {active && (
-                  <text x={mx} y={my - 4} textAnchor="middle" className="mem-edge-label">
-                    {e.rel}
-                  </text>
-                )}
-                <title>{`${nodesById.get(e.from)?.intent || e.from} —${e.rel}→ ${nodesById.get(e.to)?.intent || e.to}: ${REL_DESC[e.rel]}`}</title>
-              </g>
-            );
-          })}
-          {graphNodes.map((n) => {
-            const p = pos.get(n.id);
-            if (!p) return null;
-            const active = selected === n.id || neighbors.set.has(n.id);
-            return (
-              <g
-                key={n.id}
-                className={`mem-node${active ? ' mem-node--active' : ''}`}
-                role="button"
-                tabIndex={0}
-                aria-pressed={selected === n.id}
-                aria-label={`${n.scope || 'project'} ${n.type}: ${n.intent || n.memoryId || n.id}`}
-                onPointerDown={(ev) => onPointerDown(n.id, ev)}
-                onKeyDown={(ev) => {
-                  if (ev.key === 'Enter' || ev.key === ' ') {
-                    ev.preventDefault();
-                    onSelect(selected === n.id ? null : n.id);
-                  }
-                }}
-              >
-                <circle cx={p.x} cy={p.y} r={12} className={TYPE_CLASS(n.type)} />
-                {active && (
-                  <>
-                    <text x={p.x} y={p.y - 18} textAnchor="middle" className="mem-node-text">
-                      {shortLabel(n.intent || n.type)}
-                    </text>
-                    <text x={p.x} y={p.y + 25} textAnchor="middle" className={`mem-node-scope-text memory-scope--${n.scope || 'project'}`}>
-                      {n.scope || 'project'}
-                    </text>
-                  </>
-                )}
-                <title>{`${n.scope || 'project'} ${n.type}: ${n.intent || n.memoryId || n.id} — click to inspect`}</title>
-              </g>
-            );
-          })}
-        </svg>
-      </div>
+      <div className="mem-graph-explorer">
+        <section className="mem-graph-index" aria-label="Memory index">
+          <div className="mem-graph-index-heading">
+            <h4>Memory index</h4>
+            <span>{visible.nodes.length} {visible.nodes.length === 1 ? 'record' : 'records'}</span>
+          </div>
+          {visible.nodes.length ? (
+            <div className="mem-index-scroll" role="region" aria-label="Filtered memory index" tabIndex={0}>
+              <ol className="mem-index-list">
+                {visible.nodes.map((node) => (
+                  <li key={node.id}>
+                    <button
+                      type="button"
+                      className={`mem-index-record${effectiveSelected === node.id ? ' mem-index-record--active' : ''}`}
+                      aria-pressed={effectiveSelected === node.id}
+                      aria-label={`${node.scope} ${node.type}: ${node.intent || node.memoryId}`}
+                      onClick={() => focusMemory(node.id)}
+                    >
+                      <span className="mem-index-meta">
+                        <span className={`memory-scope memory-scope--${node.scope}`}>{node.scope}</span>
+                        <span className={TYPE_CLASS(node.type)}>{node.type}</span>
+                      </span>
+                      <strong className="mem-index-intent">{node.intent || node.memoryId}</strong>
+                      <span className="mem-index-summary">{node.summary || 'No summary recorded.'}</span>
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ) : (
+            <p className="mem-graph-empty">No memories match these filters. Adjust the text, type, scope, or relationship filters to continue.</p>
+          )}
+        </section>
 
-      {selected && (
-        <div className="mem-detail">
-          {(() => {
-            const n = nodesById.get(selected);
-            if (!n) return null;
-            return (
-              <>
-                <button type="button" className="mem-detail-close" onClick={() => onSelect(null)}>
-                  close
-                </button>
-                <h4 className="sub-title">
-                  <span className={TYPE_CLASS(n.type)}>{n.type}</span> {n.intent}
-                </h4>
-                <div className="mem-detail-meta">
-                 <span className={`memory-scope memory-scope--${n.scope || 'project'}`}>{n.scope || 'project'}</span>{' '}
-                 {n.memoryId} · {fmtTs(n.ts)}
-                  {n.tags?.length > 0 && <> · {n.tags.join(', ')}</>}
-                </div>
-                {n.summary && <p className="mem-detail-text">{n.summary}</p>}
-                {n.decision && <p className="mem-detail-text">{n.decision}</p>}
-                {n.rejectedAlternatives?.length > 0 && (
-                  <p className="mem-detail-text">
-                    <strong>rejected:</strong> {n.rejectedAlternatives.join(' · ')}
-                  </p>
-                )}
-                {(() => {
-                  const { older, newer } = buildLineage(selected, graphEdges, nodesById);
-                  if (older.length === 0 && newer.length === 0) return null;
-                  const row = (node, tag) => (
-                    <li key={node.id} className="mem-lineage-row">
-                      <span className="mem-lineage-tag">{tag}</span>
-                      <button
-                        type="button"
-                        className="mem-detail-neighbor"
-                        onClick={() => onSelect(node.id)}
-                      >
-                        [{node.type}] {node.intent || node.id}
-                      </button>
-                    </li>
-                  );
-                  return (
-                    <>
-                      <h5 className="mem-detail-sub">decision lineage (supersedes diff)</h5>
-                      <ul className="mem-detail-links">
-                        {older.map((node) => row(node, 'replaced'))}
-                        {row(n, 'this')}
-                        {newer.map((node) => row(node, 'replaced by'))}
-                      </ul>
-                    </>
-                  );
-                })()}
-                <h5 className="mem-detail-sub">why it&rsquo;s connected</h5>
-                {neighbors.list.length === 0 && <p className="loading">no connections</p>}
-                <ul className="mem-detail-links">
-                  {neighbors.list.map(({ other, rel, dir }, i) => (
-                    <li key={i}>
-                      <span className="mem-edge-rel">
-                        {dir === 'out' ? `↳ this ${REL_WHY[rel]} →` : `⬅ ${REL_WHY[rel]} ← this`}
-                      </span>{' '}
-                      <button
-                        type="button"
-                        className="mem-detail-neighbor"
-                        onClick={() => onSelect(other.id)}
-                      >
-                        [{other.type}] {other.intent || other.id}
-                      </button>
-                    </li>
+        <div className="mem-graph-side">
+          <section className="mem-bubble-section" aria-label="Memory bubble map">
+            <header className="mem-bubble-heading">
+              <div>
+                <h4>Memory map</h4>
+                <p>Type is color · project has a solid ring · global has a dashed ring</p>
+              </div>
+              <div className="mem-bubble-modes" role="group" aria-label="Memory map view">
+                <button type="button" aria-pressed={viewMode === 'network'} onClick={() => setViewMode('network')}>Network</button>
+                <button type="button" aria-pressed={viewMode === 'neighborhood'} onClick={() => setViewMode('neighborhood')}>Neighborhood</button>
+              </div>
+            </header>
+            <div className="mem-bubble-legend" aria-label="Memory types">
+              {NODE_TYPES.map((type) => <span key={type}><i className={`mem-bubble-key-dot mem-type--${type}`} aria-hidden="true" />{type}</span>)}
+            </div>
+            <div ref={bubbleViewportRef} className="mem-bubble-viewport" role="region" aria-label={`${viewMode === 'network' ? 'Network' : 'Neighborhood'} bubble graph; scroll within this map to explore`} tabIndex={0}>
+              {bubbleView.nodes.length ? (
+                <div className="mem-bubble-canvas" style={{ width: bubbleView.width, height: bubbleView.height }}>
+                  <svg className="mem-bubble-edges" width={bubbleView.width} height={bubbleView.height} viewBox={`0 0 ${bubbleView.width} ${bubbleView.height}`} aria-hidden="true" focusable="false">
+                    <defs>
+                      <marker id="memory-arrow-project" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L8,4 L0,8 z" fill="#315c35" /></marker>
+                      <marker id="memory-arrow-global" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L8,4 L0,8 z" fill="#006b68" /></marker>
+                    </defs>
+                    {bubbleView.edges.map((edge, index) => {
+                      const from = bubblesById.get(edge.from);
+                      const to = bubblesById.get(edge.to);
+                      if (!from || !to) return null;
+                      const active = edge.from === bubbleView.selected || edge.to === bubbleView.selected;
+                      const markerEnd = `url(#memory-arrow-${edge.scope === 'global' ? 'global' : 'project'})`;
+                      if (edge.from === edge.to) {
+                        return <path key={`${edge.scope}:${edge.from}:${edge.rel}:${edge.ts ?? index}`} className={`mem-bubble-edge mem-bubble-edge--${edge.scope}${active ? ' mem-bubble-edge--active' : ''}`} d={`M ${from.x - 10} ${from.y - 18} C ${from.x - 64} ${from.y - 72}, ${from.x + 64} ${from.y - 72}, ${from.x + 10} ${from.y - 18}`} markerEnd={markerEnd} />;
+                      }
+                      const dx = to.x - from.x;
+                      const dy = to.y - from.y;
+                      const distance = Math.hypot(dx, dy) || 1;
+                      const startGap = from.diameter / 2 + 3;
+                      const endGap = to.diameter / 2 + 7;
+                      return <line
+                        key={`${edge.scope}:${edge.from}:${edge.to}:${edge.rel}:${edge.ts ?? index}`}
+                        className={`mem-bubble-edge mem-bubble-edge--${edge.scope}${active ? ' mem-bubble-edge--active' : ''}`}
+                        x1={from.x + dx / distance * startGap}
+                        y1={from.y + dy / distance * startGap}
+                        x2={to.x - dx / distance * endGap}
+                        y2={to.y - dy / distance * endGap}
+                        markerEnd={markerEnd}
+                      />;
+                    })}
+                  </svg>
+                  {bubbleView.nodes.map((node) => (
+                    <button
+                      key={node.id}
+                      ref={(element) => {
+                        if (element) bubbleRefs.current.set(node.id, element);
+                        else bubbleRefs.current.delete(node.id);
+                      }}
+                      type="button"
+                      className={`mem-bubble-button mem-bubble-button--${node.scope}${node.focus ? ' mem-bubble-button--selected' : ''}${node.neighbor ? ' mem-bubble-button--neighbor' : ''}`}
+                      style={{ left: node.x - node.diameter / 2, top: node.y - node.diameter / 2, width: node.diameter, height: node.diameter }}
+                      data-memory-id={node.id}
+                      data-scope={node.scope}
+                      data-node-type={node.type}
+                      tabIndex={node.id === bubbleFocusId ? 0 : -1}
+                      aria-pressed={node.id === effectiveSelected}
+                      aria-label={`${node.scope} ${node.type}: ${node.intent || node.memoryId}; ${node.diameter === 62 ? 'focused memory' : node.neighbor ? 'direct neighbor' : 'network memory'}`}
+                      title={`${node.scope} ${node.type}: ${node.intent || node.memoryId}`}
+                      onFocus={() => setFocusedBubble(node.id)}
+                      onClick={() => focusMemory(node.id)}
+                      onKeyDown={(event) => handleMemoryBubbleKeyDown(
+                        event,
+                        bubbleView.nodes,
+                        node.id,
+                        focusMemory,
+                        (id) => bubbleRefs.current.get(id)?.focus(),
+                      )}
+                    >
+                      <span className={`mem-bubble-core mem-type--${node.type}`} aria-hidden="true" />
+                    </button>
                   ))}
-                </ul>
-              </>
+                </div>
+              ) : (
+                <p className="mem-graph-empty">No memories match these filters. Adjust the filters to see bubbles.</p>
+              )}
+            </div>
+            <div className="mem-bubble-labels-wrap">
+              <h5>{viewMode === 'neighborhood' ? 'Neighborhood relationships' : 'Focused relationships'}</h5>
+              {focusedEdges.length ? (
+                <ol className="mem-bubble-labels" aria-label="Focused relationship direction and type">
+                  {focusedEdges.map((edge, index) => {
+                    const from = nodesById.get(edge.from);
+                    const to = nodesById.get(edge.to);
+                    return <li key={`${edge.scope}:${edge.from}:${edge.to}:${edge.rel}:${edge.ts ?? index}`}>
+                      <span className={`memory-scope memory-scope--${edge.scope}`}>{edge.scope}</span>{' '}
+                      <span className="mem-bubble-edge-direction">{edge.from === bubbleView.selected ? 'Outgoing' : 'Incoming'}</span>
+                      <span>{from?.intent || from?.memoryId || edge.memoryFrom} → {to?.intent || to?.memoryId || edge.memoryTo}</span>
+                      <strong>{edge.rel}</strong>
+                    </li>;
+                  })}
+                </ol>
+              ) : <p className="mem-graph-muted">No matching relationships touch the selected memory.</p>}
+            </div>
+          </section>
+
+        {selectedNode ? (
+        <section className="mem-detail" aria-label="Selected memory details">
+          <div className="mem-detail-heading">
+            <div>
+              <p className="mem-focus-label">Focused memory</p>
+              <h4 className="sub-title"><span className={TYPE_CLASS(selectedNode.type)}>{selectedNode.type}</span> {selectedNode.intent || selectedNode.memoryId}</h4>
+              <div className="mem-detail-meta">
+                <span className={`memory-scope memory-scope--${selectedNode.scope}`}>{selectedNode.scope}</span>{' '}
+                {selectedNode.memoryId} · {fmtTs(selectedNode.ts)}
+                {selectedNode.tags?.length > 0 && <> · {selectedNode.tags.join(', ')}</>}
+              </div>
+            </div>
+          </div>
+          <p className="mem-detail-text">{selectedNode.summary || 'No summary recorded.'}</p>
+          {selectedNode.decision && <p className="mem-detail-text">{selectedNode.decision}</p>}
+          {selectedNode.rejectedAlternatives?.length > 0 && <p className="mem-detail-text"><strong>rejected:</strong> {selectedNode.rejectedAlternatives.join(' · ')}</p>}
+
+          <h5 className="mem-detail-sub">Connected neighborhood</h5>
+          {neighbors.length === 0 && <p className="mem-graph-muted">No matching links to this memory.</p>}
+          <ul className="mem-detail-links">
+            {neighbors.map(({ other, rel, direction, edge }, index) => (
+              <li key={`${edge.scope}:${edge.memoryFrom}:${edge.memoryTo}:${rel}:${edge.ts ?? index}`} className="mem-relationship-row">
+                <div className="mem-relationship-copy">
+                  <span className={`mem-relationship-direction mem-relationship-direction--${direction}`}>{direction === 'out' ? 'Outgoing' : 'Incoming'}</span>
+                  <span className="mem-relationship-statement">
+                    {direction === 'out'
+                      ? <>This memory {RELATION_LABEL[rel]} <button type="button" className="mem-detail-neighbor" onClick={() => focusMemory(other.id)}>{other.intent || other.memoryId}</button></>
+                      : <><button type="button" className="mem-detail-neighbor" onClick={() => focusMemory(other.id)}>{other.intent || other.memoryId}</button> {RELATION_LABEL[rel]} this memory</>}
+                  </span>
+                  <span className="mem-relationship-meta"><span className={`memory-scope memory-scope--${other.scope}`}>{other.scope}</span> · {other.type}</span>
+                  <p className="mem-neighbor-summary">{other.summary || 'No summary recorded.'}</p>
+                </div>
+                <div className="mem-relationship-meta-row">
+                  <span className="mem-relationship-kind">{rel}</span>
+                  <span className={`memory-scope memory-scope--${edge.scope}`}>{edge.scope} link</span>
+                  <span className="mem-link-ts">{fmtTs(edge.ts)}</span>
+                  {edge.scope === 'project' && selectedNode.scope === 'project' && (
+                    <button type="button" className="mem-graph-action" disabled={!Number.isFinite(edge.ts) || busy} onClick={() => { setPendingDelete(edge); setPendingCreate(false); setNotice(null); }}>
+                      Remove link
+                    </button>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          {(() => {
+            const { older, newer } = buildLineage(effectiveSelected, graphEdges, nodesById);
+            if (older.length === 0 && newer.length === 0) return null;
+            const row = (node, tag) => (
+              <li key={node.id} className="mem-lineage-row">
+                <span className="mem-lineage-tag">{tag}</span>
+                <button type="button" className="mem-detail-neighbor" onClick={() => focusMemory(node.id)}>
+                  <span className={`memory-scope memory-scope--${node.scope}`}>{node.scope}</span> [{node.type}] {node.intent || node.id}
+                </button>
+              </li>
             );
+            return <><h5 className="mem-detail-sub">decision lineage · supersedes</h5><ul className="mem-detail-links">{older.map((node) => row(node, 'replaced'))}{row(selectedNode, 'this')}{newer.map((node) => row(node, 'replaced by'))}</ul></>;
           })()}
+
+          {pendingDelete && <MemoryDeleteConfirmation
+            edge={pendingDelete}
+            source={nodesById.get(pendingDelete.from)}
+            target={nodesById.get(pendingDelete.to)}
+            onConfirm={confirmDelete}
+            onCancel={() => setPendingDelete(null)}
+            disabled={busy}
+          />}
+
+          {source ? (
+            <section className="mem-link-editor" aria-label="Project relationship editor">
+              <h5 className="mem-detail-sub">Manage project links</h5>
+              <p className="mem-graph-muted">Only confirmed project memories can be linked here. Global memories and links stay read-only.</p>
+              <div className="mem-link-form">
+                <label htmlFor="mem-link-target">Link this memory to
+                  <select id="mem-link-target" value={targetId} onChange={(event) => { setTargetId(event.target.value); setPendingCreate(false); }}>
+                    <option value="">Choose a project memory</option>
+                    {projectNodes.filter((node) => node.id !== source.id).map((node) => (
+                      <option key={node.id} value={node.id}>{node.type} · {node.intent || node.memoryId} ({node.scope})</option>
+                    ))}
+                  </select>
+                </label>
+                <label htmlFor="mem-link-relation">Relationship
+                  <select id="mem-link-relation" value={relation} onChange={(event) => { setRelation(event.target.value); setPendingCreate(false); }}>
+                    <option value="">Choose a relationship</option>
+                    {MEMORY_RELATIONS.map((rel) => <option key={rel} value={rel}>{rel} — {RELATION_LABEL[rel]}</option>)}
+                  </select>
+                </label>
+                <button type="button" className="mem-graph-action" disabled={!createPayload || busy} onClick={() => { setPendingCreate(true); setPendingDelete(null); setNotice(null); }}>Review link</button>
+              </div>
+              {pendingCreate && <MemoryCreateConfirmation source={source} target={target} rel={relation} onConfirm={confirmCreate} onCancel={() => setPendingCreate(false)} disabled={busy} />}
+              <div className="mem-suggestions">
+                <h6>Text-match suggestions</h6>
+                <p className="mem-graph-muted">Local TF-IDF search of confirmed project memories only. These candidates match text; they do not imply a relationship type or save anything.</p>
+                <button type="button" className="mem-graph-action" disabled={suggesting} onClick={findSuggestions}>{suggesting ? 'Finding matches…' : 'Find text matches'}</button>
+                {suggestions && <MemoryRelationshipSuggestions candidates={suggestions} onChoose={(id) => { setTargetId(id); setRelation(''); setPendingCreate(false); setNotice(null); }} />}
+              </div>
+            </section>
+          ) : (
+            <p className="mem-graph-muted mem-readonly-note">Global memories are read-only here. Project relationship editing is available only when a project memory is selected.</p>
+          )}
+          {notice && <p className={notice.kind === 'error' ? 'mem-operation-message mem-operation-message--error' : 'mem-operation-message'} role={notice.kind === 'error' ? 'alert' : 'status'}>{notice.text}</p>}
+        </section>
+        ) : (
+          <section className="mem-detail mem-graph-empty" aria-label="Selected memory details" role="status">
+            No memories match these filters. Adjust the filters to select a memory and explore its neighborhood.
+          </section>
+        )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

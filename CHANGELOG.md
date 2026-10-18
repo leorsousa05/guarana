@@ -62,10 +62,27 @@ maintainer action.
   installation artifacts are preserved or refused rather than removed.
 - The generated Skills registry can be searched locally by name or description.
 
-## [Unreleased]
+## [1.3.0] - 2026-10-14 (unpublished candidate)
 
 ### Added
 - `guarana specs record` automates fixed-file, schema-v1 specification records.
+- Human-authored `.specs` records now follow category-specific filename rules
+  for features, ADRs, changes, state, fixed documents, and evidence.
+- Memory Graph adds Network and Neighborhood views, with explicitly confirmed
+  typed relationship creation between confirmed project memories and exact
+  project-only relationship removal; global graph data remains read-only.
+
+### Changed
+- Memory, orchestration, and telemetry normalize V2 lifecycle event data while
+  retaining compatibility with legacy `properties` events. Lifecycle records
+  use session identity rather than bus event IDs and reject missing or unknown
+  session IDs.
+- The specs worker consults filename conventions before selecting paths, reuses
+  same-scope records, follows the documented domain fallback without arbitrary
+  nesting, and preserves existing paths; convention changes require an explicit
+  request.
 
 ### Fixed
 - Worker-specs handoff permissions now default to deny.
+
+## [Unreleased]

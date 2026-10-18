@@ -23,6 +23,16 @@ function boundedSetAdd(set, value, limit = 500) {
 function safeID(value) {
   return typeof value === 'string' && value.length <= 200 && !/[\u0000-\u001f]/.test(value) ? value : null;
 }
+function safeSessionID(value) {
+  const id = safeID(value);
+  return id === 'unknown' ? null : id;
+}
+function lifecycleSource(event) {
+  const data = event?.data || {};
+  const props = event?.properties || {};
+  const info = data.info || data.session || props.info || props.session || props;
+  return { data, props, info };
+}
 function safeReason(value) {
   const reason = safeID(value);
   if (!reason || /\bsk-\S+|\bgh[pousr]_[A-Za-z0-9_]+\b|\b(?:api[_-]?key|token|password|secret)\s*[:=]\s*\S+|\bbearer\s+\S+/i.test(reason)) return null;
@@ -149,10 +159,9 @@ export const GuaranaTelemetry = async ({ directory }) => {
     try {
       const type = event && event.type;
       if (type === 'session.created') {
-        const props = event.properties || {};
-        const info = props.info || props.session || props;
-        const childID = safeID(info.id || props.sessionID || event.sessionID);
-        const parentID = safeID(info.parentID || props.parentID);
+        const { data, props, info } = lifecycleSource(event);
+        const childID = safeSessionID(data.sessionID) || safeSessionID(info.id) || safeSessionID(props.sessionID) || safeSessionID(event.sessionID);
+        const parentID = safeSessionID(info.parentID) || safeSessionID(props.parentID);
         if (childID && parentID) {
           advisorState.parents.set(childID, parentID);
           if (advisorState.parents.size > 500) advisorState.parents.delete(advisorState.parents.keys().next().value);
@@ -178,23 +187,23 @@ export const GuaranaTelemetry = async ({ directory }) => {
         }
       }
       if ((type && SESSION_STATUSES[type]) || type === 'session.status') {
-        const props = event.properties || {};
-        const info = props.info || props.session || props;
+        const { data, props, info } = lifecycleSource(event);
         const reportedStatus = type === 'session.status'
-          ? (info.status?.type || info.status || props.status?.type || props.status)
+          ? (data.status?.type || data.status || info.status?.type || info.status || props.status?.type || props.status)
           : SESSION_STATUSES[type];
         const status = typeof reportedStatus === 'string' && OBSERVED_SESSION_STATUSES.has(reportedStatus)
           ? reportedStatus
           : null;
         if (!status) return;
+        const id = safeSessionID(data.sessionID) || safeSessionID(info.id) || safeSessionID(props.sessionID) || safeSessionID(event.sessionID);
+        if (!id) return;
         const session = {
           ts: Date.now(),
           type: "session",
           status,
-          sessionID:
-            (info && info.id) || props.sessionID || event.sessionID || "unknown",
+          sessionID: id,
         };
-        const parentID = safeID(info.parentID || props.parentID);
+        const parentID = safeSessionID(info.parentID) || safeSessionID(props.parentID);
         if (parentID) session.parentSessionID = parentID;
         const agent = safeID(info.agent || props.agent);
         if (agent) session.agent = agent;

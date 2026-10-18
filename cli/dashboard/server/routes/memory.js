@@ -1,6 +1,6 @@
 import express from 'express';
 import path from 'node:path';
-import { summary, search, graph, injections, drafts, review } from '../lib/memory.js';
+import { summary, search, graph, injections, drafts, review, createRelationship, deleteRelationship } from '../lib/memory.js';
 
 export function createMemoryRouter({ root }) {
   const router = express.Router();
@@ -45,6 +45,31 @@ export function createMemoryRouter({ root }) {
     });
     if (result.error) return res.status(400).json(result);
     res.json(result);
+  });
+
+  router.post('/relationships', async (req, res) => {
+    const body = req.body || {};
+    const result = await createRelationship(vaultDir, {
+      from: body.from,
+      to: body.to,
+      rel: body.rel,
+      scope: body.scope,
+    });
+    if (result.error) return res.status(result.statusCode || 400).json({ error: result.error });
+    res.status(201).json(result.edge);
+  });
+
+  router.delete('/relationships', async (req, res) => {
+    const body = req.body || {};
+    const result = await deleteRelationship(vaultDir, {
+      from: body.from,
+      to: body.to,
+      rel: body.rel,
+      ts: body.ts,
+      scope: body.scope,
+    });
+    if (result.error) return res.status(result.statusCode || 400).json({ error: result.error });
+    res.json(result.edge);
   });
 
   return router;

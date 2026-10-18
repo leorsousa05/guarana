@@ -7,7 +7,7 @@ import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
 import { initVault, initUserVault } from '../../memory/vault.js';
-import { createNode } from '../../memory/graph.js';
+import { createNode, createEdge, listEdges } from '../../memory/graph.js';
 import { createSkill } from '../../skill-engine/index.js';
 import { resolveSharedAdvisorModule } from './routes/shared-advisor-modules.js';
 
@@ -158,6 +158,110 @@ describe('GET/POST /api/memory', () => {
     const body = await res.json();
     assert.equal(body.nodes.length, 1);
     assert.equal(body.nodes.some((n) => n.intent === 'draft leak check'), false);
+  });
+
+  it('creates only typed relationships between confirmed project memories', async () => {
+    const vaultDir = path.join(tmp, '.guarana', 'memory');
+    const other = createNode(vaultDir, {
+      type: 'solution', status: 'confirmed', intent: 'dashboard solution', summary: 'project endpoint',
+    });
+    const draft = createNode(vaultDir, {
+      type: 'atom', status: 'draft', intent: 'draft endpoint', summary: 'not linkable',
+    });
+    const post = (body) => fetch(`${base}/api/memory/relationships`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+
+    const invalidRelation = await post({ from: projectMemory.id, to: other.id, rel: 'invented' });
+    assert.equal(invalidRelation.status, 400);
+    assert.match((await invalidRelation.json()).error, /edge\.rel/);
+
+    const unknown = await post({ from: projectMemory.id, to: 'mem-global-only', rel: 'fixes' });
+    assert.equal(unknown.status, 404);
+    assert.match((await unknown.json()).error, /existing project memory node/);
+
+    const unconfirmed = await post({ from: projectMemory.id, to: draft.id, rel: 'fixes' });
+    assert.equal(unconfirmed.status, 400);
+    assert.match((await unconfirmed.json()).error, /confirmed project memory node/);
+
+    const selfLink = await post({ from: projectMemory.id, to: projectMemory.id, rel: 'fixes' });
+    assert.equal(selfLink.status, 400);
+    assert.match((await selfLink.json()).error, /different/);
+
+    const wrongScope = await post({ from: projectMemory.id, to: other.id, rel: 'fixes', scope: 'global' });
+    assert.equal(wrongScope.status, 400);
+    assert.match((await wrongScope.json()).error, /scope must be project/);
+
+    const payload = { from: projectMemory.id, to: other.id, rel: 'fixes' };
+    const created = await post({ ...payload, scope: 'project' });
+    const edge = await created.json();
+    assert.equal(created.status, 201);
+    assert.deepEqual({ from: edge.from, to: edge.to, rel: edge.rel }, payload);
+    assert.equal(typeof edge.ts, 'number');
+
+    const duplicate = await post(payload);
+    assert.equal(duplicate.status, 409);
+    assert.match((await duplicate.json()).error, /already exists/);
+    assert.deepEqual(listEdges(vaultDir), [edge]);
+  });
+
+  it('deletes only the exact selected project edge and reports missing selections', async () => {
+    const vaultDir = path.join(tmp, '.guarana', 'memory');
+    const other = createNode(vaultDir, {
+      type: 'solution', status: 'confirmed', intent: 'dashboard solution', summary: 'project endpoint',
+    });
+    const selected = createEdge(vaultDir, {
+      from: projectMemory.id, to: other.id, rel: 'fixes', ts: 101,
+    });
+    const retained = createEdge(vaultDir, {
+      from: projectMemory.id, to: other.id, rel: 'relates-to', ts: 102,
+    });
+    const remove = (body) => fetch(`${base}/api/memory/relationships`, {
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+
+    const wrongScope = await remove({ ...selected, scope: 'global' });
+    assert.equal(wrongScope.status, 400);
+    assert.deepEqual(listEdges(vaultDir), [selected, retained]);
+
+    const deleted = await remove({ ...selected, scope: 'project' });
+    assert.equal(deleted.status, 200);
+    assert.deepEqual(await deleted.json(), selected);
+    assert.deepEqual(listEdges(vaultDir), [retained]);
+
+    const missing = await remove(selected);
+    assert.equal(missing.status, 404);
+    assert.match((await missing.json()).error, /not found/);
+    const malformed = await remove({ from: selected.from, to: selected.to, rel: selected.rel });
+    assert.equal(malformed.status, 400);
+  });
+
+  it('never resolves or mutates global relationship endpoints', async () => {
+    const globalVault = initUserVault();
+    const globalFrom = createNode(globalVault, {
+      type: 'preference', status: 'confirmed', scope: 'global', intent: 'global start',
+    });
+    const globalTo = createNode(globalVault, {
+      type: 'preference', status: 'confirmed', scope: 'global', intent: 'global end',
+    });
+    const globalEdge = createEdge(globalVault, {
+      from: globalFrom.id, to: globalTo.id, rel: 'relates-to', ts: 103,
+    });
+    const before = listEdges(globalVault);
+    const response = await fetch(`${base}/api/memory/relationships`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: globalFrom.id, to: projectMemory.id, rel: 'relates-to' }),
+    });
+    assert.equal(response.status, 404);
+    assert.match((await response.json()).error, /existing project memory node/);
+
+    const deletion = await fetch(`${base}/api/memory/relationships`, {
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(globalEdge),
+    });
+    assert.equal(deletion.status, 404);
+    assert.deepEqual(listEdges(globalVault), before);
+    assert.deepEqual(listEdges(globalVault), [globalEdge]);
   });
 
   it('injections hydrates project and private global node references', async () => {

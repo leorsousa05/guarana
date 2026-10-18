@@ -107,6 +107,25 @@ export function createEdge(vaultDir, fields) {
   return addEdge(vaultDir, { ts: Date.now(), ...fields });
 }
 
+// Remove one edge selected by its complete identity, not every edge incident
+// to either endpoint. Returns the removed edge, or null when it is absent.
+export function removeEdge(vaultDir, edge) {
+  validateEdge(edge);
+  const p = paths(vaultDir).edges;
+  const edges = readJsonl(p);
+  const idx = edges.findIndex(
+    (candidate) =>
+      candidate.from === edge.from &&
+      candidate.to === edge.to &&
+      candidate.rel === edge.rel &&
+      candidate.ts === edge.ts
+  );
+  if (idx === -1) return null;
+  const [removed] = edges.splice(idx, 1);
+  writeJsonl(p, edges);
+  return removed;
+}
+
 // Remove a node and all edges touching it. Returns true if the node existed.
 export function removeNode(vaultDir, id) {
   const p = paths(vaultDir);

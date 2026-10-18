@@ -112,14 +112,16 @@ export const GuaranaMemory = async ({ directory }) => {
 
   const recordLifecycle = (status, event) => {
     try {
-      const props = (event && event.properties) || event || {};
-      const info = props.info || props.session || props;
+      const data = event?.data || {};
+      const props = event?.properties || {};
+      const info = data.info || data.session || props.info || props.session || props;
+      const sessionID = data.sessionID || info.id || props.sessionID || event?.sessionID;
+      if (typeof sessionID !== 'string' || !sessionID || sessionID === 'unknown') return;
       append({
         ts: Date.now(),
         type: "memory-session",
         status,
-        sessionID:
-          (info && info.id) || props.sessionID || (event && event.sessionID) || "unknown",
+        sessionID,
       });
     } catch (err) {
       recordError(err);

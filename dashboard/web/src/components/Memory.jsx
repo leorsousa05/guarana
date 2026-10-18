@@ -6,7 +6,6 @@ import { MemoryGraph } from './MemoryGraph.jsx';
 import { MemoryInjections } from './MemoryInjections.jsx';
 
 const TYPE_LABEL = { decision: 'decision', bug: 'bug', solution: 'solution', refactor: 'refactor', preference: 'preference', supernode: 'supernode', atom: 'atom' };
-const TYPE_CLASS = (t) => (TYPE_LABEL[t] ? `mem-type mem-type--${t}` : 'mem-type');
 
 const TABS = [
   ['injected', 'Injected'],
@@ -69,28 +68,50 @@ export function MemorySearchResults({ results }) {
   if (!results?.length) return null;
   return (
     <div className="mem-results" role="region" aria-label="Memory search results" tabIndex={0}>
-      <table className="ledger mem-results-table">
-        <thead>
-          <tr>
-            <th>type</th>
-            <th>intent</th>
-            <th>summary</th>
-            <th>score</th>
-            <th>ts</th>
-          </tr>
-        </thead>
-        <tbody>
-          {results.map((r) => (
-            <tr key={r.id}>
-              <td><span className={TYPE_CLASS(r.type)}>{r.type}</span></td>
-              <td>{r.intent}</td>
-              <td className="mem-summ">{r.summary}</td>
-              <td>{typeof r.score === 'number' ? r.score.toFixed(3) : '—'}</td>
-              <td>{fmtTs(r.ts)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <ol className="mem-result-list">
+        {results.map((r) => (
+          <li key={r.id}>
+            <article className="mem-result">
+              <dl className="mem-result-meta">
+                <div><dt>type</dt><dd className="mem-result-type">{r.type}</dd></div>
+                <div><dt>score</dt><dd>{typeof r.score === 'number' ? r.score.toFixed(3) : '—'}</dd></div>
+                <div><dt>timestamp</dt><dd><time dateTime={r.ts == null ? undefined : new Date(r.ts).toISOString()}>{fmtTs(r.ts)}</time></dd></div>
+              </dl>
+              <div className="mem-result-copy">
+                <h4><span className="mem-result-label">intent</span>{r.intent}</h4>
+                <p><span className="mem-result-label">summary</span>{r.summary}</p>
+              </div>
+            </article>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+export function MemorySummary({ data }) {
+  const rows = memorySummaryRows(data);
+  if (!rows.length) return null;
+  const scopes = rows.filter(([, , scope]) => scope);
+  const totals = rows.filter(([, , scope]) => !scope);
+  return (
+    <div className="mem-summary">
+      <dl className="mem-summary-scopes" aria-label="Memory counts by scope">
+        {scopes.map(([label, val, scope]) => (
+          <div key={label} className={`mem-summary-scope mem-summary-scope--${scope}`}>
+            <dt>{scope === 'global' ? 'Private global memories' : 'Project memories'}</dt>
+            <dd>{val}</dd>
+          </div>
+        ))}
+      </dl>
+      <dl className="mem-summary-details" aria-label="Other memory counts">
+        {totals.map(([label, val]) => (
+          <div key={label} className="mem-summary-row">
+            <dt>{label}</dt>
+            <dd>{val}</dd>
+          </div>
+        ))}
+      </dl>
     </div>
   );
 }
@@ -163,16 +184,7 @@ export function Memory() {
           <p>Confirmed and stored context across project and global scopes.</p>
         </header>
         {!summary.data && !summary.error && <p className="loading" role="status">loading summary…</p>}
-        {sdata && (
-          <dl className="mem-summary">
-            {memorySummaryRows(sdata).map(([label, val, scope]) => (
-              <div key={label} className={scope ? `mem-summary-row mem-summary-row--${scope}` : 'mem-summary-row'}>
-                <dt>{label}</dt>
-                <dd>{val}</dd>
-              </div>
-            ))}
-          </dl>
-        )}
+        {sdata && <MemorySummary data={sdata} />}
       </div>
 
       <div id="memory-panel-search" role="tabpanel" aria-labelledby="memory-tab-search" tabIndex={0} hidden={tab !== 'search'} aria-live="polite">
@@ -210,6 +222,7 @@ export function Memory() {
             edges={graph.data.edges}
             selected={sel}
             onSelect={setSel}
+            onChange={graph.refetch}
           />
         ) : graph.data && graph.data.nodes?.length === 0 ? (
           <EmptyState copy="No confirmed memories in the graph yet. Save a decision to get started." />

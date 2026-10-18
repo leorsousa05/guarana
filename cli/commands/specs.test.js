@@ -202,6 +202,18 @@ describe('guarana specs record --stdin', () => {
     fs.writeFileSync(handoffPath, payload);
     return spawnSync(process.execPath,[BIN,'specs','record','--file',file],{cwd:root,encoding:'utf8'});
   }
+  const recordPaths = ['README.md', 'state/project-state.md', 'features/api/api.md'];
+  function expectStructuralFailure(root, payload, expectedError) {
+    const targets = recordPaths.map((relative) => path.join(root, '.specs', relative));
+    const before = targets.map((file) => fs.readFileSync(file));
+    const result = invoke(root, JSON.stringify(payload));
+    assert.equal(result.status, 1, result.stdout);
+    assert.equal(result.stderr, '');
+    const report = JSON.parse(result.stdout);
+    assert.deepEqual(report, { ok: false, changed: [], error: expectedError, validator: null });
+    targets.forEach((file, index) => assert.deepEqual(fs.readFileSync(file), before[index], file));
+    return report.error;
+  }
   it('upserts deterministic records and is idempotent', () => {
     const root=fs.mkdtempSync(path.join(os.tmpdir(),'guarana-record-'));
     try {
@@ -239,6 +251,84 @@ describe('guarana specs record --stdin', () => {
       files.forEach((file,i)=>assert.deepEqual(fs.readFileSync(file),before[i]));
       assert.equal(fs.existsSync(path.join(root,'.specs/state/worker-specs-handoff.json')),false);
     } finally { fs.rmSync(root,{recursive:true,force:true}); }
+  });
+  it('reports deterministic JSON paths for all structural failures without echoing values or writing records', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-record-diagnostics-'));
+    try {
+      validProject(root);
+
+      const missingSchema = handoff();
+      delete missingSchema.schema;
+      expectStructuralFailure(root, missingSchema, 'schema v1 validation failed: schema expected "v1"');
+      expectStructuralFailure(root, { ...handoff(), schema: 'SCHEMA_SENTINEL' },
+        'schema v1 validation failed: schema expected "v1"');
+      const missingTask = { schema: 'SCHEMA_SENTINEL' };
+      expectStructuralFailure(root, missingTask,
+        'schema v1 validation failed: schema expected "v1"; task expected object');
+      for (const task of [null, []]) {
+        expectStructuralFailure(root, { schema: 'v1', task }, 'schema v1 validation failed: task expected object');
+      }
+
+      for (const field of ['slug', 'title', 'featurePath', 'trackerName', 'goal', 'currentStep', 'next']) {
+        const missing = handoff();
+        delete missing.task[field];
+        expectStructuralFailure(root, missing, `schema v1 validation failed: task.${field} expected non-empty string`);
+        expectStructuralFailure(root, handoff({ [field]: null }), `schema v1 validation failed: task.${field} expected non-empty string`);
+        expectStructuralFailure(root, handoff({ [field]: ' \t ' }), `schema v1 validation failed: task.${field} expected non-empty string`);
+      }
+
+      expectStructuralFailure(root, handoff({ status: 'STATUS_SENTINEL' }),
+        'schema v1 validation failed: task.status expected one of SPECIFIED|TASKED|IMPLEMENTED|VALIDATED|SHIPPED');
+
+      for (const field of ['requirements', 'assumptions', 'scope', 'acceptanceCriteria', 'pendingWrites', 'proof']) {
+        const missing = handoff();
+        delete missing.task[field];
+        expectStructuralFailure(root, missing, `schema v1 validation failed: task.${field} expected array of strings`);
+        expectStructuralFailure(root, handoff({ [field]: 'ARRAY_SENTINEL' }),
+          `schema v1 validation failed: task.${field} expected array of strings`);
+        expectStructuralFailure(root, handoff({ [field]: ['valid', { value: 'MEMBER_SENTINEL' }] }),
+          `schema v1 validation failed: task.${field}[1] expected string`);
+      }
+
+      const aggregate = handoff({
+        slug: ' ', trackerName: '', status: 'STATUS_SENTINEL', goal: 42,
+        requirements: ['valid', { value: 'MEMBER_SENTINEL' }], assumptions: null,
+        scope: [false], currentStep: '\t', pendingWrites: 'ARRAY_SENTINEL',
+        next: false, proof: [null],
+      });
+      aggregate.schema = 'SCHEMA_SENTINEL';
+      const expected = 'schema v1 validation failed: schema expected "v1"; task.slug expected non-empty string; ' +
+        'task.trackerName expected non-empty string; task.status expected one of SPECIFIED|TASKED|IMPLEMENTED|VALIDATED|SHIPPED; ' +
+        'task.goal expected non-empty string; task.requirements[1] expected string; task.assumptions expected array of strings; ' +
+        'task.scope[0] expected string; task.currentStep expected non-empty string; task.pendingWrites expected array of strings; ' +
+        'task.next expected non-empty string; task.proof[0] expected string';
+      assert.equal(expectStructuralFailure(root, aggregate, expected), expected);
+      assert.equal(expectStructuralFailure(root, aggregate, expected), expected);
+      for (const sentinel of ['SCHEMA_SENTINEL', 'STATUS_SENTINEL', 'ARRAY_SENTINEL', 'MEMBER_SENTINEL']) {
+        assert.ok(!expected.includes(sentinel));
+      }
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+  it('records the copyable canonical skill handoff and keeps its CLI mirror byte-equal', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-record-skill-example-'));
+    const canonicalPath = path.join(__dirname, '..', '..', 'skills', 'guarana', 'skills', 'specs', 'SKILL.md');
+    const mirrorPath = path.join(__dirname, '..', '..', 'cli', 'skills', 'guarana', 'skills', 'specs', 'SKILL.md');
+    try {
+      validProject(root);
+      const canonical = fs.readFileSync(canonicalPath, 'utf8');
+      assert.deepEqual(fs.readFileSync(mirrorPath), fs.readFileSync(canonicalPath));
+      const section = canonical.split('### Copyable schema-v1 handoff\n')[1];
+      assert.ok(section, 'copyable schema-v1 handoff heading exists');
+      const example = section.match(/```json\n([\s\S]*?)\n```/);
+      assert.ok(example, 'copyable JSON example exists');
+      const payload = JSON.parse(example[1]);
+      const result = invoke(root, JSON.stringify(payload));
+      assert.equal(result.status, 0, result.stdout);
+      const report = JSON.parse(result.stdout);
+      assert.equal(report.ok, true);
+      assert.equal(report.validator.ok, true);
+      assert.ok(report.changed.includes(payload.task.featurePath));
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
   });
   it('run returns explicit record statuses without mutating process.exitCode or changing JSON', () => {
     const root=fs.mkdtempSync(path.join(os.tmpdir(),'guarana-record-direct-'));

@@ -1140,9 +1140,72 @@ verification.
   shipping confirmation was supplied.
 - Dated change record: `.specs/changes/2026-10-11-dashboard-redesign.md`.
 
+### Current status for historical dashboard planning checkpoints — 2026-10-17
+
+The screen-specific planning addenda above are point-in-time records and are not current TASKED status. The overall dashboard remains VALIDATED, not SHIPPED, on the current receipt in `.specs/changes/2026-10-11-dashboard-redesign.md` and the master tracker. Later bounded current receipts include `.specs/features/dashboard/activity-redesign-phase-2b.md`, `.specs/features/dashboard/memory-graph-presentation.md`, and `.specs/features/dashboard/memory-graph-visualization.md`; each receipt applies only to its stated scope. This reconciliation does not expand any proof or claim a release.
+
 ### Dashboard refresh NetworkError diagnostic — 2026-10-12
 
 - The user reports `TypeError: NetworkError when attempting to fetch resource` on page refresh and asked to be told before any refactor.
 - Confirmed diagnostic evidence: the live CLI-bundled server at `127.0.0.1:4200` was CPU-bound at approximately 118–119% CPU and 569–621 MB RSS, with listen backlog 1–2. `/` and `/api/telemetry/summary` timed out after 3–5 seconds. The telemetry JSONL measured 28,347,021 bytes. An isolated source app returned HTTP 200 for summary (232,556 bytes/1450ms), one-session events (12,072 bytes/1059ms), and specs state/tracker/workflow (11–17ms).
 - Source evidence supports request/parse amplification: `dashboard/web/src/hooks/usePoll.js:7-28` ties fetch reloads for four app-level endpoints to SSE `tick`; `dashboard/web/src/App.jsx:51-78` can issue five events requests per tick; `dashboard/server/routes/telemetry.js:11-27` fully reparses the JSONL per request. Worker-debug classified the incident unclassified under the failure-mode matrix.
 - Candidate refactor only, not approved or applied: coalesce/debounce SSE-driven refreshes, avoid up to five event requests, and use bounded/incremental/indexed/cached telemetry reads. No app code changed and no service was killed or restarted. Status: diagnosed, awaiting human decision; this incident is not fixed or independently validated. The overall dashboard feature remains **VALIDATED** based on the prior 2026-10-11 proof above; that proof does not validate this incident.
+
+### Memory Graph presentation follow-up accepted — 2026-10-15
+
+The user selected replacement of the freeform Memory Graph canvas. This separate
+follow-up is **TASKED** in
+[`memory-graph-presentation.md`](memory-graph-presentation.md): use a readable
+memory index and a compact automatically arranged neighborhood centered on the
+selected memory, with a useful automatic initial selection or a clear empty
+state. Show real memory text and plain-language typed directed relations. Keep
+the existing filters, scope-qualified project/global identity, relation editing
+and confirmation semantics, local suggestions, and privacy boundaries.
+
+For this new follow-up, the user's choice explicitly supersedes the earlier
+manual drag, persisted node-position, and reset-layout interaction requirements
+recorded in the 2026-09-28 graph addendum and the 2026-10-10 Memory planning
+checkpoint. Remove graph dragging, position sessionStorage reads/writes, and the
+reset control; do not clear or overwrite old browser position data. This
+amendment does not rewrite the historical proof or change the
+`memory-relationship-management.md` feature's **VALIDATED** status. No API,
+backend, vault-data/schema, or external-service change is in scope.
+
+### Memory Graph bubble visualization follow-up — 2026-10-15
+
+The user clarified that Memory Graph must also provide an actual graph view with
+visible bubbles/nodes and connections, and authorized the design choice. This
+separate follow-up is **TASKED** in
+[`memory-graph-visualization.md`](memory-graph-visualization.md).
+
+For this follow-up, this addendum supersedes an index-only or relationship-rows-
+only presentation as the complete Graph view: retain the readable all-node
+index, selected-memory details, and plain-language directed relationship rows,
+and add a clearly visible, interactive node-and-edge bubble map synchronized
+with selection. `Network` is the default and is visible on first Graph entry; it
+shows all nodes and actual payload edges matching active filters. `Neighborhood`
+shows the selected node and its immediate matching neighbors and their actual
+connecting edges. Index and search remain available for navigation to isolated
+or dense nodes.
+
+Use compact deterministic automatic placement, without dragging, position
+`sessionStorage`, or a reset-layout control. Do not access, clear, or overwrite
+any existing stored browser key. Distinguish bubbles by type and scope, emphasize
+the selected node and its neighbors, show actual direction with arrowheads, and
+show actual relation types in the focused/active graph. Keep node intent, scope,
+type, and summary readable in the index/details; avoid collisions and anonymous
+tiny-circle rendering. Map, index, and relationship-neighbor selection stay in
+sync; filters affect index and map consistently; keyboard focus and selection
+remain accessible.
+
+All other accepted Memory contracts remain in force, including project/global
+scope identity and privacy, global read-only behavior, confirmed project-only
+typed relationship creation and exact confirmed deletion, local confirmed
+project TF-IDF suggestions with human-selected relation and confirmation,
+telemetry privacy, and unchanged APIs, payloads, backend, and memory schema. The
+existing ledger styling, reduced-motion behavior, and contained responsive map
+viewport remain required. This follow-up does not revise the historical
+**VALIDATED** status or proofs in
+`memory-relationship-management.md` and `memory-graph-presentation.md`; those
+records remain unchanged. No implementation or verification result is claimed
+by this planning addendum.

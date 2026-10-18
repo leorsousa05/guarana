@@ -135,6 +135,67 @@ describe('GuaranaTelemetry', () => {
     assert.doesNotMatch(JSON.stringify(events[0]), /PRIVATE|prompt|output|apiKey|tokens|cost/i);
   });
 
+  it('normalizes V2 lifecycle events from data without persisting event IDs or private metadata', async () => {
+    const privateSentinels = {
+      prompt: 'PRIVATE PROMPT SENTINEL',
+      output: 'PRIVATE OUTPUT SENTINEL',
+      reasoning: 'PRIVATE REASONING SENTINEL',
+      taskTitle: 'PRIVATE TASK TITLE SENTINEL',
+    };
+    await api.event({ event: {
+      id: 'evt_v2_created', type: 'session.created',
+      data: { sessionID: 'v2-child', info: { id: 'info-id-decoy', parentID: 'v2-parent', agent: 'worker-code', ...privateSentinels } },
+    } });
+    await api.event({ event: {
+      id: 'evt_v2_busy', type: 'session.status',
+      data: { sessionID: 'v2-child', info: { parentID: 'v2-parent', agent: 'worker-code', ...privateSentinels }, status: { type: 'busy' } },
+    } });
+    await api.event({ event: { id: 'evt_v2_idle', type: 'session.idle', data: { sessionID: 'v2-child' } } });
+    await api.event({ event: { id: 'evt_v2_error', type: 'session.error', data: { sessionID: 'v2-child' } } });
+    await api.event({ event: { id: 'evt_v2_compacted', type: 'session.compacted', data: { sessionID: 'v2-child' } } });
+    await api.event({ event: { id: 'evt_without_created_session', type: 'session.created', data: { info: { agent: 'worker-code' } } } });
+    await api.event({ event: { id: 'evt_without_session', type: 'session.status', data: { status: { type: 'running' } } } });
+    await api.event({ event: { id: 'evt_without_idle_session', type: 'session.idle', data: {} } });
+    await api.event({ event: { id: 'evt_unknown_session', type: 'session.status', data: { sessionID: 'unknown', status: { type: 'running' } } } });
+
+    const sessions = readEvents().filter((event) => event.type === 'session');
+    assert.deepEqual(sessions.map(({ status, sessionID }) => [status, sessionID]), [
+      ['created', 'v2-child'], ['busy', 'v2-child'], ['idle', 'v2-child'], ['error', 'v2-child'], ['compacted', 'v2-child'],
+    ]);
+    assert.equal(sessions[0].parentSessionID, 'v2-parent');
+    assert.equal(sessions[0].agent, 'worker-code');
+    assert.equal(sessions[1].parentSessionID, 'v2-parent');
+    assert.equal(sessions[1].agent, 'worker-code');
+    for (const session of sessions) {
+      assert.ok(Object.keys(session).every((key) => ['project', 'ts', 'type', 'status', 'sessionID', 'parentSessionID', 'agent'].includes(key)));
+      assert.equal(typeof session.ts, 'number');
+    }
+    assert.doesNotMatch(JSON.stringify(readEvents()), /evt_v2_|evt_without_|evt_unknown_session|info-id-decoy|PRIVATE (?:PROMPT|OUTPUT|REASONING|TASK TITLE) SENTINEL/);
+    assert.ok(sessions.every((session) => session.sessionID !== 'unknown'));
+  });
+
+  it('retains legacy properties-shaped lifecycle identity and status', async () => {
+    await api.event({ event: {
+      id: 'evt_legacy_created', type: 'session.created',
+      properties: { info: { id: 'legacy-child', parentID: 'legacy-parent', agent: 'worker-verify' } },
+    } });
+    await api.event({ event: {
+      id: 'evt_legacy_running', type: 'session.status',
+      properties: { info: { id: 'legacy-child', parentID: 'legacy-parent', agent: 'worker-verify', status: { type: 'running' } } },
+    } });
+    await api.event({ event: { id: 'evt_legacy_idle', type: 'session.idle', properties: { sessionID: 'legacy-child' } } });
+    await api.event({ event: { id: 'evt_legacy_error', type: 'session.error', properties: { sessionID: 'legacy-child' } } });
+    await api.event({ event: { id: 'evt_legacy_compacted', type: 'session.compacted', properties: { sessionID: 'legacy-child' } } });
+
+    const sessions = readEvents().filter((event) => event.type === 'session');
+    assert.deepEqual(sessions.map(({ status, sessionID }) => [status, sessionID]), [
+      ['created', 'legacy-child'], ['running', 'legacy-child'], ['idle', 'legacy-child'], ['error', 'legacy-child'], ['compacted', 'legacy-child'],
+    ]);
+    assert.equal(sessions[0].parentSessionID, 'legacy-parent');
+    assert.equal(sessions[0].agent, 'worker-verify');
+    assert.doesNotMatch(JSON.stringify(sessions), /evt_legacy/);
+  });
+
   it('does not use an assistant message parentID as a parent session ID', async () => {
     await api.event({ event: { type: 'message.updated', properties: { info: {
       role: 'assistant', agent: 'guarana-advisor', sessionID: 'advisor-unmapped-proof',

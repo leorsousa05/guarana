@@ -88,7 +88,31 @@ describe('GuaranaMemory', () => {
     await api['session.created']({ properties: { info: { id: 's1' } } });
     assert.equal(readNodes().length, 0);
     assert.equal(readEvents().filter((e) => e.type === 'memory-captured').length, 0);
-    assert.equal(readEvents().filter((e) => e.type === 'memory-session').length, 1);
+    const sessions = readEvents().filter((e) => e.type === 'memory-session');
+    assert.equal(sessions.length, 1);
+    assert.equal(sessions[0].sessionID, 's1');
+  });
+
+  it('records V2 lifecycle session identity from data and ignores bus event IDs', async () => {
+    await api['session.created']({
+      id: 'evt_memory_real',
+      type: 'session.created',
+      data: { sessionID: 'memory-v2-session', info: { id: 'memory-v2-session', agent: 'worker-code' } },
+    });
+    await api['session.created']({
+      id: 'evt_memory_only',
+      type: 'session.created',
+      data: { info: { agent: 'worker-code' } },
+    });
+    await api['session.created']({
+      id: 'evt_memory_info_fallback',
+      type: 'session.created',
+      data: { info: { id: 'memory-v2-info-session', agent: 'worker-code' } },
+    });
+
+    const sessions = readEvents().filter((event) => event.type === 'memory-session');
+    assert.deepEqual(sessions.map((event) => event.sessionID), ['memory-v2-session', 'memory-v2-info-session']);
+    assert.doesNotMatch(JSON.stringify(sessions), /evt_memory/);
   });
 
   it('creates confirmed memory only through the explicit decision tool', async () => {

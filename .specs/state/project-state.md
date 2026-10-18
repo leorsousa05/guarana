@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-10-11 (dashboard redesign validated; CLI refactor remains TASKED)
+Last updated: 2026-10-16 (Activity lifecycle helper audit and changed-hypothesis capture; empty output, cause unresolved)
 
 ## Per-skill status
 | Skill | Status |
@@ -24,7 +24,7 @@ Last updated: 2026-10-11 (dashboard redesign validated; CLI refactor remains TAS
 | Guarana optional model advisor | **VALIDATED** — UI criteria 11–14 and ADR-027 runtime proof |
 
 ## Current step
-Independent worker-verify PASS recorded as VALIDATED; no commit or push has occurred.
+Independent final review and release gates are PASS for the reviewed 67-path inventory and final changelog/privacy correction. Release remains TASKED, unpublished, and untagged because staging, commit, push, and exact remote-SHA proof have not occurred.
 
 ## Dashboard redesign final validation — 2026-10-11
 

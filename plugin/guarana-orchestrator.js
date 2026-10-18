@@ -114,14 +114,18 @@ function selectUnseenMemory(context, seen) {
 }
 
 function sessionIdFrom(event) {
-  const props = (event && event.properties) || event || {};
-  const info = props.info || props.session || props;
-  return (info && info.id) || props.sessionID || (event && event.sessionID) || null;
+  const data = event?.data || {};
+  const properties = event?.properties || {};
+  const dataInfo = data.info || data.session;
+  const info = dataInfo || properties.info || properties.session || event?.info || event?.session;
+  return data.sessionID || info?.id || properties.id || properties.sessionID || event?.sessionID || null;
 }
 
 function sessionInfoFrom(event) {
-  const props = (event && event.properties) || event || {};
-  return props.info || props.session || props;
+  const data = event?.data;
+  const props = event?.properties || event || {};
+  const info = data?.info || data?.session || props.info || props.session;
+  return info || (data && Object.keys(data).length ? data : props);
 }
 
 function storeSessionInjectionState(key, value) {

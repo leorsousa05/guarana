@@ -13,10 +13,41 @@ function recordSpecs(input, root) {
   let data;
   try { data = JSON.parse(input); } catch { fail('invalid JSON'); }
   const t = data?.task;
-  const strings = ['slug','title','featurePath','trackerName','goal','currentStep','next'];
-  if (data?.schema !== 'v1' || !t || strings.some((k) => typeof t[k] !== 'string' || !t[k].trim()) ||
-      !STATUSES.includes(t.status) || ['requirements','assumptions','scope','acceptanceCriteria','pendingWrites','proof'].some((k) => !Array.isArray(t[k]) || t[k].some((v) => typeof v !== 'string')))
-    fail('schema v1 required fields or enums are invalid');
+  const structuralIssues = [];
+  if (data?.schema !== 'v1') structuralIssues.push('schema expected "v1"');
+  if (!t || typeof t !== 'object' || Array.isArray(t)) {
+    structuralIssues.push('task expected object');
+  } else {
+    // Keep diagnostics in the schema-v1 task-field order and never include submitted values.
+    const checkString = (key) => {
+      if (typeof t[key] !== 'string' || !t[key].trim()) structuralIssues.push(`task.${key} expected non-empty string`);
+    };
+    const checkStringArray = (key) => {
+      if (!Array.isArray(t[key])) {
+        structuralIssues.push(`task.${key} expected array of strings`);
+        return;
+      }
+      t[key].forEach((value, index) => {
+        if (typeof value !== 'string') structuralIssues.push(`task.${key}[${index}] expected string`);
+      });
+    };
+
+    checkString('slug');
+    checkString('title');
+    checkString('featurePath');
+    checkString('trackerName');
+    if (!STATUSES.includes(t.status)) structuralIssues.push(`task.status expected one of ${STATUSES.join('|')}`);
+    checkString('goal');
+    checkStringArray('requirements');
+    checkStringArray('assumptions');
+    checkStringArray('scope');
+    checkStringArray('acceptanceCriteria');
+    checkString('currentStep');
+    checkStringArray('pendingWrites');
+    checkString('next');
+    checkStringArray('proof');
+  }
+  if (structuralIssues.length) fail(`schema v1 validation failed: ${structuralIssues.join('; ')}`);
   const relative = t.featurePath.replace(/\\/g, '/');
   if (path.posix.isAbsolute(relative) || relative.split('/').some((part) => !part || part === '.' || part === '..') || !/^\.specs\/features\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.md$/.test(relative) || t.slug !== path.posix.basename(relative, '.md')) fail('featurePath must be a safe .specs/features Markdown path matching slug');
   const changePath = typeof t.changePath === 'string' ? t.changePath.replace(/\\/g, '/') : t.changePath;

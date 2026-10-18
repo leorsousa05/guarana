@@ -24,6 +24,7 @@ import {
   addEdge,
   createEdge,
   listEdges,
+  removeEdge,
   MemoryValidationError,
 } from "./graph.js";
 import { searchVault } from "./search.js";
@@ -122,6 +123,17 @@ describe("graph CRUD", () => {
     const e = createEdge(vaultDir, { from: b.id, to: a.id, rel: "caused-by" });
     assert.deepEqual(listEdges(vaultDir), [e]);
     assert.deepEqual(readJsonl(paths(vaultDir).edges), [e]);
+  });
+
+  it("removes only the exact selected edge", () => {
+    const a = createNode(vaultDir, { type: "bug", status: "confirmed", ts: 1 });
+    const b = createNode(vaultDir, { type: "solution", status: "confirmed", ts: 2 });
+    const selected = createEdge(vaultDir, { from: a.id, to: b.id, rel: "fixes", ts: 3 });
+    const retained = createEdge(vaultDir, { from: a.id, to: b.id, rel: "relates-to", ts: 4 });
+
+    assert.deepEqual(removeEdge(vaultDir, selected), selected);
+    assert.deepEqual(listEdges(vaultDir), [retained]);
+    assert.equal(removeEdge(vaultDir, selected), null);
   });
 
   it("rejects malformed nodes", () => {

@@ -434,6 +434,36 @@ it('refuses markerless foreign worker and Advisor profiles in project and global
   }
 });
 
+it('refuses a markerless foreign worker profile in the global scope without changing the install tree', () => {
+  const originalCwd = process.cwd();
+  const oldHome = process.env.HOME;
+  const oldXdg = process.env.XDG_CONFIG_HOME;
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-global-foreign-worker-home-'));
+  const xdg = path.join(home, 'xdg');
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-global-foreign-worker-project-'));
+  try {
+    process.env.HOME = home;
+    process.env.XDG_CONFIG_HOME = xdg;
+    process.chdir(project);
+    const target = path.join(workerAgentsTarget(false), 'worker-code.md');
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, 'foreign worker profile owned by another tool\n');
+    const before = snapshotTree(xdg);
+
+    assert.throws(() => plugin.install(false, { quiet: true }),
+      /refuse to install worker profile: .*worker-code\.md exists and is not managed by Guarana/);
+    assert.deepEqual(snapshotTree(xdg), before);
+  } finally {
+    process.chdir(originalCwd);
+    if (oldHome === undefined) delete process.env.HOME;
+    else process.env.HOME = oldHome;
+    if (oldXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = oldXdg;
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(project, { recursive: true, force: true });
+  }
+});
+
 it('rejects unsafe profile paths in the install manifest before touching installed artifacts', () => {
   const originalCwd = process.cwd();
   const project = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-profile-unsafe-path-'));

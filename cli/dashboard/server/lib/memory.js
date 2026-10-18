@@ -255,3 +255,64 @@ export async function review(vaultDir, opts = {}) {
     return { error: errMsg(err) };
   }
 }
+
+const relationshipError = (error, statusCode = 400) => ({ error, statusCode });
+
+// Relationship edits always operate on the supplied project vault only. In
+// particular, endpoint lookup never consults the private user vault.
+export async function createRelationship(vaultDir, opts = {}) {
+  try {
+    const { graph: g } = await engine();
+    if (opts.scope !== undefined && opts.scope !== 'project') {
+      return relationshipError('scope must be project', 400);
+    }
+    const candidate = { from: opts.from, to: opts.to, rel: opts.rel, ts: Date.now() };
+    try {
+      g.validateEdge(candidate);
+    } catch (err) {
+      return relationshipError(errMsg(err), 400);
+    }
+    if (candidate.from === candidate.to) {
+      return relationshipError('relationship endpoints must be different', 400);
+    }
+    if (!vaultExists(vaultDir)) return relationshipError('project memory vault not initialized', 404);
+
+    const nodes = g.listNodes(vaultDir);
+    for (const endpoint of ['from', 'to']) {
+      const node = nodes.find((entry) => entry.id === candidate[endpoint]);
+      if (!node) return relationshipError(`${endpoint} must reference an existing project memory node`, 404);
+      if (node.status !== 'confirmed') {
+        return relationshipError(`${endpoint} must reference a confirmed project memory node`, 400);
+      }
+    }
+    if (g.listEdges(vaultDir).some(
+      (edge) => edge.from === candidate.from && edge.to === candidate.to && edge.rel === candidate.rel
+    )) {
+      return relationshipError('relationship already exists', 409);
+    }
+
+    return { edge: g.createEdge(vaultDir, { from: candidate.from, to: candidate.to, rel: candidate.rel }) };
+  } catch (err) {
+    return relationshipError(errMsg(err), 500);
+  }
+}
+
+export async function deleteRelationship(vaultDir, opts = {}) {
+  try {
+    const { graph: g } = await engine();
+    if (opts.scope !== undefined && opts.scope !== 'project') {
+      return relationshipError('scope must be project', 400);
+    }
+    const edge = { from: opts.from, to: opts.to, rel: opts.rel, ts: opts.ts };
+    try {
+      g.validateEdge(edge);
+    } catch (err) {
+      return relationshipError(errMsg(err), 400);
+    }
+    if (!vaultExists(vaultDir)) return relationshipError('project memory vault not initialized', 404);
+    const removed = g.removeEdge(vaultDir, edge);
+    return removed ? { edge: removed } : relationshipError('relationship not found', 404);
+  } catch (err) {
+    return relationshipError(errMsg(err), 500);
+  }
+}

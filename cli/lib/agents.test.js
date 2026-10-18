@@ -61,25 +61,42 @@ test('worker profiles include canonical skill procedures and distinct permission
   assert.doesNotMatch(specsEditRules, /\*\*\//);
   const allowedSpecsPaths = [
     '.specs/README.md',
+    '.specs/conventions.md',
     '.specs/state/project-state.md',
     '.specs/state/worker-specs-handoff.json',
     '.specs/features/orchestrator.md',
     '.specs/features/orchestrator/spec-update-isolation.md',
     '.specs/changes/2026-10-09-worker-specs-permissions.md',
   ];
+  const isAllowedByRule = (requestedPath) => specsEditRules.split('\n').some((rule) => {
+    const match = rule.match(/^\s+"(.+)": allow$/);
+    if (!match) return false;
+    const glob = match[1].replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+    return new RegExp(`^${glob}$`).test(requestedPath);
+  });
   for (const requestedPath of allowedSpecsPaths) {
-    const allowedByRule = specsEditRules.split('\n').some((rule) => {
-      const match = rule.match(/^\s+"(.+)": allow$/);
-      if (!match) return false;
-      const glob = match[1].replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
-      return new RegExp(`^${glob}$`).test(requestedPath);
-    });
-    assert.equal(allowedByRule, true, `${requestedPath} must be allowed by a worker-specs edit rule`);
+    assert.equal(isAllowedByRule(requestedPath), true, `${requestedPath} must be allowed by a worker-specs edit rule`);
+  }
+  assert.match(specsEditRules, /"\.specs\/conventions\.md": allow/);
+  const conventionsVariants = ['.specs/conventions.md.bak', '.specs/conventions/naming.md'];
+  for (const requestedPath of conventionsVariants) {
+    assert.equal(isAllowedByRule(requestedPath), false, `${requestedPath} must not be allowed by worker-specs`);
   }
   assert.match(specsEditRules, /"\*": deny/);
   assert.doesNotMatch(specsBashRules, /--stdin|<<|heredoc/i);
   assert.doesNotMatch(specs, /edit:\s*allow\s*$/m);
   assert.match(specs, /Do not invent requirements, acceptance decisions/);
+  assert.match(specs, /Before selecting any record path, read `.specs\/conventions\.md`/);
+  assert.match(specs, /reuse the existing feature record[\s\S]*instead of creating a\s+duplicate/);
+  assert.match(specs, /features\/<domain>\/<stable-concise-kebab-case-scope-slug>\.md/);
+  assert.match(specs, /Use the closest existing domain when it fits; when none fits, create exactly\s+one new direct lowercase-kebab domain for the bounded subsystem\. Do not\s+create arbitrary nested feature directories\./);
+  assert.match(specs, /not arbitrary\s+task,\s*prompt, date, status, or ID text/);
+  assert.match(specs, /decisions\/ADR-NNN-<decision-slug>/);
+  assert.match(specs, /changes\/YYYY-MM-DD-<feature-slug>\[-<slice-slug>\]/);
+  assert.match(specs, /features\/<domain>\/audits\/<subject>-audit\.md/);
+  assert.match(specs, /features\/<domain>\/proofs\/<subject>-proofs\.md/);
+  assert.match(specs, /Never\s+rename, migrate, or normalize ANY existing record or path, whether a single\s+file or many\. Preserve all existing and legacy names/);
+  assert.match(specs, /unless the handoff explicitly requests a[\s\S]*naming-convention change/);
   assert.match(specs, /changed `.specs` paths/);
 });
 
@@ -120,10 +137,13 @@ test('global worker profiles deploy below the OpenCode agents root', () => {
     process.env.HOME = home;
     delete process.env.XDG_CONFIG_HOME;
     for (const { content } of agents.profiles(false)) {
-      assert.match(content, /^hidden: true$/m);
+      assert.match(content, /^hidden: false$/m);
     }
     const installed = agents.installWorkerAgents(false);
     assert.equal(path.dirname(installed[0].target), path.join(home, '.config', 'opencode', 'agents'));
+    for (const { target } of installed) {
+      assert.match(fs.readFileSync(target, 'utf8'), /^hidden: false$/m);
+    }
     assert.equal(fs.existsSync(path.join(home, '.config', 'opencode', 'agents', 'worker-verify.md')), true);
     assert.equal(fs.existsSync(path.join(home, '.config', 'opencode', 'agents', 'worker-specs.md')), true);
     assert.equal(agents.workerAgentStatus(false).find(({ name }) => name === 'worker-specs').status, 'ok (up to date)');

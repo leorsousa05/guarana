@@ -488,6 +488,34 @@ describe('GuaranaOrchestrator', () => {
     assert.deepEqual(output.system, []);
   });
 
+  it('recognizes V2 Task child metadata and withholds parent workflow injection', async () => {
+    await chat('Implement OAuth authentication');
+    assert.equal(workflow().state, 'planning');
+
+    await api.event({ event: {
+      id: 'evt_v2_child_created',
+      type: 'session.created',
+      data: {
+        sessionID: 'v2-worker-child',
+        info: { id: 'v2-worker-child', parentID: 's1', agent: 'worker-code' },
+      },
+    } });
+
+    const childSystem = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID: 'v2-worker-child' }, childSystem);
+    assert.deepEqual(childSystem.system, []);
+    assert.equal(workflow().state, 'planning');
+
+    await api.event({ event: {
+      id: 'evt_v2_root_created',
+      type: 'session.created',
+      data: { sessionID: 'v2-root', info: { id: 'v2-root', agent: 'guarana' } },
+    } });
+    const rootSystem = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID: 'v2-root' }, rootSystem);
+    assert.match(rootSystem.system.join('\n'), /Guarana workflow/);
+  });
+
   it('workflow_tick refreshes the active skill injection', async () => {
     await chat('Implement OAuth authentication');
     await api.tool.workflow_tick.execute({ action: 'plan_complete' });
