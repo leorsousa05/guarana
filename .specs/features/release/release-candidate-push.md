@@ -1,6 +1,6 @@
 # Feature spec: Guarana 1.3.0 release candidate push
 
-**Status: TASKED**
+**Status: VALIDATED**
 
 ## Goal
 Prepare and push the complete user-authorized pending work as an unpublished Guarana 1.3.0 candidate, with a consistent minor-version bump and no tag or npm publication.
@@ -76,13 +76,31 @@ The verifier recommends correcting the changelog and sanitizing only the added/c
 
 Fresh independent `worker-verify` reconfirmed PASS for the 1.3.0 changelog addition and found that the previously flagged changed proof paths were sanitized except for one bare temporary-directory root in the added Memory label-overlap block in `.specs/state/known-issues.md`. Worker-specs replaced that root with `$TMPDIR`, preserving the remainder of the block; this latest edit has not yet been independently verified. The primary reports specs validation PASS (184 files, 0 issues), `git diff --check` PASS, and the inventory remains 51 tracked plus 16 untracked paths. The next gate is a fresh independent `worker-verify` of the exact residual privacy criterion and changelog, followed by the release-level final gate. No test results changed: the prior `npm run test:all` result remains 660 passed and 1 mirror-import failure, not green. No staging, commit, or push occurred. Release remains TASKED; no shipping, tag, or publication is claimed.
 
+## Local commit and push-blocker milestone — 2026-10-18
+
+Worker-code confirmed branch `main` and the initial baseline HEAD/origin/main alignment at `9f85cae5c68d71b682ed50dd269785419d1bade0`. The reviewed inventory was exactly 51 tracked and 16 untracked paths. All 67 approved nonignored paths were staged (45 modified, 6 deleted, 16 added); staged diff-check passed, with no unstaged or untracked remainder. One Conventional Commit was created: `c7cdf36d0e3f4926298cbc34584b1b64ea546e6a` (`feat: expand memory graph and agent tooling`).
+
+Normal `git push origin main` failed with HTTP 403: `Permission to leorsousa05/guarana.git denied to Alerqu1`. No force retry, Git tag, or npm publication occurred. Primary inspection confirms a clean worktree on `main`, HEAD at the commit above, exactly 67 paths in that commit (45 modified, 6 deleted, 16 added), and `origin/main` still at baseline `9f85cae5c68d71b682ed50dd269785419d1bade0`; local `main` is ahead by one commit. Fresh independent `worker-verify` inspection of local commit scope and blocker proof remains pending. Push cannot be completed without authorized GitHub write access. Release remains TASKED, unpublished, and untagged; no remote push or SHIPPED claim is made.
+
+## Fresh independent local-commit verification — 2026-10-18
+
+Fresh independent `worker-verify` **PASSed all four local-commit criteria**. It confirmed branch `main`, HEAD `c7cdf36d0e3f4926298cbc34584b1b64ea546e6a`, subject `feat: expand memory graph and agent tooling`, and parent baseline `9f85cae5c68d71b682ed50dd269785419d1bade0`. The commit diff-tree has no renames and exactly 67 paths (45 modified, 6 deleted, 16 added), matching the approved inventory.
+
+Read-only `git ls-remote origin refs/heads/main` returned baseline `9f85cae5c68d71b682ed50dd269785419d1bade0`; local `main` is one commit ahead. Worker-code's ordinary push failed with HTTP 403 repository write permission denied. No retry or force push occurred. The verifier confirmed no tag points at HEAD. The worktree has only the three expected post-commit `.specs` release-record updates and no untracked paths; specs validation reports 184 files and 0 issues.
+
+The remote push did not occur: preserve the stop reason as missing authorized origin/main write permission. The next step is to obtain authorized write access, then push normally and independently verify the exact remote SHA. The release remains TASKED, unpublished, and untagged; it is not VALIDATED or SHIPPED.
+
+## Authorization update — 2026-10-18
+
+The user explicitly authorized configuring Git's HTTPS authentication to use the active authorized GitHub CLI identity and making one ordinary push retry. `gh auth setup-git` succeeded, and the ordinary `git push origin main` succeeded (`9f85cae..c7cdf36 main -> main`). Fresh independent verification confirmed `origin/main` at `c7cdf36d0e3f4926298cbc34584b1b64ea546e6a`; credential values were not read or exposed. The historical initial HTTP 403 remains recorded above and in known issues. Fresh independent verification of the pushed candidate passed all four criteria; local HEAD and `origin/main` both equal the candidate SHA. The release is VALIDATED, not SHIPPED. Four intended post-push `.specs` updates remain local; next, commit only those records in one Conventional Commit, push normally, and verify the documentation commit is remote, the candidate is its ancestor, and the worktree is clean. No force-push, tag, or npm publication occurred.
+
 ## Budget
 - Main thread steady-state: at most 8k tokens.
 - worker-code: 8k tokens per dispatch; worker-verify: 4k tokens per dispatch; worker-debug: 6k tokens per dispatch.
 - Per-run hard cap: 32k tokens and 15 minutes wall-clock per outer-loop rotation, per ADR-005 defaults.
 
 <!-- guarana:record:start -->
-Status: TASKED
-Proof: Fresh independent worker-verify PASSed the final changelog/privacy correction and reviewed candidate state/inventory. Added/changed proof prose in target records contains no prohibited machine roots or live IDs; artifacts, status, and evidence were preserved.; CHANGELOG.md now matches the confirmed Memory Graph Network/Neighborhood behavior, typed project-only relationship create/delete, and global read-only behavior.; The candidate remains unpublished, untagged, and TASKED. The reviewed inventory is 51 tracked plus 16 untracked paths; no staging, commit, or push has occurred.; The independent code/security/parity review passed implementation, synthetic security fixtures only, changed source/test mirror parity, and generated dist hashes. The initial documentation verifier's two findings were corrected and its follow-up passed.; Current npm pack --dry-run --json exited 0 for guarana@1.3.0 with 122 files, required README/CHANGELOG/bin/dashboard index and assets present, and no packaged node_modules. npm run smoke:pack exited 0 with 122 files; status paths were unchanged.; Prior current-checkout npm test passed 488/488; build and check-cli passed. npm run test:all remains a prior 660-pass, 1 copied CLI mirror import failure result, was not rerun, and is not green; bounded canonical coverage justification remains.; git diff --check and specs validation passed; primary-reported specs validator result is 184 files and 0 issues. Release-level staging, commit, push, and exact remote-SHA verification remain pending.
+Status: VALIDATED
+Proof: Fresh independent worker-verify PASS, all four criteria; the verifier's initial validator result was ok:true, 184 files, 0 issues. The original 67-path candidate scope was previously independently verified.; gh auth setup-git succeeded and ordinary git push origin main succeeded (9f85cae..c7cdf36 main -> main). Local HEAD, local tracking ref, and fresh git ls-remote all equal c7cdf36d0e3f4926298cbc34584b1b64ea546e6a; upstream is 0/0.; Current gates: npm test PASS 488/488; npm run build PASS; npm run check-cli PASS; npm pack --dry-run --json PASS for guarana@1.3.0 with 122 entries, required files, and no node_modules; npm run smoke:pack PASS with 122 files. npm run test:all remains FAILED and was not rerun: 660 passed and one copied CLI import failure; the bounded coverage explanation is retained and historical npm test 466/466 is not current evidence.; No force push, Git tag, or npm publication occurred; a fresh registry query returned 404. Candidate is VALIDATED, not SHIPPED. Four intended post-push .specs updates are the only worktree changes, with no untracked paths; current validator and git diff-check pass.
 Change: none
 <!-- guarana:record:end -->

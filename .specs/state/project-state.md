@@ -24,7 +24,7 @@ Last updated: 2026-10-16 (Activity lifecycle helper audit and changed-hypothesis
 | Guarana optional model advisor | **VALIDATED** — UI criteria 11–14 and ADR-027 runtime proof |
 
 ## Current step
-Independent final review and release gates are PASS for the reviewed 67-path inventory and final changelog/privacy correction. Release remains TASKED, unpublished, and untagged because staging, commit, push, and exact remote-SHA proof have not occurred.
+Candidate c7cdf36d0e3f4926298cbc34584b1b64ea546e6a is on origin/main; local HEAD and origin/main match, fresh independent worker-verify passed all four criteria, and current validation plus diff-check pass. The release is VALIDATED, not SHIPPED. Four intended post-push .specs updates remain local for the documentation-only follow-up.
 
 ## Dashboard redesign final validation — 2026-10-11
 
