@@ -24,7 +24,7 @@ Last updated: 2026-10-16 (Activity lifecycle helper audit and changed-hypothesis
 | Guarana optional model advisor | **VALIDATED** — UI criteria 11–14 and ADR-027 runtime proof |
 
 ## Current step
-Candidate c7cdf36d0e3f4926298cbc34584b1b64ea546e6a is on origin/main; local HEAD and origin/main match, fresh independent worker-verify passed all four criteria, and current validation plus diff-check pass. The release is VALIDATED, not SHIPPED. Four intended post-push .specs updates remain local for the documentation-only follow-up.
+The candidate implementation commit c7cdf36d0e3f4926298cbc34584b1b64ea546e6a and the separate docs-only closeout commit b293fbdd7af0e67731d5af53ae74ee4013d087dc were both pushed; the candidate is an ancestor of the docs commit, which was the previous remote tip. Current-checkout gate evidence is restored in the tracker and feature proof: npm test 488/488 across 55 suites; build and check-cli PASS; guarana@1.3.0 pack dry-run 122 entries (116 CLI), required README/CHANGELOG/bin/dashboard index and assets, zero node_modules; smoke PASS 122; specs validation 184 files/0 issues; diff-check PASS. Historical npm run test:all remains FAILED with 660 passed and one copied CLI import failure, not green and not rerun; bounded current-canonical coverage is rationale only. No tag or npm publication occurred; release remains VALIDATED, not SHIPPED. No candidate or prior docs-closeout task remains pending; the primary will commit and push this corrective three-record documentation diff after independent verification.
 
 ## Dashboard redesign final validation — 2026-10-11
 
