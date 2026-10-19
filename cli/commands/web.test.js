@@ -8,12 +8,12 @@ const web = require('./web.js');
 const registry = require('./registry.js');
 const { main } = require('../main.js');
 
-function streams() {
+function streams({ stdoutTTY = false, stderrTTY = false } = {}) {
   let stdout = '';
   let stderr = '';
   return {
-    stdout: { write: (chunk) => { stdout += chunk.toString(); } },
-    stderr: { write: (chunk) => { stderr += chunk.toString(); } },
+    stdout: { isTTY: stdoutTTY, write: (chunk) => { stdout += chunk.toString(); } },
+    stderr: { isTTY: stderrTTY, write: (chunk) => { stderr += chunk.toString(); } },
     output: () => ({ stdout, stderr }),
   };
 }
@@ -64,6 +64,31 @@ it('runs exactly npm ci --omit=dev for missing and incomplete dependencies', () 
       }, undefined, output), false);
       assert.equal(calls, 1);
       assert.equal(output.output().stdout, 'dashboard server dependencies are missing or incomplete — running `npm ci --omit=dev`...\n');
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  }
+});
+
+it('emits dependency-repair progress only to TTY stderr and respects color opt-outs', () => {
+  const message = 'Repairing dashboard server dependencies with `npm ci --omit=dev`...';
+  for (const mode of [
+    { name: 'TTY', tty: true, env: { TERM: 'xterm' }, color: true },
+    { name: 'NO_COLOR', tty: true, env: { TERM: 'xterm', NO_COLOR: '1' }, color: false },
+    { name: 'TERM=dumb', tty: true, env: { TERM: 'dumb' }, color: false },
+    { name: 'non-TTY', tty: false, env: { TERM: 'xterm' }, color: false },
+  ]) {
+    const dir = fixture(false);
+    const output = streams({ stderrTTY: mode.tty });
+    try {
+      const progress = mode.color ? `\u001b[36m${message}\u001b[39m\n` : mode.tty ? `${message}\n` : '';
+      assert.equal(web.ensureDependencies(dir, () => {
+        assert.equal(output.output().stderr, progress, mode.name);
+        return { status: 1 };
+      }, () => false, {
+        ...output,
+        env: mode.env,
+      }), false, mode.name);
+      assert.equal(output.output().stderr, progress, mode.name);
+      assert.equal(output.output().stdout, 'dashboard server dependencies are missing or incomplete — running `npm ci --omit=dev`...\n', mode.name);
     } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   }
 });
@@ -121,6 +146,43 @@ it('spawns the dashboard with the requested port, caller cwd, inherited environm
     child.emit('close', 17, null);
     assert.equal(await result, 17);
   } finally { fs.rmSync(serverDir, { recursive: true, force: true }); }
+});
+
+it('emits dashboard-start progress only to TTY stderr, including the URL', async () => {
+  const message = 'Starting dashboard server at http://127.0.0.1:4321...';
+  for (const mode of [
+    { name: 'TTY', tty: true, env: { TERM: 'xterm' }, color: true },
+    { name: 'NO_COLOR', tty: true, env: { TERM: 'xterm', NO_COLOR: '1' }, color: false },
+    { name: 'TERM=dumb', tty: true, env: { TERM: 'dumb' }, color: false },
+    { name: 'non-TTY', tty: false, env: { TERM: 'xterm' }, color: false },
+  ]) {
+    const serverDir = fixture(false);
+    const processRef = fakeProcess();
+    processRef.env = { ...mode.env, EXISTING_ENV: 'preserved' };
+    const child = new EventEmitter();
+    const output = streams({ stderrTTY: mode.tty });
+    const progress = mode.color ? `\u001b[36m${message}\u001b[39m\n` : mode.tty ? `${message}\n` : '';
+    let spawnCalls = 0;
+    try {
+      const result = web.run(['--port', '4321', '--no-open'], {
+        serverDir,
+        process: processRef,
+        stdout: output.stdout,
+        stderr: output.stderr,
+        dependenciesReady: () => true,
+        spawn: () => {
+          assert.equal(output.output().stderr, progress, mode.name);
+          spawnCalls++;
+          return child;
+        },
+      });
+      assert.equal(output.output().stderr, progress, mode.name);
+      assert.equal(output.output().stdout, '', mode.name);
+      assert.equal(spawnCalls, 1, mode.name);
+      child.emit('close', 0, null);
+      assert.equal(await result, 0, mode.name);
+    } finally { fs.rmSync(serverDir, { recursive: true, force: true }); }
+  }
 });
 
 it('returns zero when the dashboard closes without an exit code', async () => {
@@ -213,6 +275,28 @@ it('returns status 1 with one diagnostic for invalid port, missing server, and u
     assert.equal(unavailable.output().stdout, 'dashboard server dependencies are missing or incomplete — running `npm ci --omit=dev`...\n');
   } finally {
     fs.rmSync(serverDir, { recursive: true, force: true });
+    fs.rmSync(missingServerDir, { recursive: true, force: true });
+  }
+});
+
+it('does not emit progress on healthy dependency checks or early-return paths', () => {
+  const output = streams({ stderrTTY: true });
+  const dir = fixture();
+  const missingServerDir = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-web-missing-'));
+  try {
+    assert.equal(web.ensureDependencies(dir, () => assert.fail('healthy dependencies must skip repair'), undefined, output), true);
+    assert.equal(output.output().stderr, '');
+
+    for (const [args, options] of [
+      [['--port', '65536'], { stderr: output.stderr }],
+      [[], { serverDir: missingServerDir, stderr: output.stderr }],
+    ]) {
+      assert.equal(web.run(args, options), 1);
+      assert.doesNotMatch(output.output().stderr, /Repairing dashboard server dependencies|Starting dashboard server/);
+    }
+    assert.equal(output.output().stdout, '');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
     fs.rmSync(missingServerDir, { recursive: true, force: true });
   }
 });

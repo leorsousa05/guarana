@@ -1,5 +1,9 @@
 'use strict';
 
+const { isTTY, colorize } = require('./terminal.js');
+
+const DIAGNOSTIC_HINT = "Run 'guarana --help' for usage.";
+
 function writeStdout(context, text) {
   (context?.stdout || process.stdout).write(text);
 }
@@ -13,7 +17,10 @@ function stdoutLine(context, text) {
 }
 
 function stderrLine(context, text) {
-  writeStderr(context, `${text}\n`);
+  const stderr = context?.stderr || process.stderr;
+  const message = String(text);
+  stderr.write(`${colorize(message, stderr, '31')}\n`);
+  if (isTTY(stderr) && !message.includes(DIAGNOSTIC_HINT)) stderr.write(`${DIAGNOSTIC_HINT}\n`);
 }
 
 module.exports = { writeStdout, writeStderr, stdoutLine, stderrLine };

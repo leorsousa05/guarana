@@ -5,6 +5,7 @@ const path = require('path');
 const { createRequire } = require('module');
 const { DASH_SERVER_DIR } = require('../constants.js');
 const { stdoutLine, stderrLine } = require('../lib/io.js');
+const { progressLine } = require('../lib/terminal.js');
 const { parseWebArgs } = require('./web-args.js');
 
 function dependenciesReady(serverDir) {
@@ -19,8 +20,9 @@ function dependenciesReady(serverDir) {
   }
 }
 
-function ensureDependencies(serverDir, install = spawnSync, ready = dependenciesReady, { stdout = process.stdout, stderr = process.stderr } = {}) {
+function ensureDependencies(serverDir, install = spawnSync, ready = dependenciesReady, { stdout = process.stdout, stderr = process.stderr, env = process.env } = {}) {
   if (ready(serverDir)) return true;
+  progressLine(stderr, 'Repairing dashboard server dependencies with `npm ci --omit=dev`...', env);
   stdoutLine({ stdout }, 'dashboard server dependencies are missing or incomplete — running `npm ci --omit=dev`...');
   let res;
   try {
@@ -90,11 +92,12 @@ function run(args, {
     return 1;
   }
 
-  if (!ensureDependencies(serverDir, install, ready, { stdout, stderr })) {
+  if (!ensureDependencies(serverDir, install, ready, { stdout, stderr, env: processRef.env })) {
     stderrLine({ stderr }, 'dashboard dependencies are unavailable or incomplete; run `npm ci --omit=dev` in the dashboard server directory and try again');
     return 1;
   }
 
+  progressLine(stderr, `Starting dashboard server at http://127.0.0.1:${port}...`, processRef.env);
   const child = spawnChild('node', [serverEntry], {
     cwd: processRef.cwd(),
     env: { ...processRef.env, GUARANA_DASH_PORT: String(port) },

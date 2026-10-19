@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-10-16 (Activity lifecycle helper audit and changed-hypothesis capture; empty output, cause unresolved)
+Last updated: 2026-10-19 (ADR-031 appended under fresh user authorization)
 
 ## Per-skill status
 | Skill | Status |
@@ -24,7 +24,7 @@ Last updated: 2026-10-16 (Activity lifecycle helper audit and changed-hypothesis
 | Guarana optional model advisor | **VALIDATED** — UI criteria 11–14 and ADR-027 runtime proof |
 
 ## Current step
-Right-sized spec writes and ownership is VALIDATED; shipping was not confirmed.
+Final independent worker-verify PASS covers the logical AND of criteria 1–75 with no blockers. The CLI refactor is VALIDATED, not SHIPPED or released; OpenCode host smoke is N/A because it is release-only.
 
 ## Dashboard redesign final validation — 2026-10-11
 
@@ -36,7 +36,7 @@ Independent `worker-verify` PASS against the actual CLI-served combined bundle c
 Independent worker-verify PASS (4/4) confirms the package contains 122 files and no `node_modules` path while retaining required docs/bin/CLI/dashboard assets; local dependencies remain intact. The help/docs accurately explain the current-working-directory memory vault and project-filter syntax. `npm run check-cli`, package dry-run, relevant help tests (20/20), `npm run smoke:pack`, and specs validation (149 files, 221 links, 0 issues) passed. This closes only the bounded package/memory-documentation slice; it does not validate or ship the overall CLI refactor.
 
 ## Current final gate checklist — CLI refactor
-Overall status remains TASKED; no final overall verification or shipping claim is recorded. Prior independent PASS receipts for criterion 38 (numeric handler results) and criterion 49 (lifecycle transaction/rollback) are reported in the earlier plan/conversation receipts, and the closeout record now notes that provenance; the final verifier must still reconcile both against current code. Independently cover the full specs parser/domain extraction in criteria 60–61, not just the separately verified `changePath` correction (65), and reconcile earlier help metadata (20), ownership (39, 43, 47), package closeout (68), and Advisor transaction (71). Run `npm test`, `npm run check-cli`, `npm pack --dry-run --json` with a manifest inspection proving no packaged `node_modules` paths and required docs/bin/CLI/dashboard assets, `npm run smoke:pack`, and specs validation. Exercise Node 24.20.0; `node22` was not found, so attempt an ephemeral Node 22 runner or record the exact attempt and local/CI limitation without claiming a Node 22 pass. Latest-stable OpenCode host smoke is release-only; this task requests no release or SHIPPED status. ADR-031 write denial remains open and must not be retried. Preserve the stale Advisor test-contract caveat in known issues.
+Overall status is VALIDATED. Final independent worker-verify overall PASS covers the logical AND of criteria 1–75 with no blockers; ADR-031 is appended and criterion 5 is satisfied. `npm test` PASS (508/508) on Node 24.20.0 and Node 22.23.3; `npm run check-cli` PASS; `npm pack --dry-run --json` PASS (123 files, no packaged `node_modules`, required assets present); `npm run smoke:pack` PASS; focused tests PASS (80/80); `git diff --check` PASS; specs validator PASS (185 files, 67 features, 31 ADRs, 207 links, 0 issues). The final verification reconciled the prior implementation receipts, including criteria 38, 49, 60–61, 65, 68, and 71; those milestone records remain historical. OpenCode host smoke is N/A because it is release-only. No release or SHIPPED claim is made. Preserve the stale Advisor test-contract caveat in known issues.
 
 ## Previous validated correction — Activity root selection
 **Activity root-selection correction (2026-10-08) — VALIDATED.** `rootSessionFrom()` filters child sessions, chooses an observed busy/running root first, and otherwise uses greatest `end`/last activity rather than start order. Advisor call lookup remains scoped to that root's `parentSessionID`. Focused Activity tests pass 2/2. Independent worker-verify `ses_ee14cc5aaffexxrn2km3Um7Tuf` passed Chromium 375×812 with helper roots and an Advisor child ordered ahead of the actual root; it showed the busy root, correct Advisor call/model, root-only memory/events, modal history/Escape/backdrop/focus behavior, and no overflow. Screenshot: `/tmp/opencode/activity-root-fix-375.png`. Full suite/build/CLI/spec checks passed; see `.specs/changes/2026-10-08-activity-root-selection.md`.
@@ -71,7 +71,7 @@ Validated before this task: the post-bootstrap-fix release gate, final archive, 
 - Browser proof confirms 375px document/body width, 351px content scroll/client widths for the Models sections and discovery areas, stacked grids, no clipped Models descendants, visible keyboard focus, polite status announcement, and reduced-motion behavior. Global navigation's horizontal scrolling is intentional; page content does not overflow.
 - Detailed proof and check outcomes: `changes/2026-10-09-models-page-overhaul.md`. Shipping was not confirmed; status is VALIDATED, not SHIPPED.
 - Budget: ADR-005 defaults.
-- Pending writes: Preserve the existing spec-record-command baseline receipt/tracker and pending cli/lib/spec-record.js and cli/commands/specs.test.js recorder source/test work.; No commit, push, version bump, tag, publish, release, or shipping action occurred.
+- Pending writes: none.
 
 ## Proofs that exist
 Task-1 proofs for all 7 skills in `.specs/features/guarana/proofs/`; all acceptance criteria mapped; worker-verify PASS on every skill. CLI acceptance: 6/6 checks PASS (recorded in changes/2026-08-21-cli.md). Release readiness evidence is in `changes/2026-10-02-release-readiness.md`; 1.0.0 candidate evidence and revalidation follow-up are in `changes/2026-10-07-release-candidate-1.0.0.md` and `features/release/release-candidate-1.0.0-smoke.jsonl`. Spec lifecycle write proof: `changes/2026-10-03-spec-lifecycle-writes.md`. Automatic skill-creation proof: `changes/2026-10-05-automatic-skill-creation.md`, `changes/2026-10-05-skill-trigger-guidance.md`, and validated routing clarity in `changes/2026-10-07-skill-routing-clarity.md`. Native Task worker dispatch proof is in `changes/2026-10-07-native-task-worker-dispatch.md` and `features/orchestrator/subagent-dispatch-smoke.jsonl`. Dashboard skill-scope count proof: `changes/2026-10-05-dashboard-skill-scope-counts.md`.

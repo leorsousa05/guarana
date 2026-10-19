@@ -2,6 +2,7 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 const MAIN = path.join(__dirname, 'main.js');
@@ -10,6 +11,7 @@ const VERSION = require('../package.json').version;
 const REGISTRY = require('./commands/registry.js');
 const { main } = require('./main.js');
 const { COMMANDS, MEMORY, SPECS } = require('./command-metadata.js');
+const { stderrLine } = require('./lib/io.js');
 
 const CHILD_BOOTSTRAP = String.raw`
 const Module = require('node:module');
@@ -62,14 +64,30 @@ function assertHandlerCall(args, expected) {
   assert.deepEqual(JSON.parse(result.stdout), expected);
 }
 
-function createStreams() {
+function createStreams({ stdoutTTY = false, stderrTTY = false } = {}) {
   let stdout = '';
   let stderr = '';
   return {
-    stdout: { write: (chunk) => { stdout += chunk.toString(); } },
-    stderr: { write: (chunk) => { stderr += chunk.toString(); } },
+    stdout: { isTTY: stdoutTTY, write: (chunk) => { stdout += chunk.toString(); } },
+    stderr: { isTTY: stderrTTY, write: (chunk) => { stderr += chunk.toString(); } },
     output: () => ({ stdout, stderr }),
   };
+}
+
+async function withEnv(values, callback) {
+  const previous = Object.fromEntries(Object.keys(values).map((key) => [key, process.env[key]]));
+  try {
+    for (const [key, value] of Object.entries(values)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    return await callback();
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 }
 
 async function withInstallHandler(run, callback) {
@@ -169,7 +187,147 @@ describe('cli/main dispatch characterization', () => {
     streams = createStreams();
     assert.equal(await main(['not-a-command'], streams), 1);
     assert.equal(streams.output().stderr, 'unknown command: not-a-command\n');
-    assert.match(streams.output().stdout, /Usage:/);
+    assert.equal(streams.output().stdout, require('./help.js').HELP);
+  });
+
+  it('adds examples and color to top-level help only for an interactive output stream', async () => {
+    await withEnv({ NO_COLOR: undefined, TERM: 'xterm-256color' }, async () => {
+      const streams = createStreams({ stdoutTTY: true });
+      assert.equal(await main(['--help'], streams), 0);
+      const { stdout, stderr } = streams.output();
+      assert.ok(stdout.includes('\u001b[1;36mUsage:\u001b[39m'));
+      assert.match(stdout, /\u001b\[1;36mExamples:\u001b\[39m\n  guarana --help\n  guarana memory search "term" --project HASH\n$/);
+      assert.equal(stderr, '');
+    });
+  });
+
+  it('adds an actionable hint and colors diagnostics only on an interactive error stream', async () => {
+    await withEnv({ NO_COLOR: undefined, TERM: 'xterm-256color' }, async () => {
+      const streams = createStreams({ stderrTTY: true });
+      assert.equal(await main(['not-a-command'], streams), 1);
+      assert.deepEqual(streams.output(), {
+        stdout: require('./help.js').HELP,
+        stderr: '\u001b[31munknown command: not-a-command\u001b[39m\nRun \'guarana --help\' for usage.\n',
+      });
+
+      await withInstallHandler(() => { throw new Error('handler failed'); }, async () => {
+        const caught = createStreams({ stderrTTY: true });
+        assert.equal(await main(['install'], caught), 1);
+        assert.equal(caught.output().stderr,
+          '\u001b[31mhandler failed\u001b[39m\nRun \'guarana --help\' for usage.\n');
+      });
+    });
+  });
+
+  it('routes plugin, web, memory, advisor, and specs diagnostics through the shared TTY formatter', async () => {
+    await withEnv({ NO_COLOR: undefined, TERM: 'xterm-256color' }, async () => {
+      const cases = [
+        [['plugin', 'unknown'], 'unknown plugin command: unknown'],
+        [['web', '--port', 'invalid'], 'invalid --port value: invalid'],
+        [['memory', 'unknown'], 'unknown memory command: unknown'],
+        [['advisor', 'unknown'], 'advisor: usage: guarana advisor <models|read|set|clear|status>'],
+        [['specs', 'unknown'], 'unknown specs command: unknown'],
+      ];
+
+      for (const [args, message] of cases) {
+        const baseline = createStreams();
+        const tty = createStreams({ stderrTTY: true });
+        assert.equal(await main(args, baseline), 1, args.join(' '));
+        assert.equal(await main(args, tty), 1, args.join(' '));
+        assert.equal(tty.output().stdout, baseline.output().stdout, `${args.join(' ')} stdout`);
+        assert.equal(tty.output().stderr,
+          `\u001b[31m${message}\u001b[39m\nRun 'guarana --help' for usage.\n`, args.join(' '));
+      }
+    });
+  });
+
+  it('formats actual install and update refusals caught at the main boundary', async () => {
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-main-diagnostics-'));
+    const originalCwd = process.cwd();
+    const target = path.join(project, '.opencode', 'plugins', 'guarana-telemetry.js');
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, 'foreign plugin\n');
+    try {
+      process.chdir(project);
+      await withEnv({ NO_COLOR: undefined, TERM: 'xterm-256color' }, async () => {
+        const message = `refuse to install: ${target} exists and was not installed by guarana (content differs from bundle)`;
+        for (const command of ['install', 'update']) {
+          const streams = createStreams({ stderrTTY: true });
+          assert.equal(await main([command, '--project'], streams), 1, command);
+          assert.deepEqual(streams.output(), {
+            stdout: '',
+            stderr: `\u001b[31m${message}\u001b[39m\nRun 'guarana --help' for usage.\n`,
+          });
+        }
+      });
+    } finally {
+      process.chdir(originalCwd);
+      fs.rmSync(project, { recursive: true, force: true });
+    }
+  });
+
+  it('disables color for NO_COLOR and TERM=dumb while keeping interactive examples and hints', async () => {
+    for (const env of [{ NO_COLOR: '1', TERM: 'xterm' }, { NO_COLOR: undefined, TERM: 'dumb' }]) {
+      await withEnv(env, async () => {
+        const help = createStreams({ stdoutTTY: true });
+        assert.equal(await main(['-h'], help), 0);
+        assert.match(help.output().stdout, /\nExamples:\n/);
+        assert.doesNotMatch(help.output().stdout, /\u001b\[/);
+
+        const error = createStreams({ stderrTTY: true });
+        assert.equal(await main(['missing'], error), 1);
+        assert.equal(error.output().stderr,
+          "unknown command: missing\nRun 'guarana --help' for usage.\n");
+
+        const commandError = createStreams({ stderrTTY: true });
+        assert.equal(await main(['web', '--port', 'invalid'], commandError), 1);
+        assert.equal(commandError.output().stderr,
+          "invalid --port value: invalid\nRun 'guarana --help' for usage.\n");
+      });
+    }
+  });
+
+  it('does not repeat an embedded help hint and preserves exact non-TTY diagnostic bytes', async () => {
+    const rawMessage = 'first line\r\nsecond line\0 café';
+    const nonTTY = createStreams();
+    stderrLine({ stderr: nonTTY.stderr }, rawMessage);
+    assert.equal(nonTTY.output().stderr, `${rawMessage}\n`);
+
+    await withEnv({ NO_COLOR: undefined, TERM: 'xterm-256color' }, async () => {
+      const hint = "Run 'guarana --help' for usage.";
+      const tty = createStreams({ stderrTTY: true });
+      stderrLine({ stderr: tty.stderr }, `failure\n${hint}`);
+      assert.equal(tty.output().stderr, `\u001b[31mfailure\n${hint}\u001b[39m\n`);
+      assert.equal(tty.output().stderr.split(hint).length - 1, 1);
+    });
+  });
+
+  it('preserves JSON error envelopes and non-error command stdout with TTY streams', async () => {
+    const json = createStreams({ stdoutTTY: true, stderrTTY: true });
+    assert.equal(await main(['specs', 'record', '--stdin', 'extra'], json), 1);
+    assert.equal(json.output().stdout,
+      '{"ok":false,"changed":[],"error":"usage: guarana specs record --stdin | --file .specs/state/worker-specs-handoff.json","validator":null}\n');
+    assert.equal(json.output().stderr, '');
+
+    const help = createStreams({ stdoutTTY: true, stderrTTY: true });
+    assert.equal(await main(['specs', '--help'], help), 0);
+    assert.equal(help.output().stdout, require('./commands/specs.js').HELP);
+    assert.equal(help.output().stderr, '');
+  });
+
+  it('preserves exact non-interactive help and error bytes', async () => {
+    const unknown = createStreams();
+    assert.equal(await main(['unknown'], unknown), 1);
+    assert.deepEqual(unknown.output(), {
+      stdout: require('./help.js').HELP,
+      stderr: 'unknown command: unknown\n',
+    });
+
+    await withInstallHandler(() => { throw new Error('failure bytes'); }, async () => {
+      const caught = createStreams();
+      assert.equal(await main(['install'], caught), 1);
+      assert.deepEqual(caught.output(), { stdout: '', stderr: 'failure bytes\n' });
+    });
   });
 
   it('prints synchronous and rejected handler errors to stderr and returns 1', async () => {
