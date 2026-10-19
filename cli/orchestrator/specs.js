@@ -60,6 +60,21 @@ export function ensureSpecs(projectDir, task, now = Date.now()) {
       `**BLOCKED:** nothing.\n`
   );
   writeIfMissing(
+    path.join(specsDir, 'conventions.md'),
+    `# .specs Conventions\n\n` +
+      `## Naming and reuse\n` +
+      `- Use stable, concise lowercase kebab-case names for categories and records, based on the accepted scope. Choose feature and evidence names from durable scope, not transient task text or status.\n` +
+      `- Before adding a record, search for an existing record with the same scope and update it instead of creating a duplicate.\n` +
+      `- Preserve established paths. Never rename, move, migrate, or normalize existing records.\n\n` +
+      `## Record locations\n` +
+      `- Features: .specs/features/<category>/<scope-slug>.md. Reuse a fitting category or create one stable kebab-case category.\n` +
+      `- Decisions: .specs/decisions/ADR-NNN-<decision-slug>.md. Use the next sequence number; never reuse one.\n` +
+      `- Changes: .specs/changes/YYYY-MM-DD-<scope-slug>.md. Record validated changes.\n` +
+      `- State: .specs/state/. Use established state files rather than inventing ad hoc paths.\n` +
+      `- Evidence: .specs/features/<category>/audits/<scope-slug>-audit.md or .specs/features/<category>/proofs/<scope-slug>-proofs.md. Keep evidence near its feature.\n` +
+      `- Fixed docs and indexes: update established paths such as .specs/{README.md,architecture.md,conventions.md,glossary.md,project.md}; do not create alternate indexes.\n`
+  );
+  writeIfMissing(
     path.join(stateDir, 'project-state.md'),
     `# Project State\n\n` +
       `Last updated: ${new Date(now).toISOString()}\n\n` +

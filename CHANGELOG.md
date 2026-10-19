@@ -85,4 +85,10 @@ maintainer action.
 ### Fixed
 - Worker-specs handoff permissions now default to deny.
 
+## [1.3.1] - 2026-10-18 (unpublished candidate)
+
+### Fixed
+- Automatic `.specs` bootstrap creates a generic `.specs/conventions.md` for
+  new projects while preserving any existing customized conventions file.
+
 ## [Unreleased]

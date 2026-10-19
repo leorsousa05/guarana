@@ -186,9 +186,22 @@ test('automatic specs bootstrap uses a generic spec path and is idempotent', () 
   const request = 'Implement OAuth authentication';
   const first = ensureSpecs(dir, request, 0);
   const second = ensureSpecs(dir, request, 1);
+  const conventionsFile = path.join(dir, '.specs', 'conventions.md');
   assert.equal(taskSlug('Implement OAuth authentication'), 'implement-oauth-authentication');
-  assert.equal(first.created.length, 3);
+  assert.equal(first.created.length, 4);
+  assert.ok(first.created.includes(conventionsFile));
   assert.equal(second.created.length, 0);
+  const conventions = fs.readFileSync(conventionsFile, 'utf8');
+  assert.match(conventions, /stable, concise lowercase kebab-case names/i);
+  assert.match(conventions, /search for an existing record with the same scope/i);
+  assert.match(conventions, /features\/<category>/);
+  assert.match(conventions, /decisions\/ADR-NNN-/);
+  assert.match(conventions, /changes\/YYYY-MM-DD-/);
+  assert.match(conventions, /\.specs\/state/);
+  assert.match(conventions, /audits\//);
+  assert.match(conventions, /Fixed docs and indexes/);
+  assert.match(conventions, /Never rename, move, migrate, or normalize/);
+  assert.doesNotMatch(conventions, /guarana|version|namespace/i);
   assert.equal(first.featureFile, path.join(dir, '.specs', 'features', 'initial-task', 'initial-task.md'));
   assert.doesNotMatch(first.featureFile, /implement-oauth-authentication/);
   assert.ok(fs.existsSync(first.featureFile));
@@ -196,6 +209,19 @@ test('automatic specs bootstrap uses a generic spec path and is idempotent', () 
   assert.match(spec, /## Planning required/);
   assert.match(spec, /## Request context\nImplement OAuth authentication/);
   assert.doesNotMatch(spec, /^# Feature spec: Implement OAuth authentication/m);
+});
+
+test('automatic specs bootstrap preserves custom conventions bytes', () => {
+  const dir = tmp();
+  const conventionsFile = path.join(dir, '.specs', 'conventions.md');
+  const customBytes = Buffer.from('# My rules\r\ncustom \u2603\n', 'utf8');
+  fs.mkdirSync(path.dirname(conventionsFile), { recursive: true });
+  fs.writeFileSync(conventionsFile, customBytes);
+
+  const result = ensureSpecs(dir, 'Implement OAuth authentication', 0);
+
+  assert.deepEqual(fs.readFileSync(conventionsFile), customBytes);
+  assert.ok(!result.created.includes(conventionsFile));
 });
 
 test('fresh automatic specs bootstrap passes the shipped specs validator', () => {

@@ -24,7 +24,7 @@ Last updated: 2026-10-16 (Activity lifecycle helper audit and changed-hypothesis
 | Guarana optional model advisor | **VALIDATED** — UI criteria 11–14 and ADR-027 runtime proof |
 
 ## Current step
-The candidate implementation commit c7cdf36d0e3f4926298cbc34584b1b64ea546e6a and the separate docs-only closeout commit b293fbdd7af0e67731d5af53ae74ee4013d087dc were both pushed; the candidate is an ancestor of the docs commit, which was the previous remote tip. Current-checkout gate evidence is restored in the tracker and feature proof: npm test 488/488 across 55 suites; build and check-cli PASS; guarana@1.3.0 pack dry-run 122 entries (116 CLI), required README/CHANGELOG/bin/dashboard index and assets, zero node_modules; smoke PASS 122; specs validation 184 files/0 issues; diff-check PASS. Historical npm run test:all remains FAILED with 660 passed and one copied CLI import failure, not green and not rerun; bounded current-canonical coverage is rationale only. No tag or npm publication occurred; release remains VALIDATED, not SHIPPED. No candidate or prior docs-closeout task remains pending; the primary will commit and push this corrective three-record documentation diff after independent verification.
+Fresh independent worker-verify passed the exact staged 10-path 1.3.1 conventions candidate (PASS 5/5); commit and push to origin/main remain pending.
 
 ## Dashboard redesign final validation — 2026-10-11
 
@@ -71,6 +71,7 @@ Validated before this task: the post-bootstrap-fix release gate, final archive, 
 - Browser proof confirms 375px document/body width, 351px content scroll/client widths for the Models sections and discovery areas, stacked grids, no clipped Models descendants, visible keyboard focus, polite status announcement, and reduced-motion behavior. Global navigation's horizontal scrolling is intentional; page content does not overflow.
 - Detailed proof and check outcomes: `changes/2026-10-09-models-page-overhaul.md`. Shipping was not confirmed; status is VALIDATED, not SHIPPED.
 - Budget: ADR-005 defaults.
+- Pending writes: Commit and push the validated conventions candidate to origin/main after verification.
 
 ## Proofs that exist
 Task-1 proofs for all 7 skills in `.specs/features/guarana/proofs/`; all acceptance criteria mapped; worker-verify PASS on every skill. CLI acceptance: 6/6 checks PASS (recorded in changes/2026-08-21-cli.md). Release readiness evidence is in `changes/2026-10-02-release-readiness.md`; 1.0.0 candidate evidence and revalidation follow-up are in `changes/2026-10-07-release-candidate-1.0.0.md` and `features/release/release-candidate-1.0.0-smoke.jsonl`. Spec lifecycle write proof: `changes/2026-10-03-spec-lifecycle-writes.md`. Automatic skill-creation proof: `changes/2026-10-05-automatic-skill-creation.md`, `changes/2026-10-05-skill-trigger-guidance.md`, and validated routing clarity in `changes/2026-10-07-skill-routing-clarity.md`. Native Task worker dispatch proof is in `changes/2026-10-07-native-task-worker-dispatch.md` and `features/orchestrator/subagent-dispatch-smoke.jsonl`. Dashboard skill-scope count proof: `changes/2026-10-05-dashboard-skill-scope-counts.md`.
