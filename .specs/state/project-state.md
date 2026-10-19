@@ -24,7 +24,7 @@ Last updated: 2026-10-16 (Activity lifecycle helper audit and changed-hypothesis
 | Guarana optional model advisor | **VALIDATED** — UI criteria 11–14 and ADR-027 runtime proof |
 
 ## Current step
-Fresh independent worker-verify passed the exact staged 10-path 1.3.1 conventions candidate (PASS 5/5); commit and push to origin/main remain pending.
+Commit 5ea856356e63d4e855c7612ff986dc7fb81dd6df was created and pushed to origin/main. Post-push read-only git ls-remote origin refs/heads/main and local main tracking origin/main both confirm that hash. The 1.3.1 candidate remains VALIDATED, not SHIPPED; no tag or npm publish occurred. The global engine is already deployed. Separate pendingWrites recorder implementation/spec/test files remain unstaged and uncommitted and were excluded; the older 1.3.0 record-correction item remains distinct and out of scope.
 
 ## Dashboard redesign final validation — 2026-10-11
 
@@ -71,7 +71,7 @@ Validated before this task: the post-bootstrap-fix release gate, final archive, 
 - Browser proof confirms 375px document/body width, 351px content scroll/client widths for the Models sections and discovery areas, stacked grids, no clipped Models descendants, visible keyboard focus, polite status announcement, and reduced-motion behavior. Global navigation's horizontal scrolling is intentional; page content does not overflow.
 - Detailed proof and check outcomes: `changes/2026-10-09-models-page-overhaul.md`. Shipping was not confirmed; status is VALIDATED, not SHIPPED.
 - Budget: ADR-005 defaults.
-- Pending writes: Commit and push the validated conventions candidate to origin/main after verification.
+- Pending writes: Separate pendingWrites recorder implementation/spec/test files remain unstaged and uncommitted; they were excluded from the conventions commit and are not shipped.; The older 1.3.0 record-correction item remains distinct and out of scope.
 
 ## Proofs that exist
 Task-1 proofs for all 7 skills in `.specs/features/guarana/proofs/`; all acceptance criteria mapped; worker-verify PASS on every skill. CLI acceptance: 6/6 checks PASS (recorded in changes/2026-08-21-cli.md). Release readiness evidence is in `changes/2026-10-02-release-readiness.md`; 1.0.0 candidate evidence and revalidation follow-up are in `changes/2026-10-07-release-candidate-1.0.0.md` and `features/release/release-candidate-1.0.0-smoke.jsonl`. Spec lifecycle write proof: `changes/2026-10-03-spec-lifecycle-writes.md`. Automatic skill-creation proof: `changes/2026-10-05-automatic-skill-creation.md`, `changes/2026-10-05-skill-trigger-guidance.md`, and validated routing clarity in `changes/2026-10-07-skill-routing-clarity.md`. Native Task worker dispatch proof is in `changes/2026-10-07-native-task-worker-dispatch.md` and `features/orchestrator/subagent-dispatch-smoke.jsonl`. Dashboard skill-scope count proof: `changes/2026-10-05-dashboard-skill-scope-counts.md`.
