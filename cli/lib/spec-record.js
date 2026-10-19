@@ -42,7 +42,7 @@ function recordSpecs(input, root) {
     checkStringArray('assumptions');
     checkStringArray('scope');
     checkStringArray('acceptanceCriteria');
-    checkString('currentStep');
+    if (t.currentStep !== undefined) checkString('currentStep');
     checkStringArray('pendingWrites');
     checkString('next');
     checkStringArray('proof');
@@ -54,7 +54,7 @@ function recordSpecs(input, root) {
   if (t.changePath !== undefined && (typeof t.changePath !== 'string' || !/^\.specs\/changes\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.md$/.test(changePath))) fail('invalid changePath');
   if (t.status === 'VALIDATED' && !(t.verification?.independent === true && t.verification?.result === 'PASS' && t.verification?.verifier === 'worker-verify' && t.proof.some((v) => v.trim()))) fail('VALIDATED requires independent worker-verify PASS and proof');
   if (t.status === 'SHIPPED' && t.shipped !== true) fail('SHIPPED requires shipped: true');
-  const unsafe = [t.title,t.trackerName,t.goal,...t.requirements,...t.assumptions,...t.scope,...t.acceptanceCriteria,...t.pendingWrites,...t.proof,t.currentStep,t.next,changePath || ''];
+  const unsafe = [t.title,t.trackerName,t.goal,...t.requirements,...t.assumptions,...t.scope,...t.acceptanceCriteria,...t.pendingWrites,...t.proof,...(t.currentStep === undefined ? [] : [t.currentStep]),t.next,changePath || ''];
   if (unsafe.some((v) => /[|\r\n]/.test(v))) fail('Markdown table delimiters or multiline fields are not allowed');
   const abs = (rel) => path.join(root, rel);
   const targets = [abs('.specs/README.md'),abs('.specs/state/project-state.md'),abs(relative)];
@@ -77,6 +77,24 @@ function recordSpecs(input, root) {
     const end = next.exec(text)?.index ?? text.length;
     return `${text.slice(0,start)}\n${body}\n\n${text.slice(end).replace(/^\s+/, '')}`;
   };
+  const replacePendingWrites = (text, pendingWrites) => {
+    const heading = /^##\s+Checkpoint\s*$/im.exec(text);
+    if (!heading) return text;
+    const start = heading.index + heading[0].length;
+    const next = /^##\s+/gm; next.lastIndex = start;
+    const end = next.exec(text)?.index ?? text.length;
+    const body = text.slice(start, end);
+    const value = pendingWrites.length ? pendingWrites.join('; ') : 'none.';
+    const line = /^([ \t]*-[ \t]*Pending writes:[ \t]*)[^\r\n]*(\r?)$/im;
+    if (line.test(body)) {
+      return `${text.slice(0, start)}${body.replace(line, (_match, prefix, carriageReturn) => `${prefix}${value}${carriageReturn}`)}${text.slice(end)}`;
+    }
+    const trailingWhitespace = body.match(/(?:\r?\n[ \t]*)*$/)[0];
+    const checkpointContent = body.slice(0, body.length - trailingWhitespace.length);
+    const newline = body.includes('\r\n') ? '\r\n' : '\n';
+    const updated = `${checkpointContent}${newline}- Pending writes: ${value}${trailingWhitespace}`;
+    return `${text.slice(0, start)}${updated}${text.slice(end)}`;
+  };
   const createdDirs = [];
   try {
     let tracker = old.get(targets[0]).toString('utf8');
@@ -86,7 +104,8 @@ function recordSpecs(input, root) {
     tracker = rows.join('\n').replace(/^\*\*NEXT:\*\*.*$/m, `**NEXT:** ${t.next}`);
     fs.writeFileSync(targets[0],tracker);
     let state = old.get(targets[1]).toString('utf8');
-    state = replaceSection(state, 'Current step', t.currentStep);
+    if (t.currentStep !== undefined) state = replaceSection(state, 'Current step', t.currentStep);
+    state = replacePendingWrites(state, t.pendingWrites);
     fs.writeFileSync(targets[1],state);
     const originalFeature = old.get(targets[2]);
     let feature = originalFeature === null ? null : originalFeature.toString('utf8');

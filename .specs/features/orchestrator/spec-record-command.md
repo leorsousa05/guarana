@@ -28,7 +28,7 @@ The command accepts one JSON object with this shape (optional fields are shown w
     "assumptions": ["string"],
     "scope": ["string"],
     "acceptanceCriteria": ["string"],
-    "currentStep": "string",
+    "currentStep?": "string",
     "pendingWrites": ["string"],
     "next": "string",
     "proof": ["string"],
@@ -43,7 +43,7 @@ The command accepts one JSON object with this shape (optional fields are shown w
 }
 ```
 
-All listed non-optional task fields are required; `schema` must equal `v1`, arrays contain strings, and paths must satisfy the feature/change path constraints in acceptance criterion 1. `status` is exactly one of `SPECIFIED`, `TASKED`, `IMPLEMENTED`, `VALIDATED`, or `SHIPPED`. `VALIDATED` requires `verification.independent: true`, `verification.result: "PASS"`, `verification.verifier: "worker-verify"`, and at least one non-empty `proof` item. `SHIPPED` requires `shipped: true`. The command does not infer these gates or claim implementation/shipping.
+All listed non-optional task fields are required; `schema` must equal `v1`, arrays contain strings, and paths must satisfy the feature/change path constraints in acceptance criterion 1. `currentStep` is optional: omission preserves the stored `## Current step` content, while an explicit non-empty value retains the prior rendering behavior. `status` is exactly one of `SPECIFIED`, `TASKED`, `IMPLEMENTED`, `VALIDATED`, or `SHIPPED`. `VALIDATED` requires `verification.independent: true`, `verification.result: "PASS"`, `verification.verifier: "worker-verify"`, and at least one non-empty `proof` item. `SHIPPED` requires `shipped: true`. The command does not infer these gates or claim implementation/shipping.
 
 Receipts are updated only inside the target feature's managed markers. For an existing feature, only its task status and managed receipt are updated; semantic sections, including requirements and acceptance criteria, remain unchanged. If the feature is absent, create it from the supplied goal, requirements, assumptions, scope, and acceptance criteria.
 
@@ -54,9 +54,11 @@ Receipts are updated only inside the target feature's managed markers. For an ex
 4. Writes are safe and all-or-nothing: if any target cannot be updated or the specs validator fails, restore all prior contents. Emit concise JSON containing paths and validator result.
 5. Tests cover stdin/parser/schema, status gates, path/content protection, idempotency, and rollback. CLI help, `npm test`, `check-cli`, and specs validator all pass.
 6. The `worker-specs` skill is instructed to emit this schema and invoke the command rather than manually editing these managed fields.
+7. For schema-v1 records, `pendingWrites` updates the existing `- Pending writes:` checkpoint line: `['planning']` renders as `- Pending writes: planning`, multiple entries are all represented joined by `; `, and an empty array renders `none.`. The update preserves unrelated checkpoint lines and the existing `Current step` rendering semantics, reports `.specs/state/project-state.md` in `changed` when it changes, and a second identical call is idempotent. Tests cover these cases while existing structural validation and rollback behavior remain unchanged.
+8. For schema-v1 records, omitting optional `currentStep` preserves the stored `## Current step` content; supplying a non-empty value retains the prior rendering behavior. Tests cover omission and explicit values without changing pendingWrites, idempotency, or rollback behavior.
 
 <!-- guarana:record:start -->
 Status: VALIDATED
-Proof: worker-verify ses_edee8733affeL3ugYU3cvuuoxQ — PASS (6/6); worker-specs ses_edefeb199cffehjnKftd43HFAc5 — command returned ok:true; three paths changed; validator ok:true; npm test — PASS (272/272); npm run check-cli — PASS; npm run specs:validate — PASS (131 Markdown, 20 features, 30 ADRs, 208 links); git diff --check — PASS
+Proof: Final worker-verify PASS 19/19; the recorder feature was independently validated.
 Change: none
 <!-- guarana:record:end -->

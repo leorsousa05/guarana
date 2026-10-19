@@ -19,15 +19,23 @@ restore above. The orchestrator initializes it and injects relevant confirmed
 context on task start or session resume; `memory_get_context_for_task` remains
 available for deeper retrieval. Drafts are never returned as context.
 
-## Write triggers (all four are MUST-write)
-1. **End of task** → update `state/project-state.md` (never mid-task).
-2. **Every stop** → log the stop reason (with guarana:build's Record).
-3. **Every decision** → append an ADR; ADRs are append-only.
-4. **Every discovered failure** → append to `state/known-issues.md` immediately: title, symptom, reproduction trigger, mitigation, status.
+## Write triggers
+1. **Task status:** record task start/end and material blockers or status changes in
+   `state/project-state.md`; do not record every lifecycle stage.
+2. **Actual build runs:** `guarana:build` Record always logs the run outcome and
+   exactly one stop reason. Read-only questions, planning-only interactions, and
+   other non-run turns do not get run records.
+3. **ADR:** append only a durable architectural, contract, data, security, privacy,
+   or integration decision that had material alternatives. Tactical implementation
+   choices do not need ADRs; ADRs remain append-only.
+4. **Known issue:** record only a confirmed, reproducible product failure with a
+   useful durable mitigation. Do not record tool/verifier scope errors or transient
+   permission/environment failures as product issues.
 
 ## Silent context truncation
 Contexts truncate without warning. Defense:
-- **Checkpoint:** at each stage boundary, append open facts (current goal as `- Goal: <goal>` or `- Goal: none`, condition, budget remaining, pending writes) to a checkpoint block in `state/project-state.md`.
+- **Checkpoint:** keep transient stage, current-step, and budget details in
+  operational workflow/run state; they do not belong in `state/project-state.md`.
 - **Detect:** on restore, compare expected checkpoint (from your run position) with what's on disk.
 - **Recover:** on mismatch or gap, re-read from disk. NEVER reconstruct missing facts from memory.
 

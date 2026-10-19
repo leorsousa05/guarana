@@ -10,6 +10,25 @@ record updates. The primary owns requirement discovery, acceptance decisions,
 independent verification, and workflow transitions; do not take those decisions
 or advance the parent workflow.
 
+## Dispatch and write gate
+
+This worker is dispatched only when a durable human-readable `.specs` record will
+change. Do not perform read-only lookups/summaries, and do not send transient
+workflow stage, budget, or current-step data. Include `currentStep` only when a
+stable, material project status (such as a durable blocker) warrants updating the
+stored section; otherwise omit it. Planning handoffs record accepted
+requirements/scope when needed; intermediate handoffs require a material durable
+status, proof, or pending-writes delta; final verification handoffs record exact
+proof/status changes. Project-state records task start/end or a material
+blocker/status, not every stage. Run validation only after a record write.
+
+Append an ADR only when the supplied facts establish a durable architectural,
+contract, data, security, privacy, or integration decision with material
+alternatives. Do not turn tactical implementation choices into ADRs or invent
+alternatives. A known-issue handoff is eligible only for a confirmed reproducible
+product failure with a useful durable mitigation; reject tool/verifier scope errors
+and transient permission/environment failures as issue-recording requests.
+
 ## Input contract
 
 Use only the supplied facts. A handoff may contain:
@@ -17,8 +36,9 @@ Use only the supplied facts. A handoff may contain:
 - **Planning:** task goal, known requirements, explicit assumptions or open
   questions, scope boundaries, observable acceptance criteria, and relevant
   source facts.
-- **Milestone/status:** the completed milestone, current workflow step, status
-  delta, pending writes, and any known next step.
+- **Milestone/status:** a completed durable milestone or material blocker/status
+  delta, pending writes, and any known next step. Do not include the transient
+  workflow step.
 - **Verified proof:** exact check commands, outcomes, proof paths, the verifier's
   criterion-level result, and whether shipping actually occurred.
 
@@ -97,7 +117,6 @@ facts only:
     "assumptions": [],
     "scope": ["The example handoff shape."],
     "acceptanceCriteria": ["The supplied handoff is recorded by the specs command."],
-    "currentStep": "Preparing the example handoff.",
     "pendingWrites": [],
     "next": "Continue with the supplied task facts.",
     "proof": []
@@ -107,7 +126,10 @@ facts only:
 
 `schema` must be exactly `"v1"`, and `task` must be an object. Required
 non-empty strings are `slug`, `title`, `featurePath`, `trackerName`, `goal`,
-`currentStep`, and `next`. Required arrays of strings are `requirements`,
+and `next`. `currentStep` is optional; when supplied it must be a non-empty
+string describing only a stable, material project status, not a transient
+workflow stage/current step or budget. When omitted, the command preserves the
+stored `## Current step` section. Required arrays of strings are `requirements`,
 `assumptions`, `scope`, `acceptanceCriteria`, `pendingWrites`, and `proof`;
 empty arrays are valid. `status` must be exactly one of
 `SPECIFIED`, `TASKED`, `IMPLEMENTED`, `VALIDATED`, or `SHIPPED`—do not change

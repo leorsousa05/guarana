@@ -10,10 +10,10 @@ resumed task; the user does not need to mention `guarana:plan`.
 
 ## 1. Restore state
 
-Use `workflow_get` for operational state. For human-readable project records,
-ask `worker-specs` for a concise factual summary when required; do not read whole
-`.specs` files or edit records in the primary context. Never reconstruct state
-from memory. Disk is truth (ADR-004).
+Use `workflow_get` for operational state. Inspect only relevant excerpts from
+human-readable project records when needed; do not load whole `.specs` files or
+edit records in the primary context. Never reconstruct state from memory. Disk is
+truth (ADR-004).
 
 ## Memory
 The orchestrator initializes the project vault and automatically supplies
@@ -22,46 +22,57 @@ quarantined. Use the `memory_*` tools for deeper retrieval, review, or explicit
 decisions; a completed verified run is recorded automatically.
 
 ### Cold start (no `.specs/` on disk)
-The orchestrator creates a minimal `.specs/` shell before planning. Existing files
-are never replaced, and no project-specific ADR is fabricated. The primary
-determines requirements and acceptance; `worker-specs` records only those supplied
-facts. Ask only for contract facts that cannot be inferred.
+The orchestrator creates a minimal `.specs/` shell only for a clear mutation request
+or explicit workflow-skill command. Informational questions, audits, reviews,
+inspections, investigations, and reports without a requested repository mutation
+stay read-only and create no task spec, tracker, or project-state entry. Existing
+files are never replaced, and no project-specific ADR is fabricated. The primary
+determines requirements and acceptance; `worker-specs` records only supplied facts.
 
 ## System-of-record writes (mandatory)
 
-The workflow JSON is operational state, not a substitute for the human-readable
+The workflow JSON is operational state, not a substitute for a human-readable
 `.specs/` record. The primary owns requirements, acceptance decisions, independent
-verification, and workflow transitions. It does not read whole `.specs` records
-or edit them; `worker-specs` reads and updates the records from concise factual
-handoffs. A task is not planned until the worker reports its writes and validator
-result; calling `workflow_tick` alone never completes planning.
+verification, and workflow transitions. It does not edit `.specs` records;
+`worker-specs` owns durable record changes from concise factual handoffs. Dispatch
+it only when a human-readable record will materially change—not for a read-only
+summary or an operational stage update. A task is not planned until any required
+record write is reported; calling `workflow_tick` alone never completes planning.
 
-1. **During planning, before `plan_complete`:** after closing the requirements
-   discovery gate, dispatch `worker-specs` a compact handoff containing the task
-   goal, known requirements, explicit assumptions/open questions, scope
-   boundaries, and observable acceptance criteria. Criteria must distinguish a
-   correct result from a plausible but wrong one. The worker assigns/repairs the
-   task-specific feature record and updates the tracker and project-state while
-   preserving unrelated records. Wait for changed paths and validator status.
-2. **At each lifecycle milestone before `workflow_tick`:** dispatch only the
-   completed milestone, current/next step, status delta, and pending writes to
-   `worker-specs`. The primary advances the workflow only after the worker returns
-   its changed-path and validator summary.
-3. **After independent verification:** dispatch the exact verified checks,
-   outcomes, and proof paths to `worker-specs`. It updates the feature proof and
-   tracker status; `VALIDATED` requires a passing independent result, and
-   `SHIPPED` requires explicit confirmation. The primary runs
-   `guarana specs validate . --json` and does not inspect whole records.
-4. Never let the worker infer missing facts or fabricate proof. If a write or
-   validation fails, report the blocker and do not describe the task as fully
+1. **Planning:** when accepted task requirements or feature scope need a durable
+   record, dispatch `worker-specs` a compact handoff with the goal, known
+   requirements, explicit assumptions/open questions, boundaries, and observable
+   acceptance criteria. Criteria must distinguish a correct result from a plausible
+   but wrong one. The worker reuses or creates the feature record and updates the
+   tracker/project-state only for supplied durable task facts. Wait for changed
+   paths and validator status before `plan_complete`.
+2. **Intermediate milestones:** dispatch only when a material durable
+   status/proof/pending-writes delta must be recorded. Do not dispatch for every
+   lifecycle transition; stage, budget, and current-step data belongs in operational
+   workflow/run state. Project-state records task start/end or a material
+   blocker/status, not stage-by-stage progress.
+3. **After independent verification:** when proof or status will change, dispatch
+   the exact verified checks, outcomes, and proof paths. `VALIDATED` requires a
+   passing independent result; `SHIPPED` requires explicit confirmation. Run
+   `guarana specs validate . --json` only after a human-readable record write.
+4. Never let the worker infer missing facts or fabricate proof. If a required write
+   or validation fails, report the blocker and do not describe the task as fully
    recorded.
+
+### ADR threshold
+
+Record an ADR only for a durable architectural, contract, data, security, privacy,
+or integration decision with material alternatives. Tactical implementation
+choices do not need ADRs; describe rejected alternatives so the decision is
+reviewable.
 
 ## Requirements discovery gate (before any code dispatch)
 
 Do not treat a user's first sentence as a complete specification for a substantial
 or ambiguous change. First inspect the relevant implementation, project
-conventions, and confirmed memory; request a concise `.specs` summary from
-`worker-specs` when record facts are needed. Then make a short requirements ledger:
+conventions, and confirmed memory; inspect only relevant record facts when
+needed—do not dispatch `worker-specs` as a read-only lookup. Then make a short
+requirements ledger:
 
 - **Known:** facts stated by the user or established by repository evidence.
 - **Inferred:** low-risk defaults that follow from existing patterns.
@@ -81,8 +92,8 @@ Question policy:
    without a questionnaire; record only assumptions that affect the implementation.
 4. **Do not dispatch worker-code or begin implementation while a critical unknown
    remains unanswered.** Wait for the human, incorporate the answer, and record
-   durable requirements in the feature spec; record a durable project decision in
-   an ADR when needed.
+   durable requirements in the feature spec; record a qualifying durable project
+   decision in an ADR only when it meets the ADR threshold above.
 5. If the human explicitly authorizes assumptions, write them down with their
    consequence and proceed only when the acceptance condition remains falsifiable.
 
@@ -105,7 +116,7 @@ unknowns may remain as explicit, reversible assumptions.
 Ambiguous intent → ASK the human (Rule 0). Never guess a route. Never load debug or measure without their trigger.
 
 ## 3. Dispatch template (every dispatch, no exceptions)
-- **Worker:** worker-code | worker-verify | worker-debug | worker-specs
+- **Worker:** worker-code | worker-verify | worker-debug | worker-specs (only for a durable human-readable record change)
 - **Mechanism:** invoke that named OpenCode subagent through the native Task tool; do not relabel same-context work as a worker dispatch.
 - **Verifiable condition:** the exact checkable predicate defining done
 - **Budget:** per ADR-005 (code 8k / verify 4k / debug 6k tokens)
@@ -117,11 +128,11 @@ advances workflow state. If Task is unavailable or denied, report the blocker
 instead of doing the worker's procedure in the primary context.
 
 Before a worker-code dispatch, confirm the requirements discovery gate above is
-closed and the acceptance condition has been decided by the primary and recorded
-by `worker-specs`.
+closed and the primary has decided the acceptance condition. Have `worker-specs`
+record it when a durable human-readable update is needed.
 
 ## 4. Stop
-After dispatch, wait for the worker summary. Do not hold record detail in the main
-thread; durable facts go to disk, not summaries. Before leaving planning, confirm
-the worker reported the acceptance condition and tracker/project-state updates,
-then run the specs validator without reading whole records.
+After a `worker-specs` dispatch, wait for its changed-path/validation summary. Do
+not create a dispatch or validator run when no human-readable record changed.
+Before leaving planning, confirm any required acceptance/tracker/project-state
+write was reported; do not demand task-specific records for read-only work.

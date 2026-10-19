@@ -20,7 +20,7 @@ function profileText(worker, useProject) {
       : worker.name === 'worker-debug'
       ? '  edit:\n    "*": deny\n    ".specs/state/known-issues.md": allow\n'
       : worker.name === 'worker-specs'
-       ? '  edit:\n    "*": deny\n    ".specs/README.md": allow\n    ".specs/conventions.md": allow\n    ".specs/state/*.md": allow\n    ".specs/state/worker-specs-handoff.json": allow\n    ".specs/features/*.md": allow\n    ".specs/changes/*.md": allow\n'
+       ? '  edit:\n    "*": deny\n    ".specs/README.md": allow\n    ".specs/architecture.md": allow\n    ".specs/conventions.md": allow\n    ".specs/decisions/*.md": allow\n    ".specs/state/*.md": allow\n    ".specs/state/worker-specs-handoff.json": allow\n    ".specs/features/*.md": allow\n    ".specs/changes/*.md": allow\n'
       : '  edit: deny\n';
   return [
     '---',

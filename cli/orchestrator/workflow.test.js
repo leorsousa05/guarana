@@ -172,13 +172,66 @@ test('decide: new task from idle routes to planning', () => {
   assert.equal(d.goal, 'Implement OAuth authentication');
 });
 
-test('decide: problem report from idle routes to planning', () => {
-  const d = decide({
-    userText: 'Guarana never uses memory without an explicit command',
-    workflow: createWorkflow(),
-  });
-  assert.equal(d.event, 'new_task');
-  assert.equal(d.skill, 'plan');
+test('read-only questions, audits, reviews, investigations, and reports do not start tasks', () => {
+  for (const userText of [
+    'What does the OAuth endpoint do?',
+    'Review the authentication flow',
+    'Audit the API tests',
+    'Inspect the login behavior',
+    'Investigate why login fails',
+    'Report what the current integration does',
+    'How do I add a login method?',
+    'Should we update the documentation?',
+    'Can you update me on the task status?',
+    'Update me on the task status',
+    'Review the task and update me on the task status',
+    'I need an update on the task status',
+    'Guarana never uses memory without an explicit command',
+    'What does guarana:code do?',
+  ]) {
+    const d = decide({ userText, workflow: createWorkflow() });
+    assert.equal(d.event, null, userText);
+    assert.equal(d.state, 'idle', userText);
+
+    const active = decide({ userText, workflow: toVerifying() });
+    assert.notEqual(active.event, 'new_task', userText);
+    assert.equal(active.state, 'verifying', userText);
+  }
+});
+
+test('clear mutation requests and explicit skill commands still enter workflow', () => {
+  const mutation = decide({ userText: 'Fix the OAuth login flow', workflow: createWorkflow() });
+  assert.equal(mutation.event, 'new_task');
+  assert.equal(mutation.skill, 'plan');
+
+  const documentation = decide({ userText: 'Write a README for the OAuth integration', workflow: createWorkflow() });
+  assert.equal(documentation.event, 'new_task');
+  assert.equal(documentation.skill, 'plan');
+
+  const politeMutation = decide({ userText: 'Can you add a validation test?', workflow: createWorkflow() });
+  assert.equal(politeMutation.event, 'new_task');
+
+  for (const userText of [
+    'Can you update the README?',
+    'Update the project docs',
+    'Can you update the config file?',
+    'I need an update to the configuration file',
+  ]) {
+    const targetedMutation = decide({ userText, workflow: createWorkflow() });
+    assert.equal(targetedMutation.event, 'new_task', userText);
+    assert.equal(targetedMutation.skill, 'plan', userText);
+  }
+
+  const politeWrite = decide({ userText: 'Can you write a README?', workflow: createWorkflow() });
+  assert.equal(politeWrite.event, 'new_task');
+
+  const compoundMutation = decide({ userText: 'Review the login flow and fix the missing route', workflow: createWorkflow() });
+  assert.equal(compoundMutation.event, 'new_task');
+
+  const forced = decide({ userText: 'guarana:code implement the OAuth flow', workflow: createWorkflow() });
+  assert.equal(forced.event, 'force');
+  assert.equal(forced.skill, 'code');
+  assert.equal(forced.goal, 'implement the OAuth flow');
 });
 
 test('automatic specs bootstrap uses a generic spec path and is idempotent', () => {
@@ -259,6 +312,10 @@ test('decide: continuation of active workflow does not re-plan', () => {
   const d = decide({ userText: 'hmm wait', workflow: w });
   assert.equal(d.event, null);
   assert.equal(d.state, 'verifying');
+
+  const question = decide({ userText: 'How do I add a new login step?', workflow: w });
+  assert.equal(question.event, null);
+  assert.equal(question.state, 'verifying');
 });
 
 test('decide: natural completion of coding advances to verifying', () => {
@@ -310,15 +367,15 @@ test('system block is always-on and names the skill', () => {
   assert.match(block, /Guarana workflow/);
   assert.match(block, /Current state: \*\*planning\*\*/);
   assert.match(block, /guarana:plan/);
-  assert.match(block, /ask about consequential requirement gaps/i);
-  assert.match(block, /Skip redundant questions for small, fully specified tasks/i);
-  assert.match(block, /workflow\.json.*not the human-readable record/i);
-  assert.match(block, /primary owns requirements discovery, acceptance decisions, independent verification, and workflow transitions/i);
-  assert.match(block, /Do not read whole human-readable `.specs` records or edit them/i);
-  assert.match(block, /worker-specs.*task goal.*known requirements.*assumptions\/open questions.*boundaries.*observable acceptance criteria/i);
-  assert.match(block, /factual milestone\/status delta/i);
-  assert.match(block, /exact proof and outcomes to `worker-specs`/i);
-  assert.match(block, /guarana specs validate \. --json/);
+  assert.match(block, /Only explicit `guarana:<skill>` commands or clear product\/document\/configuration changes start planning/i);
+  assert.match(block, /informational and read-only requests create no task spec or tracker\/project-state writes/i);
+  assert.match(block, /primary owns requirements, acceptance, workflow transitions, and independent verification/i);
+  assert.match(block, /worker-code and worker-verify in separate native Task contexts/i);
+  assert.match(block, /worker-debug only for actionable confirmed failures/i);
+  assert.match(block, /`worker-specs` is dispatched only for a durable human-readable record change/i);
+  assert.match(block, /transient stage, budget, and current-step data belongs in operational workflow JSON/i);
+  assert.match(block, /Follow `guarana:plan` for requirements discovery, worker ownership, record cadence, ADR, and known-issue policy/i);
+  assert.ok(block.length < 1800, `always-on block unexpectedly long: ${block.length} chars`);
 });
 
 test('planning injection asks about consequential unknowns before code dispatch', () => {
@@ -328,16 +385,45 @@ test('planning injection asks about consequential unknowns before code dispatch'
   assert.match(injection, /Do not dispatch worker-code or begin implementation while a critical unknown/i);
   assert.match(injection, /up to five per\s+round/i);
   assert.match(injection, /acceptance condition/i);
-  assert.match(injection, /System-of-record writes \(mandatory\)/i);
-  assert.match(injection, /before `plan_complete`/i);
-  assert.match(injection, /compact handoff containing the task/i);
-  assert.match(injection, /does not read whole `.specs` records\s+or edit them/i);
+  assert.match(injection, /System-of-record writes/i);
+  assert.match(injection, /Informational questions, audits, reviews,[\s\S]*create no task spec, tracker, or project-state entry/i);
+  assert.match(injection, /Dispatch\s+it only when a human-readable record will materially change/i);
+  assert.match(injection, /Do not dispatch for every[\s\S]*workflow\/run state/i);
+  assert.match(injection, /only after a human-readable record write/i);
 });
 
 test('resolveSkillBody returns the plan SKILL.md body', () => {
   const body = resolveSkillBody('plan');
   assert.ok(body.length > 0);
   assert.match(body, /# guarana:plan/);
+});
+
+test('recording policies limit ADRs and known issues to durable actionable cases', () => {
+  const readSkill = (name) => fs.readFileSync(path.resolve(`skills/guarana/skills/${name}/SKILL.md`), 'utf8');
+  const plan = readSkill('plan');
+  const remember = readSkill('remember');
+  const debug = readSkill('debug');
+  const measure = readSkill('measure');
+  const specs = readSkill('specs');
+  const failures = fs.readFileSync(path.resolve('docs/reference/failure-modes.md'), 'utf8');
+
+  assert.match(plan, /durable architectural, contract, data, security, privacy,\s+or integration decision/i);
+  assert.match(plan, /material alternatives/i);
+  assert.match(plan, /tactical implementation\s+choices do not need ADRs/i);
+  assert.match(remember, /record task start\/end and material blockers or status changes in\s+`state\/project-state\.md`/i);
+  assert.match(remember, /checkpoint[\s\S]*operational workflow\/run state/i);
+  assert.match(remember, /actual build run/i);
+  assert.match(debug, /confirmed,\s+reproducible\s+product failure/i);
+  assert.match(debug, /durable mitigation/i);
+  assert.match(debug, /tool\/verifier scope errors/i);
+  assert.match(debug, /transient\s+permission\/environment failures/i);
+  assert.match(measure, /`error` share.*investigate/i);
+  assert.match(measure, /aggregate rate alone is\s+not a known issue/i);
+  assert.match(failures, /confirmed, reproducible product failure/i);
+  assert.match(failures, /tool\/verifier scope errors/i);
+  assert.match(specs, /dispatched only when a durable human-readable `.specs` record will\s+change/i);
+  assert.match(specs, /material\s+alternatives/i);
+  assert.match(specs, /confirmed\s+reproducible\s+product failure/i);
 });
 
 test('completionAction maps states to tick actions', () => {

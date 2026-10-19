@@ -65,5 +65,9 @@ Verification failure (`verify_fail`) auto-moves to debugging/correction (`fix_st
 8. **Bundle + dashboard.** `npm test`, `check-cli` PASS; orchestrator plugin + engine and Task worker profiles deployable via `guarana plugin install`; `/api/workflow/current` returns live state.
 9. **Human-readable spec lifecycle.** Planning replaces generic bootstrap content with a task-specific slug, known requirements, assumptions, scope, and falsifiable acceptance criteria before `plan_complete`; each workflow stage updates project-state and feature status; successful verification records exact proof and updates tracker status. Workflow JSON alone does not satisfy this criterion.
 
+### Current lifecycle policy addendum
+
+The unconditional bootstrap and per-stage project-state wording in criteria 1 and 9 above is superseded by this current policy. Pure informational/read-only requests—including audits, reviews, inspections, investigations, and reports with no requested durable mutation—do not create task feature specs or write tracker/project-state records; explicit `guarana:<skill>` commands still route to the requested skill. `worker-specs` is dispatched only when a durable human-readable record changes: planning records accepted requirements/scope when needed, intermediate handoffs record only material durable status/proof/pending-write deltas, and final verification records exact proof/status. Transient stage, budget, and current-step data stays in workflow state. Project-state records task start/end or a material blocker/status, not every stage. Validation follows a human-readable record write.
+
 ## Definition of done
 All criteria have written proofs (unit + plugin + dashboard tests), `npm test` green, `check-cli` PASS, and the change is recorded in `.specs/changes/`.

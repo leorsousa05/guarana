@@ -6,13 +6,50 @@
 
 import { canTransition, skillForState, stateForSkill } from './state.js';
 
-// New-task / feature-intent signals: phrases that start a fresh planning pass.
-const NEW_TASK_RE = /(?:\b(?:implement|implemente|build|create|add|make|write|fix|refactor|design|develop|update|modify|change|remove|delete|improve|investigate|document|enable|disable|configure|review|criar|adicionar|implementar|construir|corrigir|refatorar|atualizar|alterar|investigar|documentar)\b)|(?:^|[\s,])(?:bug|feature|task|issue|problem|problema)(?:\b|[\s,])/i;
-const FEATURE_NOUN_RE = /(?:implement|add|build|create|fix|refactor|write|support|authentication|auth|oauth|login|feature|api|endpoint|component|module|test|function|class|service|handler|route|schema|migration|integration|oAuth)/i;
-const PROBLEM_RE = /\b(?:never|doesn['’]?t|does not|can['’]?t|cannot|missing|without|not working|não|nunca|sem)\b/i;
+// Start/re-plan only for requested changes. Topic nouns and investigative,
+// review, or problem-report language alone are not mutation intent.
+const MUTATION_ACTION = String.raw`(?:implement|implemente|build|create|add|make|fix|refactor|design|develop|update|modify|change|remove|delete|improve|document|edit|enable|disable|configure|criar|adicionar|implementar|construir|corrigir|refatorar|atualizar|alterar|documentar|editar|write\s+(?:(?:the|a|an)\s+)?(?:code|file|docs?|document(?:ation)?|readme|changelog|config(?:uration)?|adr|spec(?:ification)?s?|tests?))`;
+const NEW_TASK_RE = new RegExp(`\\b${MUTATION_ACTION}\\b`, 'i');
+const DIRECT_MUTATION_RE = new RegExp(`^\\s*(?:(?:please|kindly)\\s+)?(${MUTATION_ACTION})\\b`, 'i');
+const POLITE_MUTATION_RE = new RegExp(`^\\s*(?:can|could|would)\\s+you\\s+(?:please\\s+)?(${MUTATION_ACTION})\\b`, 'i');
+const POLITE_MUTATION_TARGET_RE = /^(?!(?:me|us|about|on|for|with|from|by|in|at|into|onto|over|under|whether|if|what|why|how|when|where|who|which)\b)(?:(?:the|a|an|this|that|these|those|my|our|your|their|its)\s+)?[\w./-]+\b/i;
+const COMPOUND_MUTATION_RE = new RegExp(`\\b(?:and|then|also)\\s+(?:please\\s+)?(${MUTATION_ACTION})\\b`, 'i');
+const READ_ONLY_PREFIX_RE = /^\s*(?:what|why|when|where|who|how|explain|describe|summari[sz]e|review|audit|inspect|investigate|report|analy[sz]e|check|tell me|show me|should|could|would|can|do|does|is|are)\b/i;
+
+function hasMutationTarget(action, remainder) {
+  if (/^write\b/i.test(action)) return true;
+  const target = remainder.trimStart().replace(/^to\s+/i, '');
+  return POLITE_MUTATION_TARGET_RE.test(target);
+}
+
+function hasMutationIntent(text) {
+  if (!NEW_TASK_RE.test(text)) return false;
+  const compoundMutation = text.match(COMPOUND_MUTATION_RE);
+  if (compoundMutation) {
+    if (!/^update$/i.test(compoundMutation[1])) return true;
+    return hasMutationTarget(compoundMutation[1], text.slice(compoundMutation.index + compoundMutation[0].length));
+  }
+  const directMutation = text.match(DIRECT_MUTATION_RE);
+  if (directMutation) {
+    if (!/^update$/i.test(directMutation[1])) return true;
+    return hasMutationTarget(directMutation[1], text.slice(directMutation[0].length));
+  }
+  const politeMutation = text.match(POLITE_MUTATION_RE);
+  if (politeMutation) {
+    return hasMutationTarget(politeMutation[1], text.slice(politeMutation[0].length));
+  }
+  const update = text.match(/\bupdate\b/i);
+  if (update) {
+    if (READ_ONLY_PREFIX_RE.test(text)) return false;
+    // Also qualify noun-form requests such as "I need an update to the config";
+    // a follow-up clause like "an update on task status" is informational.
+    return hasMutationTarget(update[0], text.slice(update.index + update[0].length));
+  }
+  return !READ_ONLY_PREFIX_RE.test(text);
+}
 
 // Explicit escape-hatch: `guarana:code`, `guarana:plan`, etc. force a step.
-const FORCE_RE = /guarana[:_-]?(\w+)/i;
+const FORCE_RE = /^\s*\/?guarana[:_-]?(\w+)(?=\s|$)/i;
 
 // Step-completion signals, keyed by the workflow state they advance.
 const STEP_SIGNALS = {
@@ -61,6 +98,7 @@ export function decide({ userText, workflow, lastResult }) {
         event: 'force',
         state,
         skill: skillForState(state),
+        ...(text.slice(force[0].length).trim() ? { goal: text.slice(force[0].length).trim() } : {}),
         note: `explicit guarana:${force[1]}`,
       };
     }
@@ -80,7 +118,7 @@ export function decide({ userText, workflow, lastResult }) {
   //    clearly starts a brand-new task.
   const active = from !== 'idle' && from !== 'completed';
   if (active) {
-    const newTask = NEW_TASK_RE.test(text);
+    const newTask = hasMutationIntent(text);
     if (newTask) {
       return {
         event: 'new_task',
@@ -121,8 +159,8 @@ export function decide({ userText, workflow, lastResult }) {
     };
   }
 
-  // 4. Idle/completed -> is this a new task?
-  if (text && (NEW_TASK_RE.test(text) || FEATURE_NOUN_RE.test(text) || PROBLEM_RE.test(text))) {
+  // 4. Idle/completed -> is this an explicit mutation request?
+  if (text && hasMutationIntent(text)) {
     return {
       event: 'new_task',
       state: 'planning',

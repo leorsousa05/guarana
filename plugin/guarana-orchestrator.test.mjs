@@ -152,6 +152,75 @@ describe('GuaranaOrchestrator', () => {
     assert.equal(evs[0].event, 'new_task');
   });
 
+  it('informational and read-only requests do not create task records or tracker state', async () => {
+    const plugins = [api, await BundledOrchestrator({ directory: tmpDir })];
+    for (const [pluginIndex, plugin] of plugins.entries()) {
+      for (const text of [
+        'What does the OAuth endpoint do?',
+        'Review the authentication flow',
+        'Audit the API tests',
+        'Inspect the login behavior',
+        'Investigate why login fails',
+        'Report the current integration behavior',
+        'How do I add a login method?',
+        'Should we update the documentation?',
+        'Can you update me on the task status?',
+        'Update me on the task status',
+        'Review the task and update me on the task status',
+        'I need an update on the task status',
+        'What does guarana:code do?',
+      ]) {
+        await plugin['chat.message']({ sessionID: `read-only-${pluginIndex}` }, { parts: parts(text) });
+        assert.equal(workflow().state, 'idle', text);
+        assert.equal(workflow().history.length, 0, text);
+      }
+    }
+    for (const file of [
+      '.specs/README.md',
+      '.specs/state/project-state.md',
+      '.specs/state/workflow.json',
+      '.specs/features/initial-task/initial-task.md',
+    ]) {
+      assert.equal(fs.existsSync(path.join(tmpDir, file)), false, `${file} must not be created`);
+    }
+  });
+
+  it('explicit guarana skill commands still enter workflow and bootstrap task records', async () => {
+    await chat('guarana:plan');
+    assert.equal(workflow().state, 'planning');
+    assert.ok(fs.existsSync(path.join(tmpDir, '.specs', 'README.md')));
+    assert.ok(fs.existsSync(path.join(tmpDir, '.specs', 'state', 'project-state.md')));
+    assert.ok(fs.existsSync(path.join(tmpDir, '.specs', 'features', 'initial-task', 'initial-task.md')));
+  });
+
+  it('targeted README, docs, and config updates start and bootstrap normal workflows', async () => {
+    const plugins = [GuaranaOrchestrator, BundledOrchestrator];
+    for (const [pluginIndex, plugin] of plugins.entries()) {
+      for (const [index, text] of [
+        'Can you update the README?',
+        'Update the project docs',
+        'I need an update to the configuration file',
+        'Can you update the config file?',
+      ].entries()) {
+        const projectDir = path.join(tmpDir, `targeted-update-${pluginIndex}-${index}`);
+        const hooks = await plugin({ directory: projectDir });
+        await hooks['chat.message']({ sessionID: 's1', messageID: `targeted-update-${pluginIndex}-${index}` }, { parts: parts(text) });
+
+        const wf = load(projectDir);
+        assert.equal(wf.state, 'planning', text);
+        assert.equal(wf.skill, 'plan', text);
+        assert.equal(wf.goal, text);
+        for (const file of [
+          '.specs/README.md',
+          '.specs/state/project-state.md',
+          '.specs/features/initial-task/initial-task.md',
+        ]) {
+          assert.ok(fs.existsSync(path.join(projectDir, file)), `${file} must be bootstrapped for ${text}`);
+        }
+      }
+    }
+  });
+
   it('same user message is processed once when global and project plugin instances are both loaded', async () => {
     const duplicate = await GuaranaOrchestrator({ directory: tmpDir });
     const input = { sessionID: 's1', messageID: 'same-user-message', agent: 'build' };

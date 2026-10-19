@@ -425,9 +425,9 @@ export const GuaranaOrchestrator = async ({ directory }) => {
         });
         if (applied) {
           next = applied;
-          if (d.event === 'new_task' && d.goal) {
+          if ((d.event === 'new_task' || d.event === 'force') && (d.goal || wf.goal || userText)) {
             try {
-              c.specs.ensureSpecs(directory, d.goal);
+              c.specs.ensureSpecs(directory, d.goal || wf.goal || userText);
             } catch (err) {
               append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
             }
@@ -526,9 +526,10 @@ export const GuaranaOrchestrator = async ({ directory }) => {
             return { ok: false, error: `illegal transition ${action} from ${wf.state}`, state: wf.state };
           }
           c.state.save(directory, applied);
-          if (action === 'new_task' && args.goal) {
+          if ((action === 'new_task' && args.goal) || action === 'force') {
             try {
-              c.specs.ensureSpecs(directory, args.goal);
+              const skill = String(args.skill || applied.skill || 'plan').replace(/^guarana[:_-]?/i, '');
+              c.specs.ensureSpecs(directory, args.goal || applied.goal || `guarana:${skill}`);
             } catch (err) {
               append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
             }

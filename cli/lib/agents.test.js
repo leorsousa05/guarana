@@ -61,7 +61,9 @@ test('worker profiles include canonical skill procedures and distinct permission
   assert.doesNotMatch(specsEditRules, /\*\*\//);
   const allowedSpecsPaths = [
     '.specs/README.md',
+    '.specs/architecture.md',
     '.specs/conventions.md',
+    '.specs/decisions/ADR-001-example.md',
     '.specs/state/project-state.md',
     '.specs/state/worker-specs-handoff.json',
     '.specs/features/orchestrator.md',
@@ -78,14 +80,21 @@ test('worker profiles include canonical skill procedures and distinct permission
     assert.equal(isAllowedByRule(requestedPath), true, `${requestedPath} must be allowed by a worker-specs edit rule`);
   }
   assert.match(specsEditRules, /"\.specs\/conventions\.md": allow/);
-  const conventionsVariants = ['.specs/conventions.md.bak', '.specs/conventions/naming.md'];
-  for (const requestedPath of conventionsVariants) {
+  const forbiddenSpecsVariants = [
+    '.specs/architecture.md.bak',
+    '.specs/architecture/subsystem.md',
+    '.specs/conventions.md.bak',
+    '.specs/conventions/naming.md',
+  ];
+  for (const requestedPath of forbiddenSpecsVariants) {
     assert.equal(isAllowedByRule(requestedPath), false, `${requestedPath} must not be allowed by worker-specs`);
   }
   assert.match(specsEditRules, /"\*": deny/);
   assert.doesNotMatch(specsBashRules, /--stdin|<<|heredoc/i);
   assert.doesNotMatch(specs, /edit:\s*allow\s*$/m);
   assert.match(specs, /Do not invent requirements, acceptance decisions/);
+  assert.match(specs, /dispatched only when a durable human-readable `.specs` record will\s+change/i);
+  assert.match(specs, /material\s+alternatives/i);
   assert.match(specs, /Before selecting any record path, read `.specs\/conventions\.md`/);
   assert.match(specs, /reuse the existing feature record[\s\S]*instead of creating a\s+duplicate/);
   assert.match(specs, /features\/<domain>\/<stable-concise-kebab-case-scope-slug>\.md/);

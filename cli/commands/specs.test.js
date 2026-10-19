@@ -222,9 +222,76 @@ describe('guarana specs record --stdin', () => {
        const report=JSON.parse(first.stdout); assert.equal(report.ok,true); assert.equal(report.validator.ok,true);
        const state=fs.readFileSync(path.join(root,'.specs/state/project-state.md'),'utf8');
        assert.ok(state.includes('- Goal: Validate the API spec.\n- Pending writes: none.'));
+       assert.ok(state.includes('## Current step\nImplementing API'));
+       assert.ok(report.changed.includes('.specs/state/project-state.md'));
        const tracker=fs.readFileSync(path.join(root,'.specs/README.md'),'utf8');
       assert.match(tracker,/\| api \| IMPLEMENTED \| npm test \|\s+\|/); assert.match(tracker,/\*\*NEXT:\*\* Validate API/);
       const second=JSON.parse(invoke(root,JSON.stringify(handoff())).stdout); assert.deepEqual(second.changed,[]);
+    } finally { fs.rmSync(root,{recursive:true,force:true}); }
+  });
+  it('accepts an omitted currentStep and preserves that section while recording other fields', () => {
+    const root=fs.mkdtempSync(path.join(os.tmpdir(),'guarana-record-no-current-step-'));
+    try {
+      validProject(root);
+      const statePath=path.join(root,'.specs/state/project-state.md');
+      const original='# Project State\r\n\r\n## Current step\r\n  Stable status: integration blocked.  \r\n\tPreserve this content exactly.\r\n\r\n## Checkpoint\r\n- Goal: Preserve this goal.\r\n- Pending writes: previous.\r\n';
+      fs.writeFileSync(statePath,original);
+      const payload=handoff({pendingWrites:['implementation']});
+      delete payload.task.currentStep;
+
+      const result=invoke(root,JSON.stringify(payload));
+      assert.equal(result.status,0,result.stdout);
+      const report=JSON.parse(result.stdout);
+      assert.equal(report.ok,true);
+      assert.ok(report.changed.includes('.specs/README.md'));
+      assert.ok(report.changed.includes('.specs/state/project-state.md'));
+      assert.ok(report.changed.includes('.specs/features/api/api.md'));
+      assert.deepEqual(fs.readFileSync(statePath),Buffer.from(original.replace('- Pending writes: previous.\r\n','- Pending writes: implementation\r\n')));
+
+      const repeated=invoke(root,JSON.stringify(payload));
+      assert.equal(repeated.status,0,repeated.stdout);
+      assert.deepEqual(JSON.parse(repeated.stdout).changed,[]);
+    } finally { fs.rmSync(root,{recursive:true,force:true}); }
+  });
+  it('updates only the checkpoint pending-writes line and reports the state change', () => {
+    for (const [pendingWrites, rendered] of [
+      [['planning'], 'planning'],
+      [['planning', 'implementation'], 'planning; implementation'],
+      [[], 'none.'],
+    ]) {
+      const root=fs.mkdtempSync(path.join(os.tmpdir(),'guarana-record-pending-'));
+      try {
+        validProject(root);
+        const statePath=path.join(root,'.specs/state/project-state.md');
+        const original='# Project State\n\n## Current step\nImplementing API\n\n## Checkpoint\n- Goal: Preserve this goal.\n- Other checkpoint content: Keep this line.\n- Pending writes: previous.\n\n## Follow-up\nLeave this section alone.\n';
+        fs.writeFileSync(statePath,original);
+
+        const result=invoke(root,JSON.stringify(handoff({pendingWrites})));
+        assert.equal(result.status,0,result.stdout);
+        const report=JSON.parse(result.stdout);
+        assert.ok(report.changed.includes('.specs/state/project-state.md'));
+        assert.equal(fs.readFileSync(statePath,'utf8'),original.replace('- Pending writes: previous.',`- Pending writes: ${rendered}`));
+
+        const repeated=invoke(root,JSON.stringify(handoff({pendingWrites})));
+        assert.equal(repeated.status,0,repeated.stdout);
+        assert.deepEqual(JSON.parse(repeated.stdout).changed,[]);
+      } finally { fs.rmSync(root,{recursive:true,force:true}); }
+    }
+  });
+  it('inserts pending writes inside the checkpoint when its line is absent', () => {
+    const root=fs.mkdtempSync(path.join(os.tmpdir(),'guarana-record-pending-missing-'));
+    try {
+      validProject(root);
+      const statePath=path.join(root,'.specs/state/project-state.md');
+      const original='# Project State\n\n## Current step\nImplementing API\n\n## Checkpoint\n- Goal: Preserve this goal.\n- Other checkpoint content: Keep this line.\n\n## Follow-up\n- Pending writes: Do not change.\n';
+      fs.writeFileSync(statePath,original);
+
+      const result=invoke(root,JSON.stringify(handoff({pendingWrites:['planning']})));
+      assert.equal(result.status,0,result.stdout);
+      const report=JSON.parse(result.stdout);
+      assert.ok(report.changed.includes('.specs/state/project-state.md'));
+      assert.equal(fs.readFileSync(statePath,'utf8'),original.replace('- Other checkpoint content: Keep this line.\n\n## Follow-up',
+        '- Other checkpoint content: Keep this line.\n- Pending writes: planning\n\n## Follow-up'));
     } finally { fs.rmSync(root,{recursive:true,force:true}); }
   });
   it('updates records from the fixed file handoff and removes it', () => {
@@ -269,12 +336,16 @@ describe('guarana specs record --stdin', () => {
         expectStructuralFailure(root, { schema: 'v1', task }, 'schema v1 validation failed: task expected object');
       }
 
-      for (const field of ['slug', 'title', 'featurePath', 'trackerName', 'goal', 'currentStep', 'next']) {
+      for (const field of ['slug', 'title', 'featurePath', 'trackerName', 'goal', 'next']) {
         const missing = handoff();
         delete missing.task[field];
         expectStructuralFailure(root, missing, `schema v1 validation failed: task.${field} expected non-empty string`);
         expectStructuralFailure(root, handoff({ [field]: null }), `schema v1 validation failed: task.${field} expected non-empty string`);
         expectStructuralFailure(root, handoff({ [field]: ' \t ' }), `schema v1 validation failed: task.${field} expected non-empty string`);
+      }
+      for (const currentStep of [null, ' \t ']) {
+        expectStructuralFailure(root, handoff({ currentStep }),
+          'schema v1 validation failed: task.currentStep expected non-empty string');
       }
 
       expectStructuralFailure(root, handoff({ status: 'STATUS_SENTINEL' }),

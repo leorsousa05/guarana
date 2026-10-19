@@ -32,11 +32,14 @@ own work. PASS → proceed to Record. FAIL → route to `worker-debug` only when
 failure is actionable; otherwise Record with `stop_reason: error` and stop.
 On misbehavior, route to `worker-debug` through a separate Task context.
 
-## 4. Record (mandatory)
-Append to state: outcome, proofs touched, and exactly one stop reason:
+## 4. Record (mandatory for an actual run)
+For each actual build run, append to operational run state: outcome, proofs
+touched, and exactly one stop reason:
 - `condition-met` · `hard-cap` · `budget-exhausted` · `error` · `human-abort`
 
-A run without a logged stop reason is a process violation — health cannot be diagnosed without it (hard truth 4).
+A build run without a logged stop reason is a process violation — health cannot be
+diagnosed without it (hard truth 4). Informational/read-only requests that do not
+start a run do not create stop-reason entries.
 
 The primary context owns `workflow_tick` transitions. Worker subagents return
 their contract and never advance the parent's workflow. If native Task is
