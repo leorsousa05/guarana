@@ -18,10 +18,14 @@ function streams({ stdoutTTY = false, stderrTTY = false } = {}) {
   };
 }
 
-function fakeProcess() {
+function fakeProcess({ cwd = '/working/project', env } = {}) {
   const ref = new EventEmitter();
-  ref.cwd = () => '/working/project';
-  ref.env = { EXISTING_ENV: 'preserved' };
+  ref.cwd = () => cwd;
+  ref.env = env || {
+    EXISTING_ENV: 'preserved',
+    HOME: path.join(os.tmpdir(), `guarana-web-test-home-${process.pid}`),
+    XDG_CONFIG_HOME: path.join(os.tmpdir(), `guarana-web-test-xdg-${process.pid}`),
+  };
   return ref;
 }
 
@@ -137,7 +141,10 @@ it('spawns the dashboard with the requested port, caller cwd, inherited environm
 
     assert.deepEqual(spawnArgs, ['node', [path.join(serverDir, 'index.js')], {
       cwd: '/working/project',
-      env: { EXISTING_ENV: 'preserved', GUARANA_DASH_PORT: '4321' },
+      env: {
+        ...processRef.env,
+        GUARANA_DASH_PORT: '4321',
+      },
       stdio: ['inherit', output.stdout, output.stderr],
     }]);
     assert.equal(opened, 'http://127.0.0.1:4321');
@@ -158,7 +165,12 @@ it('emits dashboard-start progress only to TTY stderr, including the URL', async
   ]) {
     const serverDir = fixture(false);
     const processRef = fakeProcess();
-    processRef.env = { ...mode.env, EXISTING_ENV: 'preserved' };
+    processRef.env = {
+      ...mode.env,
+      EXISTING_ENV: 'preserved',
+      HOME: path.join(os.tmpdir(), `guarana-web-test-home-${process.pid}`),
+      XDG_CONFIG_HOME: path.join(os.tmpdir(), `guarana-web-test-xdg-${process.pid}`),
+    };
     const child = new EventEmitter();
     const output = streams({ stderrTTY: mode.tty });
     const progress = mode.color ? `\u001b[36m${message}\u001b[39m\n` : mode.tty ? `${message}\n` : '';
@@ -260,12 +272,13 @@ it('returns status 1 with one diagnostic for invalid port, missing server, and u
     assert.equal(invalid.output().stderr, 'invalid --port value: 65536\n');
 
     const missing = streams();
-    assert.equal(web.run([], { serverDir: missingServerDir, stderr: missing.stderr }), 1);
+    assert.equal(web.run([], { serverDir: missingServerDir, process: fakeProcess(), stderr: missing.stderr }), 1);
     assert.equal(missing.output().stderr, `dashboard not bundled: ${path.join(missingServerDir, 'index.js')} is missing\n`);
 
     const unavailable = streams();
     assert.equal(web.run([], {
       serverDir,
+      process: fakeProcess(),
       stdout: unavailable.stdout,
       stderr: unavailable.stderr,
       dependenciesReady: () => false,
@@ -279,6 +292,73 @@ it('returns status 1 with one diagnostic for invalid port, missing server, and u
   }
 });
 
+it('uses effective saved port/open settings and lets explicit flags override them', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-web-configured-'));
+  const serverDir = fixture(false);
+  const project = path.join(root, 'project');
+  const xdg = path.join(root, 'xdg');
+  const env = { HOME: path.join(root, 'home'), XDG_CONFIG_HOME: xdg };
+  fs.mkdirSync(path.join(project, '.guarana'), { recursive: true });
+  fs.mkdirSync(path.join(xdg, 'guarana'), { recursive: true });
+  fs.writeFileSync(path.join(xdg, 'guarana', 'web.json'), '{"server":{"port":4310,"open":true}}\n');
+  fs.writeFileSync(path.join(project, '.guarana', 'web.json'), '{"server":{"port":4320,"open":false}}\n');
+  try {
+    for (const [args, expectedPort, shouldOpen] of [
+      [[], 4320, false],
+      [['--port', '4330'], 4330, false],
+      [['--no-open'], 4320, false],
+      [['--open'], 4320, true],
+    ]) {
+      const child = new EventEmitter();
+      let spawnOptions;
+      let opened = 0;
+      const processRef = fakeProcess({ cwd: project, env });
+      const result = web.run(args, {
+        serverDir,
+        process: processRef,
+        dependenciesReady: () => true,
+        spawn: (...call) => { spawnOptions = call[2]; return child; },
+        openBrowser: () => { opened++; },
+      });
+      assert.equal(spawnOptions.env.GUARANA_DASH_PORT, String(expectedPort));
+      child.emit('close', 0, null);
+      assert.equal(await result, 0);
+      assert.equal(opened, Number(shouldOpen));
+    }
+  } finally {
+    fs.rmSync(serverDir, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+it('fails closed on malformed saved settings and rejects conflicting open flags before startup', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-web-invalid-settings-'));
+  const serverDir = fixture(false);
+  const project = path.join(root, 'project');
+  fs.mkdirSync(path.join(project, '.guarana'), { recursive: true });
+  fs.writeFileSync(path.join(project, '.guarana', 'web.json'), '{invalid\n');
+  try {
+    const invalid = streams();
+    let spawned = false;
+    assert.equal(web.run([], {
+      serverDir,
+      process: fakeProcess({ cwd: project, env: { HOME: path.join(root, 'home'), XDG_CONFIG_HOME: path.join(root, 'xdg') } }),
+      stderr: invalid.stderr,
+      dependenciesReady: () => true,
+      spawn: () => { spawned = true; return new EventEmitter(); },
+    }), 1);
+    assert.match(invalid.output().stderr, /^Unable to load web settings: invalid JSON in .*web\.json/);
+    assert.equal(spawned, false);
+
+    const conflict = streams();
+    assert.equal(web.run(['--open', '--no-open'], { stderr: conflict.stderr }), 1);
+    assert.equal(conflict.output().stderr, 'cannot use --open and --no-open together\n');
+  } finally {
+    fs.rmSync(serverDir, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 it('does not emit progress on healthy dependency checks or early-return paths', () => {
   const output = streams({ stderrTTY: true });
   const dir = fixture();
@@ -289,7 +369,7 @@ it('does not emit progress on healthy dependency checks or early-return paths', 
 
     for (const [args, options] of [
       [['--port', '65536'], { stderr: output.stderr }],
-      [[], { serverDir: missingServerDir, stderr: output.stderr }],
+      [[], { serverDir: missingServerDir, process: fakeProcess(), stderr: output.stderr }],
     ]) {
       assert.equal(web.run(args, options), 1);
       assert.doesNotMatch(output.output().stderr, /Repairing dashboard server dependencies|Starting dashboard server/);

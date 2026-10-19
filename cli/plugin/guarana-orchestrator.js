@@ -237,13 +237,14 @@ async function loadCore() {
   ];
   for (const dir of candidates) {
     if (fs.existsSync(path.join(dir, 'state.js'))) {
-      const [state, decide, prompt, specs] = await Promise.all([
+      const [state, decide, prompt, specs, workflowSettings] = await Promise.all([
         import(pathToFileURL(path.join(dir, 'state.js')).href),
         import(pathToFileURL(path.join(dir, 'decide.js')).href),
         import(pathToFileURL(path.join(dir, 'prompt.js')).href),
         import(pathToFileURL(path.join(dir, 'specs.js')).href),
+        import(pathToFileURL(path.join(dir, 'workflow-settings.js')).href),
       ]);
-      return { state, decide, prompt, specs };
+      return { state, decide, prompt, specs, workflowSettings };
     }
   }
   return null;
@@ -326,6 +327,21 @@ export const GuaranaOrchestrator = async ({ directory }) => {
       append({ ts: Date.now(), type: 'orchestrator-error', error: 'orchestrator core not found' });
     }
     return c;
+  };
+
+  let workflowSettingsErrorReported = false;
+  const workflowPreferences = (c) => {
+    try {
+      const settings = c.workflowSettings.readWorkflowSettings({ directory });
+      workflowSettingsErrorReported = false;
+      return settings.effective;
+    } catch (err) {
+      if (!workflowSettingsErrorReported) {
+        append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
+        workflowSettingsErrorReported = true;
+      }
+      return { specs: { enabled: true }, verify: { enabled: true } };
+    }
   };
 
   // Latest workflow, recomputed on chat.message / workflow_tick, used to build
@@ -426,10 +442,12 @@ export const GuaranaOrchestrator = async ({ directory }) => {
         if (applied) {
           next = applied;
           if ((d.event === 'new_task' || d.event === 'force') && (d.goal || wf.goal || userText)) {
-            try {
-              c.specs.ensureSpecs(directory, d.goal || wf.goal || userText);
-            } catch (err) {
-              append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
+            if (workflowPreferences(c).specs.enabled) {
+              try {
+                c.specs.ensureSpecs(directory, d.goal || wf.goal || userText);
+              } catch (err) {
+                append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
+              }
             }
           }
           c.state.save(directory, next);
@@ -489,13 +507,13 @@ export const GuaranaOrchestrator = async ({ directory }) => {
     },
     workflow_tick: {
       description:
-        'Advance the guarana workflow state machine. Actions: new_task (start/re-plan), plan_complete, run_start, code_complete, verify_pass, verify_fail, fix_start, debug_complete, abort, force (with skill). Call when a step completes so the loop continues automatically.',
+        'Advance the guarana workflow state machine. Actions: new_task (start/re-plan), plan_complete, run_start, code_complete, verify_pass, verify_fail, verify_skip, fix_start, debug_complete, abort, force (with skill). Call when a step completes so the loop continues automatically.',
       args: {
         action: {
           type: 'string',
           enum: [
             'new_task', 'plan_complete', 'run_start', 'code_complete',
-            'verify_pass', 'verify_fail', 'fix_start', 'debug_complete',
+            'verify_pass', 'verify_fail', 'verify_skip', 'fix_start', 'debug_complete',
             'abort', 'force',
           ],
           description: 'the transition to apply',
@@ -527,11 +545,13 @@ export const GuaranaOrchestrator = async ({ directory }) => {
           }
           c.state.save(directory, applied);
           if ((action === 'new_task' && args.goal) || action === 'force') {
-            try {
-              const skill = String(args.skill || applied.skill || 'plan').replace(/^guarana[:_-]?/i, '');
-              c.specs.ensureSpecs(directory, args.goal || applied.goal || `guarana:${skill}`);
-            } catch (err) {
-              append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
+            if (workflowPreferences(c).specs.enabled) {
+              try {
+                const skill = String(args.skill || applied.skill || 'plan').replace(/^guarana[:_-]?/i, '');
+                c.specs.ensureSpecs(directory, args.goal || applied.goal || `guarana:${skill}`);
+              } catch (err) {
+                append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
+              }
             }
           }
           latest = applied;
@@ -613,7 +633,8 @@ export const GuaranaOrchestrator = async ({ directory }) => {
           memories: claim?.memories || [],
           context: contextForReferences(candidates.context, claim?.memories || []),
         };
-        const injection = `${ORCHESTRATOR_INJECTION_MARKER}\n${c.prompt.buildInjection(wf, { memoryContext: pendingMemory.context, directory })}`;
+        const preferences = workflowPreferences(c);
+        const injection = `${ORCHESTRATOR_INJECTION_MARKER}\n${c.prompt.buildInjection(wf, { memoryContext: pendingMemory.context, directory, preferences })}`;
         if (!Array.isArray(output.system)) output.system = [];
         if (output.system.length > 0) {
           output.system[output.system.length - 1] += '\n\n' + injection;

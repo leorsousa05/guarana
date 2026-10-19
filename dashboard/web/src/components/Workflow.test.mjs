@@ -13,7 +13,7 @@ const render = (element) => renderToStaticMarkup(element);
 const STATES = ['idle', 'planning', 'building', 'coding', 'verifying', 'debugging', 'completed'];
 const LABELS = ['Idle', 'Planning', 'Building', 'Coding', 'Verifying', 'Debugging', 'Completed'];
 const mediaBlock = (source, query) => {
-  const at = source.indexOf(`@media (${query})`);
+  const at = source.lastIndexOf(`@media (${query})`);
   assert.notEqual(at, -1, `has ${query} media rule`);
   const open = source.indexOf('{', at);
   let depth = 1;
@@ -95,6 +95,22 @@ test('Workflow SSR preserves phase semantics, selected transition evidence, task
   assert.match(workflowCss, /\.wf-h-note\s*\{[^}]*overflow-wrap:\s*anywhere/s);
   assert.match(workflowCss, /\.wf-node-button:focus-visible\s*\{[^}]*outline:\s*2px/s);
   assert.match(mediaBlock(workflowCss, 'prefers-reduced-motion: reduce'), /\.workflow/s);
+});
+
+test('Workflow is a state monitor and does not expose preference editing controls', async (t) => {
+  const vite = await createServer({ root: webRoot, server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
+  t.after(() => vite.close());
+  const { Workflow } = await vite.ssrLoadModule('/src/components/Workflow.jsx');
+  const html = render(React.createElement(Workflow, { data: { state: 'idle', engine: 'not-found' } }));
+  assert.match(html, /Orchestrator core not deployed/);
+  assert.match(html, /Workflow state machine/);
+  assert.doesNotMatch(html, /Specs \+ worker-specs|Independent verification|workflow\/settings|wf-pref-/);
+
+  const css = fs.readFileSync(path.join(webRoot, 'src/style.css'), 'utf8');
+  const workflowCss = css.slice(css.indexOf('/* ---------- workflow state machine ----------'), css.indexOf('/* ---------- overview / home ----------'));
+  assert.doesNotMatch(workflowCss, /wf-preferences|wf-setting|wf-inherit/);
+  assert.match(workflowCss, /\.workflow\s*\{\s*min-width:\s*0/s);
+  assert.match(workflowCss, /\.workflow \*\s*\{\s*min-width:\s*0/s);
 });
 
 test('long task metadata and transition notes are compact by default with full values in keyboard disclosures', async (t) => {

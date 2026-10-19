@@ -53,7 +53,6 @@ export function Workflow({ data }) {
     .filter((entry) => entry.from === selectedPhase || entry.to === selectedPhase)
     .slice()
     .reverse();
-
   return (
     <section className="workflow" aria-label="Workflow state machine">
       <h2 className="section-title">Workflow</h2>

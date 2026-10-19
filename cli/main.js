@@ -12,6 +12,7 @@ const HELP_EXAMPLES = [
   'Examples:',
   '  guarana --help',
   '  guarana memory search "term" --project HASH',
+  '  guarana workflow set specs false --project',
   '',
 ].join('\n');
 

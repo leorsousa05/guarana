@@ -10,7 +10,7 @@ const BIN = path.join(__dirname, '..', 'bin', 'guarana.js');
 const VERSION = require('../package.json').version;
 const REGISTRY = require('./commands/registry.js');
 const { main } = require('./main.js');
-const { COMMANDS, MEMORY, SPECS } = require('./command-metadata.js');
+const { COMMANDS, MEMORY, SPECS, WORKFLOW } = require('./command-metadata.js');
 const { stderrLine } = require('./lib/io.js');
 
 const CHILD_BOOTSTRAP = String.raw`
@@ -137,6 +137,10 @@ describe('cli/main dispatch characterization', () => {
       ['plugin', 'install', '--project'],
       { request: './commands/plugin.js', args: ['install'], options: { useProject: true } }
     );
+    assertHandlerCall(
+      ['workflow', 'set', 'specs', 'false', '--project'],
+      { request: './commands/workflow.js', args: ['set', 'specs', 'false'], options: { useProject: true } }
+    );
   });
 
   it('passes a memory search project filter without treating it as global scope', () => {
@@ -196,7 +200,7 @@ describe('cli/main dispatch characterization', () => {
       assert.equal(await main(['--help'], streams), 0);
       const { stdout, stderr } = streams.output();
       assert.ok(stdout.includes('\u001b[1;36mUsage:\u001b[39m'));
-      assert.match(stdout, /\u001b\[1;36mExamples:\u001b\[39m\n  guarana --help\n  guarana memory search "term" --project HASH\n$/);
+      assert.match(stdout, /\u001b\[1;36mExamples:\u001b\[39m\n  guarana --help\n  guarana memory search "term" --project HASH\n  guarana workflow set specs false --project\n$/);
       assert.equal(stderr, '');
     });
   });
@@ -451,10 +455,10 @@ describe('cli/main dispatch characterization', () => {
 });
 
 describe('shared command help metadata', () => {
-  it('keeps registry names aligned with the nine top-level metadata commands', () => {
+  it('keeps registry names aligned with the top-level metadata commands', () => {
     assert.deepEqual(
       COMMANDS.map(({ name }) => name).sort(),
-      ['advisor', 'install', 'list', 'memory', 'plugin', 'specs', 'uninstall', 'update', 'web'].sort()
+      ['advisor', 'install', 'list', 'memory', 'plugin', 'specs', 'uninstall', 'update', 'web', 'workflow'].sort()
     );
     assert.deepEqual(Object.keys(REGISTRY).sort(), COMMANDS.map(({ name }) => name).sort());
 
@@ -463,13 +467,15 @@ describe('shared command help metadata', () => {
     for (const { name } of COMMANDS) assert.ok(global.stdout.includes(`guarana ${name}`), `global help missing ${name}`);
   });
 
-  it('renders every memory and specs usage row identically in global and detailed help', () => {
+  it('renders memory, specs, and workflow usage rows identically in global and detailed help', () => {
     const global = runBin(['--help']);
     const memory = runBin(['memory', '--help']);
     const specs = runBin(['specs', '--help']);
+    const workflow = runBin(['workflow', '--help']);
     assert.equal(global.status, 0, global.stderr);
     assert.equal(memory.status, 0, memory.stderr);
     assert.equal(specs.status, 0, specs.stderr);
+    assert.equal(workflow.status, 0, workflow.stderr);
 
     for (const row of MEMORY.usageRows) {
       assert.ok(global.stdout.includes(row), `global help missing memory row: ${row}`);
@@ -479,6 +485,26 @@ describe('shared command help metadata', () => {
       assert.ok(global.stdout.includes(row), `global help missing specs row: ${row}`);
       assert.ok(specs.stdout.includes(row), `specs help missing row: ${row}`);
     }
+    for (const row of WORKFLOW.usageRows) {
+      assert.ok(global.stdout.includes(row), `global help missing workflow row: ${row}`);
+      assert.ok(workflow.stdout.includes(row), `workflow help missing row: ${row}`);
+    }
+  });
+
+  it('documents saved web launch settings and per-run overrides', () => {
+    const global = runBin(['--help']);
+    assert.equal(global.status, 0, global.stderr);
+    assert.match(global.stdout, /guarana web \[--port N\] \[--open\|--no-open\]/);
+    assert.match(global.stdout, /\.guarana\/web\.json or \$XDG_CONFIG_HOME\/guarana\/web\.json/);
+    assert.match(global.stdout, /--port, --open, and --no-open override them for one run/);
+  });
+
+  it('documents workflow settings defaults, inheritance, and an example in top-level help', () => {
+    const global = runBin(['--help']);
+    assert.equal(global.status, 0, global.stderr);
+    assert.match(global.stdout, /\.guarana\/workflow\.json or \$XDG_CONFIG_HOME\/guarana\/workflow\.json/);
+    assert.match(global.stdout, /enabled by default; project/);
+    assert.match(global.stdout, /guarana workflow set verify false --project/);
   });
 
   it('includes the required memory and specs forms and the nested project filter', () => {

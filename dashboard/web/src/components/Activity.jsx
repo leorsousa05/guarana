@@ -238,7 +238,7 @@ export function Activity({ summary, workflow, tick = 0 }) {
     tick
   );
   const history = usePoll('/api/telemetry/advisor-history?limit=40', 5000, tick);
-  const settings = usePoll('/api/models', 15000, tick);
+  const settings = usePoll('/api/models', 15000);
   const [showHistory, setShowHistory] = useState(false);
   const latestAdvisor = latestAdvisorForRoot(history.data?.history, root);
   const advisorStatus = latestAdvisor?.status || (history.error ? 'unavailable' : history.data ? 'not-called' : 'loading');

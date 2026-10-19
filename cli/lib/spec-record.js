@@ -36,6 +36,17 @@ function recordSpecs(input, root) {
     checkString('title');
     checkString('featurePath');
     checkString('trackerName');
+    if (t.removeTrackerNames !== undefined) {
+      if (!Array.isArray(t.removeTrackerNames)) {
+        structuralIssues.push('task.removeTrackerNames expected array of strings');
+      } else {
+        if (t.removeTrackerNames.length === 0) structuralIssues.push('task.removeTrackerNames expected non-empty array');
+        t.removeTrackerNames.forEach((value, index) => {
+          if (typeof value !== 'string') structuralIssues.push(`task.removeTrackerNames[${index}] expected string`);
+          else if (!value.trim()) structuralIssues.push(`task.removeTrackerNames[${index}] expected non-empty string`);
+        });
+      }
+    }
     if (!STATUSES.includes(t.status)) structuralIssues.push(`task.status expected one of ${STATUSES.join('|')}`);
     checkString('goal');
     checkStringArray('requirements');
@@ -48,13 +59,17 @@ function recordSpecs(input, root) {
     checkStringArray('proof');
   }
   if (structuralIssues.length) fail(`schema v1 validation failed: ${structuralIssues.join('; ')}`);
+  if (t.removeTrackerNames !== undefined) {
+    if (new Set(t.removeTrackerNames).size !== t.removeTrackerNames.length) fail('task.removeTrackerNames must not contain duplicates');
+    if (t.removeTrackerNames.includes(t.trackerName)) fail('task.removeTrackerNames must not include task.trackerName');
+  }
   const relative = t.featurePath.replace(/\\/g, '/');
   if (path.posix.isAbsolute(relative) || relative.split('/').some((part) => !part || part === '.' || part === '..') || !/^\.specs\/features\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.md$/.test(relative) || t.slug !== path.posix.basename(relative, '.md')) fail('featurePath must be a safe .specs/features Markdown path matching slug');
   const changePath = typeof t.changePath === 'string' ? t.changePath.replace(/\\/g, '/') : t.changePath;
   if (t.changePath !== undefined && (typeof t.changePath !== 'string' || !/^\.specs\/changes\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.md$/.test(changePath))) fail('invalid changePath');
   if (t.status === 'VALIDATED' && !(t.verification?.independent === true && t.verification?.result === 'PASS' && t.verification?.verifier === 'worker-verify' && t.proof.some((v) => v.trim()))) fail('VALIDATED requires independent worker-verify PASS and proof');
   if (t.status === 'SHIPPED' && t.shipped !== true) fail('SHIPPED requires shipped: true');
-  const unsafe = [t.title,t.trackerName,t.goal,...t.requirements,...t.assumptions,...t.scope,...t.acceptanceCriteria,...t.pendingWrites,...t.proof,...(t.currentStep === undefined ? [] : [t.currentStep]),t.next,changePath || ''];
+  const unsafe = [t.title,t.trackerName,...(t.removeTrackerNames || []),t.goal,...t.requirements,...t.assumptions,...t.scope,...t.acceptanceCriteria,...t.pendingWrites,...t.proof,...(t.currentStep === undefined ? [] : [t.currentStep]),t.next,changePath || ''];
   if (unsafe.some((v) => /[|\r\n]/.test(v))) fail('Markdown table delimiters or multiline fields are not allowed');
   const abs = (rel) => path.join(root, rel);
   const targets = [abs('.specs/README.md'),abs('.specs/state/project-state.md'),abs(relative)];
@@ -96,10 +111,32 @@ function recordSpecs(input, root) {
     return `${text.slice(0, start)}${updated}${text.slice(end)}`;
   };
   const createdDirs = [];
+  let removedTrackerNames = [];
   try {
     let tracker = old.get(targets[0]).toString('utf8');
+    const rows = tracker.split('\n');
+    if (t.removeTrackerNames !== undefined) {
+      const masterHeading = rows.findIndex((line) => /^##\s+Master tracker\s*$/i.test(line));
+      const sectionEnd = rows.findIndex((line, index) => index > masterHeading && /^##\s+/.test(line));
+      const masterEnd = sectionEnd < 0 ? rows.length : sectionEnd;
+      const header = rows.findIndex((line, index) => index > masterHeading && index < masterEnd && /^\|\s*(?:Skill|Name)\s*\|\s*Status\s*\|/i.test(line));
+      const separator = header >= 0 && /^\|\s*:?-{3,}/.test(rows[header + 1] || '') ? header + 1 : -1;
+      if (masterHeading < 0 || header < 0 || separator < 0) fail('malformed tracker table');
+      const namesToRemove = new Set(t.removeTrackerNames);
+      const matchingRows = new Set();
+      const matchedNames = new Set();
+      for (let index = separator + 1; index < masterEnd && /^\s*\|/.test(rows[index]); index += 1) {
+        const name = rows[index].split('|')[1]?.trim();
+        if (namesToRemove.has(name)) {
+          matchingRows.add(index);
+          matchedNames.add(name);
+        }
+      }
+      removedTrackerNames = t.removeTrackerNames.filter((name) => matchedNames.has(name));
+      for (const index of [...matchingRows].sort((left, right) => right - left)) rows.splice(index, 1);
+    }
     const row = `| ${t.trackerName} | ${t.status} | ${t.proof.join('; ')} | ${changePath || ''} |`;
-    const rows = tracker.split('\n'); const found = rows.findIndex((line) => /^\|/.test(line) && line.split('|')[1]?.trim() === t.trackerName);
+    const found = rows.findIndex((line) => /^\|/.test(line) && line.split('|')[1]?.trim() === t.trackerName);
     if (found >= 0) rows[found] = row; else { const sep = rows.findIndex((line) => /^\|\s*:?-+/.test(line)); if (sep < 0) fail('malformed tracker table'); rows.splice(sep + 1,0,row); }
     tracker = rows.join('\n').replace(/^\*\*NEXT:\*\*.*$/m, `**NEXT:** ${t.next}`);
     fs.writeFileSync(targets[0],tracker);
@@ -121,7 +158,7 @@ function recordSpecs(input, root) {
     const validation = validateSpecs(root);
     if (!validation.ok) throw new Error('validateSpecs failed');
     const changed = targets.filter((f) => old.get(f) === null || !old.get(f).equals(fs.readFileSync(f))).map((f)=>path.relative(root,f));
-    return { ok:true, changed, validator:{ok:validation.ok,filesScanned:validation.filesScanned,issues:validation.issues} };
+    return { ok:true, changed, ...(t.removeTrackerNames === undefined ? {} : { removedTrackerNames }), validator:{ok:validation.ok,filesScanned:validation.filesScanned,issues:validation.issues} };
   } catch (error) {
     for (const [file, content] of old) { if (content === null) fs.rmSync(file,{force:true}); else fs.writeFileSync(file,content); }
     for (const dir of createdDirs.reverse()) fs.rmSync(dir,{recursive:true,force:true});

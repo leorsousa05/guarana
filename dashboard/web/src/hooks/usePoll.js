@@ -1,6 +1,14 @@
-import { useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
+
+export const PollIntervalContext = createContext(5000);
+
+export function pollIntervalFor(intervalMs, liveIntervalMs) {
+  return intervalMs === 5000 ? liveIntervalMs : intervalMs;
+}
 
 export function usePoll(url, intervalMs = 5000, tick = 0) {
+  const liveIntervalMs = useContext(PollIntervalContext);
+  const effectiveIntervalMs = pollIntervalFor(intervalMs, liveIntervalMs);
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [nonce, setNonce] = useState(0);
@@ -20,11 +28,11 @@ export function usePoll(url, intervalMs = 5000, tick = 0) {
       }
     };
     load();
-    const id = setInterval(load, intervalMs);
+    const id = setInterval(load, effectiveIntervalMs);
     return () => {
       cancelled = true;
       clearInterval(id);
     };
-  }, [url, intervalMs, nonce, tick]);
+  }, [url, effectiveIntervalMs, nonce, tick]);
   return { data, error, refetch: () => setNonce((n) => n + 1) };
 }

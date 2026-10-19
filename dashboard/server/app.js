@@ -8,6 +8,7 @@ import { createMemoryRouter } from './routes/memory.js';
 import { createWorkflowRouter } from './routes/workflow.js';
 import { createSkillsRouter } from './routes/skills.js';
 import { createModelsRouter } from './routes/models.js';
+import { createWebSettingsRouter } from './routes/web-settings.js';
 
 export function createApp({ root, distDir }) {
   const app = express();
@@ -20,6 +21,14 @@ export function createApp({ root, distDir }) {
   app.use('/api/workflow', createWorkflowRouter({ root }));
   app.use('/api/skills', createSkillsRouter({ root }));
   app.use('/api/models', createModelsRouter({ root }));
+  app.use('/api/web', createWebSettingsRouter({ root }));
+
+  app.use((error, req, res, next) => {
+    if (error?.type === 'entity.parse.failed' && /^\/api\/(?:workflow|web)\/settings\/?$/.test(req.path)) {
+      return res.status(400).json({ error: 'Malformed JSON request body.' });
+    }
+    next(error);
+  });
 
   app.use(express.static(distDir));
 

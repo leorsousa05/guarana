@@ -58,6 +58,15 @@ describe('GuaranaOrchestrator', () => {
     fs.writeFileSync(file, JSON.stringify(settings));
   }
 
+  function writeWorkflowSettings(scope, settings, directory = tmpDir) {
+    const file = scope === 'project'
+      ? path.join(directory, '.guarana', 'workflow.json')
+      : path.join(process.env.XDG_CONFIG_HOME, 'guarana', 'workflow.json');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(settings));
+    return file;
+  }
+
   function writePrimaryProfile(scope) {
     const file = scope === 'project'
       ? path.join(tmpDir, '.opencode', 'agents', 'guarana.md')
@@ -150,6 +159,152 @@ describe('GuaranaOrchestrator', () => {
     const evs = readEvents().filter((e) => e.type === 'workflow');
     assert.equal(evs.length, 1);
     assert.equal(evs[0].event, 'new_task');
+  });
+
+  it('absent workflow settings preserve automatic specs and verification behavior', async () => {
+    await chat('Implement the default workflow task');
+    for (const action of ['plan_complete', 'run_start', 'code_complete']) {
+      await api.tool.workflow_tick.execute({ action });
+    }
+
+    const out = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID: 'default-workflow-settings' }, out);
+    assert.ok(fs.existsSync(path.join(tmpDir, '.specs', 'README.md')));
+    assert.match(out.system.join('\n'), /worker-verify/);
+    assert.doesNotMatch(out.system.join('\n'), /Workflow preference overrides/);
+  });
+
+  it('reads project-over-global workflow preferences and passes effective values to prompt injection', async () => {
+    writeWorkflowSettings('global', {
+      specs: { enabled: false },
+      verify: { enabled: false },
+    });
+
+    for (const [index, plugin] of [GuaranaOrchestrator, BundledOrchestrator].entries()) {
+      const projectDir = path.join(tmpDir, `workflow-preferences-${index}`);
+      // Project specs overrides the global false; verify inherits global false.
+      writeWorkflowSettings('project', { specs: { enabled: true } }, projectDir);
+      const hooks = await plugin({ directory: projectDir });
+      await hooks['chat.message'](
+        { sessionID: `workflow-preferences-${index}` },
+        { parts: parts('Implement a preference-aware workflow') },
+      );
+      assert.ok(fs.existsSync(path.join(projectDir, '.specs', 'README.md')));
+
+      for (const action of ['plan_complete', 'run_start', 'code_complete']) {
+        await hooks.tool.workflow_tick.execute({ action });
+      }
+      const out = { system: [] };
+      await hooks['experimental.chat.system.transform'](
+        { sessionID: `workflow-preferences-${index}` }, out,
+      );
+      const injection = out.system.join('\n');
+      assert.match(injection, /Independent verification preference \(disabled\)/);
+      assert.match(injection, /workflow_tick.*verify_skip/s);
+      assert.doesNotMatch(injection, /Specs automation preference \(disabled\)/);
+    }
+  });
+
+  it('suppresses chat and workflow_tick specs bootstrap while preserving records and persisting workflow state', async () => {
+    const scenarios = [
+      {
+        name: 'chat-new-task',
+        run: (hooks, id) => hooks['chat.message'](
+          { sessionID: id }, { parts: parts('Implement a chat-driven task') },
+        ),
+      },
+      {
+        name: 'chat-force',
+        run: (hooks) => hooks['chat.message'](
+          { sessionID: 'force-session' }, { parts: parts('guarana:plan Implement a forced task') },
+        ),
+      },
+      {
+        name: 'tick-new-task',
+        run: (hooks) => hooks.tool.workflow_tick.execute({ action: 'new_task', goal: 'Tick task' }),
+      },
+      {
+        name: 'tick-force',
+        run: (hooks) => hooks.tool.workflow_tick.execute({ action: 'force', skill: 'plan', goal: 'Forced tick task' }),
+      },
+    ];
+
+    for (const [pluginIndex, plugin] of [GuaranaOrchestrator, BundledOrchestrator].entries()) {
+      for (const scenario of scenarios) {
+        const projectDir = path.join(tmpDir, `specs-disabled-${pluginIndex}-${scenario.name}`);
+        writeWorkflowSettings('project', { specs: { enabled: false } }, projectDir);
+        const existingFiles = [
+          ['README.md', Buffer.from('# Existing tracker bytes\n')],
+          ['state/project-state.md', Buffer.from('# Existing project state bytes\n')],
+          ['features/existing/existing.md', Buffer.from('# Existing feature bytes\n')],
+        ];
+        for (const [relative, bytes] of existingFiles) {
+          const file = path.join(projectDir, '.specs', relative);
+          fs.mkdirSync(path.dirname(file), { recursive: true });
+          fs.writeFileSync(file, bytes);
+        }
+
+        const hooks = await plugin({ directory: projectDir });
+        const id = `${pluginIndex}-${scenario.name}`;
+        await scenario.run(hooks, id);
+
+        const workflowPath = path.join(projectDir, '.specs', 'state', 'workflow.json');
+        assert.ok(fs.existsSync(workflowPath), `${scenario.name} must persist operational workflow state`);
+        assert.equal(JSON.parse(fs.readFileSync(workflowPath, 'utf8')).state, 'planning');
+        for (const [relative, bytes] of existingFiles) {
+          assert.deepEqual(
+            fs.readFileSync(path.join(projectDir, '.specs', relative)),
+            bytes,
+            `${scenario.name} changed existing ${relative}`,
+          );
+        }
+        for (const relative of [
+          'conventions.md',
+          'decisions',
+          'features/initial-task/initial-task.md',
+        ]) {
+          assert.equal(
+            fs.existsSync(path.join(projectDir, '.specs', relative)),
+            false,
+            `${scenario.name} must not bootstrap ${relative}`,
+          );
+        }
+
+        const out = { system: [] };
+        await hooks['experimental.chat.system.transform']({ sessionID: id }, out);
+        assert.match(out.system.join('\n'), /explicit user request.*override this preference/i);
+        // The preference remains prompt policy, not a runtime ban on explicit Specs work.
+        await hooks['tool.execute.before'](
+          { tool: 'task', sessionID: `${id}-explicit-specs` },
+          { args: { subagent_type: 'worker-specs', prompt: 'User explicitly requested a specs record' } },
+        );
+      }
+    }
+  });
+
+  it('malformed workflow settings log once and fall back to both enabled defaults', async () => {
+    const file = writeWorkflowSettings('project', {
+      specs: { enabled: false },
+      verify: { enabled: 'false' },
+    });
+    const hooks = await GuaranaOrchestrator({ directory: tmpDir });
+    await hooks['chat.message'](
+      { sessionID: 'malformed-workflow-settings' },
+      { parts: parts('Implement with malformed preferences') },
+    );
+    assert.ok(fs.existsSync(path.join(tmpDir, '.specs', 'README.md')));
+
+    for (const action of ['plan_complete', 'run_start', 'code_complete']) {
+      await hooks.tool.workflow_tick.execute({ action });
+    }
+    const out = { system: [] };
+    await hooks['experimental.chat.system.transform']({ sessionID: 'malformed-workflow-settings' }, out);
+    assert.match(out.system.join('\n'), /worker-verify/);
+    assert.doesNotMatch(out.system.join('\n'), /Workflow preference overrides/);
+    const errors = readEvents().filter((event) => event.type === 'orchestrator-error');
+    assert.equal(errors.length, 1);
+    assert.match(errors[0].error, /Workflow setting verify\.enabled must be a boolean/);
+    assert.ok(fs.existsSync(file));
   });
 
   it('informational and read-only requests do not create task records or tracker state', async () => {
@@ -374,6 +529,29 @@ describe('GuaranaOrchestrator', () => {
     assert.equal(r4.state, 'verifying');
     const r5 = await tick('verify_pass');
     assert.equal(r5.state, 'completed');
+  });
+
+  it('public workflow_tick exposes verify_skip and persists its distinct completion transition', async () => {
+    const tool = api.tool.workflow_tick;
+    assert.match(tool.description, /\bverify_skip\b/);
+    assert.ok(tool.args.action.enum.includes('verify_skip'));
+
+    for (const action of ['new_task', 'plan_complete', 'run_start']) {
+      await tool.execute({ action }, { sessionID: 'verify-skip-primary', agent: 'guarana' });
+    }
+    const result = JSON.parse(await tool.execute(
+      { action: 'verify_skip' },
+      { sessionID: 'verify-skip-primary', agent: 'guarana' },
+    ));
+
+    assert.equal(result.ok, true);
+    assert.equal(result.state, 'completed');
+    const persisted = workflow();
+    assert.equal(persisted.state, 'completed');
+    assert.equal(persisted.history.at(-1).event, 'verify_skip');
+    assert.equal(persisted.history.at(-1).from, 'coding');
+    assert.equal(persisted.history.at(-1).to, 'completed');
+    assert.notEqual(persisted.history.at(-1).event, 'verify_pass');
   });
 
   it('Task child sessions cannot re-plan, inject the parent workflow, or advance its state', async () => {

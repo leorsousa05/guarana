@@ -220,6 +220,7 @@ describe('guarana specs record --stdin', () => {
       validProject(root);
       const first=invoke(root,JSON.stringify(handoff())); assert.equal(first.status,0,first.stdout);
        const report=JSON.parse(first.stdout); assert.equal(report.ok,true); assert.equal(report.validator.ok,true);
+       assert.equal(Object.hasOwn(report,'removedTrackerNames'),false);
        const state=fs.readFileSync(path.join(root,'.specs/state/project-state.md'),'utf8');
        assert.ok(state.includes('- Goal: Validate the API spec.\n- Pending writes: none.'));
        assert.ok(state.includes('## Current step\nImplementing API'));
@@ -228,7 +229,51 @@ describe('guarana specs record --stdin', () => {
       assert.match(tracker,/\| api \| IMPLEMENTED \| npm test \|\s+\|/); assert.match(tracker,/\*\*NEXT:\*\* Validate API/);
       const second=JSON.parse(invoke(root,JSON.stringify(handoff())).stdout); assert.deepEqual(second.changed,[]);
     } finally { fs.rmSync(root,{recursive:true,force:true}); }
-  });
+   });
+   it('removes exact Master tracker data rows, preserves other content, and is idempotent for absent names', () => {
+     const root=fs.mkdtempSync(path.join(os.tmpdir(),'guarana-record-remove-tracker-'));
+     try {
+       validProject(root);
+       const trackerPath=path.join(root,'.specs/README.md');
+       const stale='| Configurable workflow automation preferences | TASKED | obsolete | |';
+       const similar='| Configurable workflow automation preferences archive | IMPLEMENTED | keep | |';
+       const workflow='| Workflow preferences | VALIDATED | workflow proof | |';
+       const settings='| Unified dashboard Settings page | VALIDATED | settings proof | |';
+       let original=fs.readFileSync(trackerPath,'utf8').replace('| api | VALIDATED | | |',`${stale}\n${similar}\n${workflow}\n${settings}\n| api | VALIDATED | | |`);
+       original=original.replace('**BLOCKED:** nothing.\n',`**BLOCKED:** nothing.\n\n## Notes\n${stale}\n`);
+       fs.writeFileSync(trackerPath,original);
+
+       const payload=handoff({removeTrackerNames:['Configurable workflow automation preferences','not present']});
+       const result=invoke(root,JSON.stringify(payload));
+       assert.equal(result.status,0,result.stdout);
+       const report=JSON.parse(result.stdout);
+       assert.deepEqual(report.removedTrackerNames,['Configurable workflow automation preferences']);
+       const tracker=fs.readFileSync(trackerPath,'utf8');
+       const expected=original.replace(`${stale}\n`,'')
+         .replace('| api | VALIDATED | | |','| api | IMPLEMENTED | npm test |  |')
+         .replace('**NEXT:** next.','**NEXT:** Validate API');
+       assert.equal(tracker,expected);
+
+       const repeated=invoke(root,JSON.stringify(payload));
+       assert.equal(repeated.status,0,repeated.stdout);
+       assert.deepEqual(JSON.parse(repeated.stdout).removedTrackerNames,[]);
+       assert.deepEqual(JSON.parse(repeated.stdout).changed,[]);
+     } finally { fs.rmSync(root,{recursive:true,force:true}); }
+   });
+   it('rejects invalid tracker removals without writing any records', () => {
+     const root=fs.mkdtempSync(path.join(os.tmpdir(),'guarana-record-remove-invalid-'));
+     try {
+       validProject(root);
+       const files=recordPaths.map((relative)=>path.join(root,'.specs',relative));
+       const before=files.map((file)=>fs.readFileSync(file));
+       for (const removeTrackerNames of ['obsolete', [], [' \t '], ['invalid|name'], ['invalid\nname'], ['duplicate','duplicate'], ['api'], [42]]) {
+         const result=invoke(root,JSON.stringify(handoff({removeTrackerNames})));
+         assert.equal(result.status,1,JSON.stringify(removeTrackerNames));
+         assert.equal(JSON.parse(result.stdout).ok,false);
+         files.forEach((file,index)=>assert.deepEqual(fs.readFileSync(file),before[index],JSON.stringify(removeTrackerNames)));
+       }
+     } finally { fs.rmSync(root,{recursive:true,force:true}); }
+   });
   it('accepts an omitted currentStep and preserves that section while recording other fields', () => {
     const root=fs.mkdtempSync(path.join(os.tmpdir(),'guarana-record-no-current-step-'));
     try {
@@ -479,12 +524,15 @@ describe('guarana specs record --stdin', () => {
       }
     } finally { fs.rmSync(root,{recursive:true,force:true}); }
   });
-  it('creates nested feature paths and rolls back all writes after validation failure', () => {
-    const root=fs.mkdtempSync(path.join(os.tmpdir(),'guarana-record-rollback-'));
-    try { validProject(root); const feature=path.join(root,'.specs/features/api/api.md');
-      fs.writeFileSync(feature,fs.readFileSync(feature,'utf8').replace('../../decisions/ADR-001-api-shape.md','missing.md'));
-      const before=['README.md','state/project-state.md','features/api/api.md'].map((p)=>fs.readFileSync(path.join(root,'.specs',p)));
-      const res=invoke(root,JSON.stringify(handoff())); assert.equal(res.status,1);
+   it('creates nested feature paths and rolls back all writes after validation failure', () => {
+     const root=fs.mkdtempSync(path.join(os.tmpdir(),'guarana-record-rollback-'));
+     try { validProject(root);
+       const tracker=path.join(root,'.specs/README.md');
+       fs.writeFileSync(tracker,fs.readFileSync(tracker,'utf8').replace('| api | VALIDATED | | |','| obsolete | TASKED | remove me | |\n| api | VALIDATED | | |'));
+       const feature=path.join(root,'.specs/features/api/api.md');
+       fs.writeFileSync(feature,fs.readFileSync(feature,'utf8').replace('../../decisions/ADR-001-api-shape.md','missing.md'));
+       const before=['README.md','state/project-state.md','features/api/api.md'].map((p)=>fs.readFileSync(path.join(root,'.specs',p)));
+       const res=invoke(root,JSON.stringify(handoff({removeTrackerNames:['obsolete']}))); assert.equal(res.status,1);
       ['README.md','state/project-state.md','features/api/api.md'].forEach((p,i)=>assert.deepEqual(fs.readFileSync(path.join(root,'.specs',p)),before[i]));
       fs.writeFileSync(feature,`# Feature spec: API\n\n**Status:** SPECIFIED\n\n## Goal\nOriginal.\n\n## Acceptance criteria\n1. Original.\n`);
       const created=invoke(root,JSON.stringify(handoff({slug:'nested',featurePath:'.specs/features/new/deep/nested.md'})));

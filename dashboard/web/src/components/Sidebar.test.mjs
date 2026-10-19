@@ -28,7 +28,7 @@ test('shared shell keeps all hash routes and accessible section navigation', asy
     ['workflow', 'Workflow'],
     ['memory', 'Memory'],
     ['skills', 'Skills'],
-    ['models', 'Models'],
+    ['settings', 'Settings'],
   ];
 
   const originalWindow = globalThis.window;
@@ -43,6 +43,14 @@ test('shared shell keeps all hash routes and accessible section navigation', asy
   }
   globalThis.window.location.hash = '#/unknown';
   assert.equal(viewFromHash(), 'overview');
+  globalThis.window.location.hash = '';
+  assert.equal(viewFromHash('settings'), 'settings', 'the saved start page applies when no hash is present');
+  globalThis.window.location.hash = '#/unknown';
+  assert.equal(viewFromHash('settings'), 'settings', 'a saved start page is used when no valid hash route exists');
+  globalThis.window.location.hash = '#/now';
+  assert.equal(viewFromHash('settings'), 'now', 'a deep link takes precedence over the saved start page');
+  globalThis.window.location.hash = '#/models';
+  assert.equal(viewFromHash('settings'), 'settings', 'the removed Models route is not navigable');
 
   const html = renderToStaticMarkup(React.createElement(Sidebar, { active: 'now', onSelect() {} }));
   assert.match(html, /<aside class="sidebar" aria-label="Dashboard sections">/);
@@ -51,6 +59,7 @@ test('shared shell keeps all hash routes and accessible section navigation', asy
     assert.match(html, new RegExp(`type="button"[^>]*>${label}<\\/button>`));
     assert.ok(html.includes(`sect-nav-btn${route === 'now' ? ' sect-nav-btn--active' : ''}`));
   }
+  assert.doesNotMatch(html, />Models<\/button>/);
   assert.equal((html.match(/aria-current="page"/g) || []).length, 1);
   assert.match(html, /aria-current="page" class="sect-nav-btn sect-nav-btn--active">Activity/);
 

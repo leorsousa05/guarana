@@ -11,6 +11,10 @@ import {
 import { decide, resultFailed } from './decide.js';
 import { buildSystemBlock, buildInjection, resolveSkillBody, completionAction } from './prompt.js';
 import { ensureSpecs, taskSlug } from './specs.js';
+import {
+  clearWorkflowPreference, readWorkflowSettings, setWorkflowPreference,
+  validateWorkflowSettings, workflowSettingsPaths, writeWorkflowSettings,
+} from './workflow-settings.js';
 
 function tmp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-orch-'));
@@ -38,11 +42,110 @@ test('legal transitions', () => {
   assert.ok(canTransition('code_complete', 'coding'));
   assert.ok(canTransition('verify_pass', 'verifying'));
   assert.ok(canTransition('verify_fail', 'verifying'));
+  assert.ok(canTransition('verify_skip', 'coding'));
+  assert.ok(canTransition('verify_skip', 'verifying'));
+  assert.ok(!canTransition('verify_skip', 'debugging'));
   assert.ok(!canTransition('verify_pass', 'coding'));
   assert.ok(canTransition('fix_start', 'debugging'));
   assert.ok(canTransition('debug_complete', 'debugging'));
   assert.ok(canTransition('abort', 'coding'));
   assert.ok(canTransition('force', 'coding'));
+});
+
+test('verify_skip completes coding or verifying with its own event and explanatory note', () => {
+  const coding = apply(createWorkflow(), 'force', { skill: 'code' });
+  const fromCoding = apply(coding, 'verify_skip', { ts: 10 });
+  assert.equal(fromCoding.state, 'completed');
+  assert.equal(fromCoding.history.at(-1).event, 'verify_skip');
+  assert.match(fromCoding.history.at(-1).note, /independent verification skipped/i);
+  assert.notEqual(fromCoding.history.at(-1).event, 'verify_pass');
+
+  const fromVerifying = apply(toVerifying(), 'verify_skip', { note: 'Disabled by project setting', ts: 11 });
+  assert.equal(fromVerifying.state, 'completed');
+  assert.equal(fromVerifying.history.at(-1).event, 'verify_skip');
+  assert.equal(fromVerifying.history.at(-1).note, 'Disabled by project setting');
+});
+
+test('workflow settings default on, use isolated XDG paths, and merge fields independently', () => {
+  const root = tmp();
+  const home = path.join(root, 'home');
+  const config = path.join(root, 'xdg');
+  const options = { directory: path.join(root, 'project'), env: { XDG_CONFIG_HOME: config }, home };
+  const empty = readWorkflowSettings(options);
+  assert.deepEqual(empty.effective, { specs: { enabled: true }, verify: { enabled: true } });
+  assert.deepEqual(empty.sources, { specs: 'default', verify: 'default' });
+  assert.equal(workflowSettingsPaths(options).global, path.join(config, 'guarana', 'workflow.json'));
+  assert.equal(workflowSettingsPaths({ directory: options.directory, env: {}, home }).global,
+    path.join(home, '.config', 'guarana', 'workflow.json'));
+
+  writeWorkflowSettings('global', { specs: { enabled: false }, verify: { enabled: false } }, options);
+  writeWorkflowSettings('project', { verify: { enabled: true } }, options);
+  let resolved = readWorkflowSettings(options);
+  assert.deepEqual(resolved.effective, { specs: { enabled: false }, verify: { enabled: true } });
+  assert.deepEqual(resolved.sources, { specs: 'global', verify: 'project' });
+
+  clearWorkflowPreference('project', 'verify', options);
+  resolved = readWorkflowSettings(options);
+  assert.deepEqual(resolved.effective, { specs: { enabled: false }, verify: { enabled: false } });
+  assert.equal(resolved.sources.verify, 'global');
+
+  writeWorkflowSettings('global', { specs: { enabled: true }, verify: { enabled: true } }, options);
+  setWorkflowPreference('project', 'specs', false, options);
+  resolved = readWorkflowSettings(options);
+  assert.deepEqual(resolved.effective, { specs: { enabled: false }, verify: { enabled: true } });
+  clearWorkflowPreference('project', 'specs', options);
+  assert.equal(readWorkflowSettings(options).effective.specs.enabled, true);
+});
+
+test('workflow settings reject unknown sections, fields, and non-booleans without partial writes', () => {
+  for (const invalid of [
+    { advisor: { enabled: false } },
+    { specs: { automatic: false } },
+    { verify: { enabled: 'false' } },
+    { specs: null },
+  ]) assert.throws(() => validateWorkflowSettings(invalid), TypeError);
+
+  const root = tmp();
+  const options = { directory: root, env: { XDG_CONFIG_HOME: path.join(root, 'config') }, home: path.join(root, 'home') };
+  const target = workflowSettingsPaths(options).project;
+  writeWorkflowSettings('project', { specs: { enabled: false } }, options);
+  const before = fs.readFileSync(target);
+  assert.throws(() => writeWorkflowSettings('project', { specs: { enabled: false }, extra: true }, options), /Unknown workflow settings section/);
+  assert.deepEqual(fs.readFileSync(target), before);
+  const malformedProject = path.join(root, 'malformed');
+  const malformedFile = path.join(malformedProject, '.guarana', 'workflow.json');
+  fs.mkdirSync(path.dirname(malformedFile), { recursive: true });
+  fs.writeFileSync(malformedFile, '{', 'utf8');
+  assert.throws(() => readWorkflowSettings({ ...options, directory: malformedProject }), SyntaxError);
+});
+
+test('workflow settings writes atomically and removes temporary files on rename failure', () => {
+  const root = tmp();
+  const options = { directory: root, env: { XDG_CONFIG_HOME: path.join(root, 'config') }, home: path.join(root, 'home') };
+  const target = workflowSettingsPaths(options).project;
+  const advisorFile = path.join(root, '.guarana', 'advisor.json');
+  const advisorBytes = Buffer.from('{"primary":{"model":"untouched"}}\n');
+  fs.mkdirSync(path.dirname(advisorFile), { recursive: true });
+  fs.writeFileSync(advisorFile, advisorBytes);
+  writeWorkflowSettings('project', { specs: { enabled: true } }, options);
+  const original = fs.readFileSync(target);
+  const originalRename = fs.renameSync;
+  fs.renameSync = function (source, destination, ...args) {
+    if (destination === target) throw new Error('injected rename failure');
+    return originalRename.call(this, source, destination, ...args);
+  };
+  try {
+    assert.throws(() => writeWorkflowSettings('project', { verify: { enabled: false } }, options), /injected rename failure/);
+  } finally {
+    fs.renameSync = originalRename;
+  }
+  assert.deepEqual(fs.readFileSync(target), original);
+  assert.deepEqual(fs.readdirSync(path.dirname(target)).sort(), ['advisor.json', 'workflow.json']);
+
+  writeWorkflowSettings('project', { verify: { enabled: false } }, options);
+  assert.deepEqual(JSON.parse(fs.readFileSync(target, 'utf8')), { verify: { enabled: false } });
+  assert.equal(fs.statSync(target).mode & 0o777, 0o600);
+  assert.deepEqual(fs.readFileSync(advisorFile), advisorBytes);
 });
 
 function toVerifying() {
@@ -137,8 +240,33 @@ test('force via explicit skill', () => {
   let w = createWorkflow();
   w = apply(w, 'force', { skill: 'guarana:verify' });
   assert.equal(w.state, 'verifying');
+  assert.equal(w.verificationOverride, true);
   w = apply(w, 'force', { skill: 'code' });
   assert.equal(w.state, 'coding');
+  assert.equal(w.verificationOverride, false);
+});
+
+test('verification override survives failure and debug retry, then clears at task boundaries', () => {
+  let w = apply(toVerifying(), 'force', { skill: 'guarana:verify' });
+  w = apply(w, 'verify_fail');
+  assert.equal(w.verificationOverride, true);
+  w = apply(w, 'debug_complete');
+  assert.equal(w.verificationOverride, true);
+
+  const dir = tmp();
+  assert.ok(save(dir, w));
+  w = load(dir);
+  assert.equal(w.verificationOverride, true);
+
+  for (const terminal of ['verify_pass', 'verify_skip', 'abort', 'new_task']) {
+    const ended = apply(w, terminal);
+    assert.equal(ended.verificationOverride, false, terminal);
+  }
+
+  let nextTask = apply(w, 'new_task');
+  for (const event of ['plan_complete', 'run_start', 'code_complete']) nextTask = apply(nextTask, event);
+  assert.equal(nextTask.verificationOverride, false);
+  assert.equal(completionAction(nextTask.state, { verify: { enabled: false } }, nextTask.verificationOverride), 'verify_skip');
 });
 
 test('load/save round-trip persists state to disk', () => {
@@ -149,6 +277,24 @@ test('load/save round-trip persists state to disk', () => {
   assert.equal(back.state, 'planning');
   assert.equal(back.goal, 'persist me');
   assert.equal(back.history.length, 1);
+});
+
+test('load remains compatible with workflow JSON saved before verify_skip existed', () => {
+  const dir = tmp();
+  fs.mkdirSync(path.dirname(workflowFile(dir)), { recursive: true });
+  fs.writeFileSync(workflowFile(dir), JSON.stringify({
+    version: 1,
+    state: 'verifying',
+    activeTask: 'legacy-task',
+    goal: 'legacy goal',
+    updatedAt: 42,
+    history: [{ event: 'code_complete', from: 'coding', to: 'verifying', ts: 41 }],
+  }));
+  const loaded = load(dir);
+  assert.equal(loaded.state, 'verifying');
+  assert.equal(loaded.verificationOverride, false);
+  assert.equal(loaded.activeTask, 'legacy-task');
+  assert.equal(loaded.history[0].event, 'code_complete');
 });
 
 test('load on missing file returns idle workflow', () => {
@@ -430,6 +576,7 @@ test('completionAction maps states to tick actions', () => {
   assert.equal(completionAction('planning'), 'plan_complete');
   assert.equal(completionAction('coding'), 'code_complete');
   assert.equal(completionAction('verifying'), 'verify_pass|verify_fail');
+  assert.equal(completionAction('verifying', { verify: { enabled: false } }), 'verify_skip');
   assert.equal(completionAction('debugging'), 'debug_complete');
   assert.equal(completionAction('idle'), null);
 });

@@ -17,7 +17,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test scripts/sync-cli-bundle.test.mjs orchestrator/*.test.js dashboard/server/lib/*.test.js dashboard/server/app.test.js dashboard/web/src/components/Memory.test.mjs dashboard/web/src/lib/memoryBubbleLayout.test.js dashboard/web/src/components/Skills.test.mjs dashboard/web/src/components/Models.test.mjs dashboard/web/src/components/Specs.test.mjs plugin/*.test.mjs cli/*.test.js cli/commands/*.test.js cli/lib/*.test.js memory/*.test.mjs skill-engine/*.test.js",
+    "test": "node --test scripts/sync-cli-bundle.test.mjs orchestrator/*.test.js dashboard/server/lib/*.test.js dashboard/server/app.test.js dashboard/web/src/components/Memory.test.mjs dashboard/web/src/lib/memoryBubbleLayout.test.js dashboard/web/src/components/Skills.test.mjs dashboard/web/src/components/Models.test.mjs dashboard/web/src/components/Specs.test.mjs plugin/*.test.mjs cli/*.test.js cli/commands/*.test.js cli/lib/*.test.js memory/*.test.mjs skill-engine/*.test.js dashboard/web/src/components/Sidebar.test.mjs dashboard/web/src/components/Workflow.test.mjs dashboard/web/src/components/Settings.test.mjs",
     "test:all": "node --test '*/**/*.test.{js,mjs}'",
     "sync-cli": "node scripts/sync-cli-bundle.mjs",
     "check-cli": "node scripts/check-cli-bundle.mjs",

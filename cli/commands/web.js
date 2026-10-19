@@ -6,6 +6,7 @@ const { createRequire } = require('module');
 const { DASH_SERVER_DIR } = require('../constants.js');
 const { stdoutLine, stderrLine } = require('../lib/io.js');
 const { progressLine } = require('../lib/terminal.js');
+const webSettings = require('../lib/web-settings.js');
 const { parseWebArgs } = require('./web-args.js');
 
 function dependenciesReady(serverDir) {
@@ -79,12 +80,24 @@ function run(args, {
   serverDir = DASH_SERVER_DIR,
   dependenciesReady: ready = dependenciesReady,
   openBrowser: open = openBrowser,
+  readSettings = webSettings.readWebSettings,
 } = {}) {
-  const { port, noOpen, error } = parseWebArgs(args);
+  const parsedArgs = parseWebArgs(args);
+  const { error } = parsedArgs;
   if (error) {
     stderrLine({ stderr }, error);
     return 1;
   }
+
+  let settings;
+  try {
+    settings = readSettings({ directory: processRef.cwd(), env: processRef.env });
+  } catch (settingsError) {
+    stderrLine({ stderr }, `Unable to load web settings: ${settingsError.message}`);
+    return 1;
+  }
+  const port = parsedArgs.portExplicit ? parsedArgs.port : settings.effective.server.port;
+  const shouldOpen = parsedArgs.openExplicit ? !parsedArgs.noOpen : settings.effective.server.open;
 
   const serverEntry = path.join(serverDir, 'index.js');
   if (!fs.existsSync(serverEntry)) {
@@ -105,7 +118,7 @@ function run(args, {
   });
 
   const closed = waitForChild(child, processRef);
-  if (!noOpen) {
+  if (shouldOpen) {
     try {
       Promise.resolve(open(`http://127.0.0.1:${port}`)).catch(() => {});
     } catch {

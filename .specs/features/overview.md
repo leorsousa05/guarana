@@ -17,6 +17,8 @@ Guarana installs AI Loop Engineering into OpenCode: a disciplined inner loop (Pe
 ## Orchestrator (always-on layer)
 The [orchestrator](orchestrator/orchestrator.md) sits above the skills and makes the loop automatic: an always-on state machine (`idle → planning → building → coding → verifying → debugging → completed`), persisted to `.specs/state/workflow.json`, selects which skill to load each turn, bootstraps missing specs, and supplies relevant confirmed memory. It decides *what*; the skills still do *how*. Explicit `guarana:*` commands remain an escape hatch that force a step. `guarana:plan` is now an internal workflow step, not a required manual entry point.
 
+The validated [specs record command](orchestrator/spec-record-command.md) has a VALIDATED follow-up for [safe exact-name tracker-row removal](orchestrator/spec-record-tracker-removal.md), independently verified PASS and recorded VALIDATED in its feature spec and tracker, as described in [ADR-034](../decisions/ADR-034-safe-tracker-row-removal.md). Commit/push remains a separate user-authorized action; no shipping is claimed.
+
 ## Release assurance
 The [release-readiness feature](release/release-readiness.md) defines the supported Node/OpenCode contract, reproducible npm packaging, automated CI matrix, and release smoke-test gate.
 

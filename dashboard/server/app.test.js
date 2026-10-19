@@ -463,7 +463,7 @@ describe('GET/PUT /api/models', () => {
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
-  it('resolves shared advisor modules from canonical and CLI route trees', async () => {
+  it('resolves shared settings modules from canonical and CLI route trees', async () => {
     let repoRoot = path.dirname(fileURLToPath(import.meta.url));
     while (!fs.existsSync(path.join(repoRoot, 'scripts', 'sync-cli-bundle.mjs'))) {
       const parent = path.dirname(repoRoot);
@@ -476,10 +476,14 @@ describe('GET/PUT /api/models', () => {
       {
         route: 'dashboard/server/routes/models.js',
         resolver: 'dashboard/server/routes/shared-advisor-modules.js',
+        workflowRoute: 'dashboard/server/routes/workflow.js',
+        workflowCore: 'orchestrator/workflow-settings.js',
       },
       {
         route: 'cli/dashboard/server/routes/models.js',
         resolver: 'cli/dashboard/server/routes/shared-advisor-modules.js',
+        workflowRoute: 'cli/dashboard/server/routes/workflow.js',
+        workflowCore: 'cli/orchestrator/workflow-settings.js',
       },
     ];
 
@@ -487,7 +491,7 @@ describe('GET/PUT /api/models', () => {
       const routeUrl = pathToFileURL(path.join(repoRoot, layout.route));
       const { resolveSharedAdvisorModule } = await import(pathToFileURL(path.join(repoRoot, layout.resolver)));
       for (const name of [
-        'advisor-settings.js', 'advisor-profiles.js', 'artifact-transaction.js', 'paths.js', 'opencode-model-catalog.js',
+        'advisor-settings.js', 'advisor-profiles.js', 'artifact-transaction.js', 'paths.js', 'opencode-model-catalog.js', 'web-settings.js',
       ]) {
         const resolved = resolveSharedAdvisorModule(name, routeUrl.href);
         assert.equal(resolved, path.join(repoRoot, 'cli', 'lib', name));
@@ -496,9 +500,17 @@ describe('GET/PUT /api/models', () => {
           ? 'readSettings'
           : name === 'advisor-profiles.js' ? 'installAdvisorArtifacts'
             : name === 'artifact-transaction.js' ? 'run'
-              : name === 'paths.js' ? 'advisorSettingsTarget' : 'discoverModels';
+              : name === 'paths.js' ? 'advisorSettingsTarget'
+                : name === 'web-settings.js' ? 'readWebSettings' : 'discoverModels';
         assert.equal(typeof sharedModule[expectedExport], 'function');
       }
+
+      const workflowRoute = pathToFileURL(path.join(repoRoot, layout.workflowRoute));
+      const workflowSettingsUrl = new URL('../../../orchestrator/workflow-settings.js', workflowRoute);
+      assert.equal(fileURLToPath(workflowSettingsUrl), path.join(repoRoot, layout.workflowCore));
+      const workflowSettings = await import(workflowSettingsUrl);
+      assert.equal(typeof workflowSettings.readWorkflowSettings, 'function');
+      assert.equal(typeof workflowSettings.writeWorkflowSettings, 'function');
     }
   });
 
@@ -822,5 +834,326 @@ describe('GET/PUT /api/models', () => {
       assert.equal(fs.statSync(file).mode & 0o7777, prior.mode, file);
     }
     assert.equal(fs.existsSync(path.join(root, '.opencode', 'agents')), false);
+  });
+});
+
+describe('GET/PUT /api/workflow/settings', () => {
+  let tmp;
+  let root;
+  let home;
+  let xdg;
+  let oldHome;
+  let oldXdg;
+  let server;
+  let base;
+
+  beforeEach(async () => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-workflow-settings-'));
+    root = path.join(tmp, 'project');
+    home = path.join(tmp, 'home');
+    xdg = path.join(home, 'xdg-config');
+    fs.mkdirSync(root, { recursive: true });
+    oldHome = process.env.HOME;
+    oldXdg = process.env.XDG_CONFIG_HOME;
+    process.env.HOME = home;
+    process.env.XDG_CONFIG_HOME = xdg;
+    const app = createApp({ root, distDir: path.join(tmp, 'dist') });
+    await new Promise((resolve) => {
+      server = app.listen(0, () => resolve());
+    });
+    base = `http://localhost:${server.address().port}`;
+  });
+
+  afterEach(async () => {
+    await new Promise((resolve) => server.close(resolve));
+    if (oldHome === undefined) delete process.env.HOME;
+    else process.env.HOME = oldHome;
+    if (oldXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = oldXdg;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const putSettings = (body) => fetch(`${base}/api/workflow/settings`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  it('returns exact defaults and sources, writes project overrides only, and restores inheritance', async () => {
+    const globalFile = path.join(xdg, 'guarana', 'workflow.json');
+    const globalAdvisor = path.join(xdg, 'guarana', 'advisor.json');
+    const projectAdvisor = path.join(root, '.guarana', 'advisor.json');
+    fs.mkdirSync(path.dirname(globalFile), { recursive: true });
+    fs.mkdirSync(path.dirname(projectAdvisor), { recursive: true });
+    fs.writeFileSync(globalFile, '{"specs":{"enabled":false}}\n');
+    fs.writeFileSync(globalAdvisor, '{"primary":{"provider":"openai","model":"gpt-5"}}\n');
+    fs.writeFileSync(projectAdvisor, '{"advisor":{"enabled":false}}\n');
+    const globalBefore = fs.readFileSync(globalFile);
+    const globalAdvisorBefore = fs.readFileSync(globalAdvisor);
+    const projectAdvisorBefore = fs.readFileSync(projectAdvisor);
+
+    const initialResponse = await fetch(`${base}/api/workflow/settings`);
+    const initial = await initialResponse.json();
+    assert.equal(initialResponse.status, 200);
+    assert.deepEqual(Object.keys(initial), ['global', 'project', 'effective', 'sources']);
+    assert.deepEqual(initial.global, { specs: { enabled: false } });
+    assert.deepEqual(initial.project, {});
+    assert.deepEqual(initial.effective, { specs: { enabled: false }, verify: { enabled: true } });
+    assert.deepEqual(initial.sources, { specs: 'global', verify: 'default' });
+
+    const savedResponse = await putSettings({ settings: {
+      specs: { enabled: true },
+      verify: { enabled: false },
+    } });
+    const saved = await savedResponse.json();
+    assert.equal(savedResponse.status, 200);
+    assert.deepEqual(saved, {
+      ok: true,
+      global: { specs: { enabled: false } },
+      project: { specs: { enabled: true }, verify: { enabled: false } },
+      effective: { specs: { enabled: true }, verify: { enabled: false } },
+      sources: { specs: 'project', verify: 'project' },
+    });
+    const projectFile = path.join(root, '.guarana', 'workflow.json');
+    assert.deepEqual(JSON.parse(fs.readFileSync(projectFile, 'utf8')), {
+      specs: { enabled: true }, verify: { enabled: false },
+    });
+
+    const inheritSpecs = await putSettings({ settings: { verify: { enabled: false } } });
+    const inheritedSpecs = await inheritSpecs.json();
+    assert.equal(inheritSpecs.status, 200);
+    assert.deepEqual(inheritedSpecs.effective, { specs: { enabled: false }, verify: { enabled: false } });
+    assert.deepEqual(inheritedSpecs.sources, { specs: 'global', verify: 'project' });
+
+    const inheritAll = await putSettings({ settings: {} });
+    const inheritedAll = await inheritAll.json();
+    assert.equal(inheritAll.status, 200);
+    assert.deepEqual(inheritedAll.effective, { specs: { enabled: false }, verify: { enabled: true } });
+    assert.deepEqual(inheritedAll.sources, { specs: 'global', verify: 'default' });
+    assert.deepEqual(fs.readFileSync(globalFile), globalBefore);
+    assert.deepEqual(fs.readFileSync(globalAdvisor), globalAdvisorBefore);
+    assert.deepEqual(fs.readFileSync(projectAdvisor), projectAdvisorBefore);
+  });
+
+  it('rejects malformed request shapes and invalid settings without writing', async () => {
+    const projectFile = path.join(root, '.guarana', 'workflow.json');
+    const invalidBodies = [
+      { settings: {}, scope: 'invalid' },
+      { settings: {}, scope: 'global', extra: true },
+      { scope: 'global' },
+      { settings: { unknown: { enabled: true } } },
+      { settings: { specs: { enabled: true, extra: false } } },
+      { settings: { verify: { enabled: 'yes' } } },
+    ];
+    for (const body of invalidBodies) {
+      const response = await putSettings(body);
+      assert.equal(response.status, 400);
+      assert.ok((await response.json()).error);
+      assert.equal(fs.existsSync(projectFile), false);
+    }
+
+    const malformedJson = await fetch(`${base}/api/workflow/settings`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: '{"settings":',
+    });
+    assert.equal(malformedJson.status, 400);
+    assert.deepEqual(await malformedJson.json(), { error: 'Malformed JSON request body.' });
+    assert.equal(fs.existsSync(projectFile), false);
+
+    fs.mkdirSync(path.dirname(projectFile), { recursive: true });
+    const invalidExisting = '{not valid json\n';
+    fs.writeFileSync(projectFile, invalidExisting);
+    const response = await putSettings({ settings: { specs: { enabled: false } } });
+    assert.equal(response.status, 500);
+    assert.match((await response.json()).error, /Unable to save workflow settings/);
+    assert.equal(fs.readFileSync(projectFile, 'utf8'), invalidExisting);
+
+    fs.rmSync(projectFile);
+    const globalFile = path.join(xdg, 'guarana', 'workflow.json');
+    fs.mkdirSync(path.dirname(globalFile), { recursive: true });
+    const invalidGlobal = '{"verify":{"enabled":"invalid"}}\n';
+    fs.writeFileSync(globalFile, invalidGlobal);
+    const globalError = await putSettings({ settings: { specs: { enabled: false } } });
+    assert.equal(globalError.status, 500);
+    assert.match((await globalError.json()).error, /Unable to save workflow settings/);
+    assert.equal(fs.existsSync(projectFile), false);
+    assert.equal(fs.readFileSync(globalFile, 'utf8'), invalidGlobal);
+  });
+
+  it('writes only an explicitly selected scope and keeps advisor files unchanged', async () => {
+    const globalFile = path.join(xdg, 'guarana', 'workflow.json');
+    const projectFile = path.join(root, '.guarana', 'workflow.json');
+    const globalAdvisor = path.join(xdg, 'guarana', 'advisor.json');
+    const projectAdvisor = path.join(root, '.guarana', 'advisor.json');
+    fs.mkdirSync(path.dirname(globalAdvisor), { recursive: true });
+    fs.mkdirSync(path.dirname(projectAdvisor), { recursive: true });
+    fs.writeFileSync(globalAdvisor, '{"primary":{"provider":"openai"}}\n');
+    fs.writeFileSync(projectAdvisor, '{"advisor":{"enabled":false}}\n');
+    const globalAdvisorBefore = fs.readFileSync(globalAdvisor);
+    const projectAdvisorBefore = fs.readFileSync(projectAdvisor);
+
+    const globalResponse = await putSettings({ scope: 'global', settings: { specs: { enabled: false } } });
+    assert.equal(globalResponse.status, 200);
+    const globalBody = await globalResponse.json();
+    assert.deepEqual(globalBody.global, { specs: { enabled: false } });
+    assert.deepEqual(globalBody.project, {});
+    assert.deepEqual(JSON.parse(fs.readFileSync(globalFile, 'utf8')), { specs: { enabled: false } });
+    assert.equal(fs.existsSync(projectFile), false);
+
+    const projectResponse = await putSettings({ scope: 'project', settings: { verify: { enabled: false } } });
+    assert.equal(projectResponse.status, 200);
+    const projectBody = await projectResponse.json();
+    assert.deepEqual(projectBody.global, { specs: { enabled: false } });
+    assert.deepEqual(projectBody.project, { verify: { enabled: false } });
+    assert.deepEqual(projectBody.effective, { specs: { enabled: false }, verify: { enabled: false } });
+    assert.deepEqual(fs.readFileSync(globalFile), Buffer.from('{\n  "specs": {\n    "enabled": false\n  }\n}\n'));
+    assert.deepEqual(fs.readFileSync(globalAdvisor), globalAdvisorBefore);
+    assert.deepEqual(fs.readFileSync(projectAdvisor), projectAdvisorBefore);
+  });
+});
+
+describe('GET/PUT /api/web/settings', () => {
+  let tmp;
+  let root;
+  let home;
+  let xdg;
+  let oldHome;
+  let oldXdg;
+  let server;
+  let base;
+
+  beforeEach(async () => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-web-api-settings-'));
+    root = path.join(tmp, 'project');
+    home = path.join(tmp, 'home');
+    xdg = path.join(tmp, 'xdg-config');
+    fs.mkdirSync(root, { recursive: true });
+    oldHome = process.env.HOME;
+    oldXdg = process.env.XDG_CONFIG_HOME;
+    process.env.HOME = home;
+    process.env.XDG_CONFIG_HOME = xdg;
+    const app = createApp({ root, distDir: path.join(tmp, 'dist') });
+    await new Promise((resolve) => {
+      server = app.listen(0, () => resolve());
+    });
+    base = `http://localhost:${server.address().port}`;
+  });
+
+  afterEach(async () => {
+    await new Promise((resolve) => server.close(resolve));
+    if (oldHome === undefined) delete process.env.HOME;
+    else process.env.HOME = oldHome;
+    if (oldXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = oldXdg;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const putWebSettings = (body, raw) => fetch(`${base}/api/web/settings`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: raw ?? JSON.stringify(body),
+  });
+
+  it('returns defaults and writes explicit global/project partials without touching other files', async () => {
+    const globalAdvisor = path.join(xdg, 'guarana', 'advisor.json');
+    const projectAdvisor = path.join(root, '.guarana', 'advisor.json');
+    const globalWorkflow = path.join(xdg, 'guarana', 'workflow.json');
+    const projectWorkflow = path.join(root, '.guarana', 'workflow.json');
+    fs.mkdirSync(path.dirname(globalAdvisor), { recursive: true });
+    fs.mkdirSync(path.dirname(projectAdvisor), { recursive: true });
+    fs.writeFileSync(globalAdvisor, '{"primary":{"provider":"openai"}}\n');
+    fs.writeFileSync(projectAdvisor, '{"advisor":{"enabled":false}}\n');
+    fs.writeFileSync(globalWorkflow, '{"specs":{"enabled":false}}\n');
+    fs.writeFileSync(projectWorkflow, '{"verify":{"enabled":false}}\n');
+    const otherFiles = [globalAdvisor, projectAdvisor, globalWorkflow, projectWorkflow]
+      .map((file) => [file, fs.readFileSync(file)]);
+
+    const initialResponse = await fetch(`${base}/api/web/settings`);
+    const initial = await initialResponse.json();
+    assert.equal(initialResponse.status, 200);
+    assert.deepEqual(Object.keys(initial), ['global', 'project', 'effective', 'sources']);
+    assert.deepEqual(initial.global, {});
+    assert.deepEqual(initial.project, {});
+    assert.deepEqual(initial.effective, {
+      appearance: { theme: 'light', startPage: 'overview' },
+      refresh: { intervalSeconds: 5 },
+      server: { port: 4200, open: true },
+    });
+    assert.deepEqual(initial.sources, {
+      appearance: { theme: 'default', startPage: 'default' },
+      refresh: { intervalSeconds: 'default' },
+      server: { port: 'default', open: 'default' },
+    });
+
+    const globalResponse = await putWebSettings({ scope: 'global', settings: {
+      appearance: { theme: 'dark' }, server: { port: 4310, open: false },
+    } });
+    assert.equal(globalResponse.status, 200);
+    const global = await globalResponse.json();
+    assert.deepEqual(global.global, { appearance: { theme: 'dark' }, server: { port: 4310, open: false } });
+    assert.deepEqual(global.project, {});
+    assert.equal(fs.existsSync(path.join(root, '.guarana', 'web.json')), false);
+
+    const projectResponse = await putWebSettings({ scope: 'project', settings: {
+      appearance: { startPage: 'runs' }, server: { port: 4320 },
+    } });
+    assert.equal(projectResponse.status, 200);
+    const project = await projectResponse.json();
+    assert.deepEqual(project.effective, {
+      appearance: { theme: 'dark', startPage: 'runs' },
+      refresh: { intervalSeconds: 5 },
+      server: { port: 4320, open: false },
+    });
+    assert.deepEqual(project.sources, {
+      appearance: { theme: 'global', startPage: 'project' },
+      refresh: { intervalSeconds: 'default' },
+      server: { port: 'project', open: 'global' },
+    });
+    for (const [file, before] of otherFiles) assert.deepEqual(fs.readFileSync(file), before, file);
+  });
+
+  it('rejects malformed payloads, invalid settings, and corrupt files without writes', async () => {
+    const projectFile = path.join(root, '.guarana', 'web.json');
+    const globalFile = path.join(xdg, 'guarana', 'web.json');
+    const invalidBodies = [
+      { settings: {} },
+      { scope: 'project', settings: {}, extra: true },
+      { scope: 'invalid', settings: {} },
+      { scope: 'global', settings: { appearance: { startPage: 'models' } } },
+      { scope: 'project', settings: { server: { open: 'no' } } },
+      { scope: 'project', settings: { refresh: { intervalSeconds: 10 } } },
+    ];
+    for (const body of invalidBodies) {
+      const response = await putWebSettings(body);
+      assert.equal(response.status, 400);
+      assert.ok((await response.json()).error);
+      assert.equal(fs.existsSync(projectFile), false);
+      assert.equal(fs.existsSync(globalFile), false);
+    }
+
+    const malformedJson = await putWebSettings(undefined, '{"scope":');
+    assert.equal(malformedJson.status, 400);
+    assert.deepEqual(await malformedJson.json(), { error: 'Malformed JSON request body.' });
+    assert.equal(fs.existsSync(projectFile), false);
+    assert.equal(fs.existsSync(globalFile), false);
+
+    fs.mkdirSync(path.dirname(projectFile), { recursive: true });
+    const corruptProject = '{bad JSON\n';
+    fs.writeFileSync(projectFile, corruptProject);
+    const readCorrupt = await fetch(`${base}/api/web/settings`);
+    assert.equal(readCorrupt.status, 500);
+    assert.match((await readCorrupt.json()).error, /Unable to load web settings/);
+    const corruptResponse = await putWebSettings({ scope: 'project', settings: { server: { port: 4311 } } });
+    assert.equal(corruptResponse.status, 500);
+    assert.match((await corruptResponse.json()).error, /Unable to save web settings/);
+    assert.equal(fs.readFileSync(projectFile, 'utf8'), corruptProject);
+
+    fs.rmSync(projectFile);
+    fs.mkdirSync(path.dirname(globalFile), { recursive: true });
+    const corruptGlobal = '{"server":{"open":"no"}}\n';
+    fs.writeFileSync(globalFile, corruptGlobal);
+    const invalidExisting = await putWebSettings({ scope: 'project', settings: { server: { port: 4311 } } });
+    assert.equal(invalidExisting.status, 500);
+    assert.equal(fs.existsSync(projectFile), false);
+    assert.equal(fs.readFileSync(globalFile, 'utf8'), corruptGlobal);
   });
 });

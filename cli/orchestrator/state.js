@@ -42,6 +42,7 @@ const TRANSITIONS = {
   debug_complete: { from: ['debugging'], to: 'verifying' },
   verify_pass: { from: ['verifying'], to: 'completed' },
   verify_fail: { from: ['verifying'], to: 'debugging' },
+  verify_skip: { from: ['coding', 'verifying'], to: 'completed' },
   abort: { from: ['idle', 'planning', 'building', 'coding', 'verifying', 'debugging', 'completed'], to: 'idle' },
   force: { from: ['*'], to: null },
 };
@@ -85,6 +86,11 @@ export function apply(workflow, event, opts = {}) {
   const to = event === 'force'
     ? stateForSkill(opts.skill) || from
     : TRANSITIONS[event].to;
+  const verificationOverride = event === 'force'
+    ? stateForSkill(opts.skill) === 'verifying'
+    : ['new_task', 'verify_pass', 'verify_skip', 'abort'].includes(event)
+      ? false
+      : workflow.verificationOverride === true;
   const now = opts.ts != null ? opts.ts : Date.now();
   const skill = opts.skill || skillForState(to) || null;
   const entry = {
@@ -92,12 +98,13 @@ export function apply(workflow, event, opts = {}) {
     event,
     from,
     to,
-    note: opts.note || '',
+    note: opts.note || (event === 'verify_skip' ? 'Independent verification skipped by workflow preference.' : ''),
   };
   return {
     ...workflow,
     state: to,
     skill,
+    verificationOverride,
     goal: opts.goal != null ? opts.goal : workflow.goal,
     condition: opts.condition != null ? opts.condition : workflow.condition,
     activeTask: opts.activeTask != null ? opts.activeTask : workflow.activeTask,
@@ -113,6 +120,7 @@ export function createWorkflow() {
     version: 1,
     state: 'idle',
     skill: null,
+    verificationOverride: false,
     activeTask: null,
     goal: null,
     condition: null,
@@ -137,6 +145,7 @@ export function load(dir) {
       version: 1,
       state: parsed.state,
       skill: skillForState(parsed.state),
+      verificationOverride: parsed.verificationOverride === true,
       activeTask: parsed.activeTask != null ? parsed.activeTask : null,
       goal: parsed.goal != null ? parsed.goal : null,
       condition: parsed.condition != null ? parsed.condition : null,

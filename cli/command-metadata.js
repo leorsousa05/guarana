@@ -53,6 +53,32 @@ const SPECS = {
   ],
 };
 
+const WORKFLOW = {
+  title: 'guarana workflow — scoped workflow automation preferences',
+  sections: [
+    {
+      rows: ['  guarana workflow read [--project]'],
+      details: [
+        '    Show the selected scope\'s stored fields and current project-effective values.',
+        '    Unset fields inherit from global settings, then default to true.',
+      ],
+    },
+    {
+      rows: ['  guarana workflow set <specs|verify> <true|false> [--project]'],
+      details: ['    Set one preference in global settings, or in the project with --project.'],
+    },
+    {
+      rows: ['  guarana workflow clear [specs|verify] [--project]'],
+      details: [
+        '    Clear one preference or all stored preferences in the selected scope.',
+        '    Clearing a project preference restores inheritance from global settings.',
+      ],
+    },
+    { rows: ['  guarana workflow --help              Show this help'] },
+    { rows: ['  guarana workflow -h                  Show this help'] },
+  ],
+};
+
 function helpLines(definition) {
   return definition.sections.flatMap(({ rows, details = [] }) => [...rows, ...details]);
 }
@@ -77,7 +103,7 @@ const COMMANDS = [
       '  guarana plugin status [--project]     Check plugin/engine/vault install health',
     ],
   },
-  { name: 'web', handler: 'web', globalUsage: ['  guarana web [--port N] [--no-open]  Start the guarana dashboard and open it in the browser'] },
+  { name: 'web', handler: 'web', globalUsage: ['  guarana web [--port N] [--open|--no-open]  Start the dashboard with saved or per-run launch settings'] },
   {
     name: 'advisor',
     handler: 'advisor',
@@ -98,6 +124,7 @@ const COMMANDS = [
     ],
   },
   { name: 'specs', handler: 'specs', globalUsage: helpLines(SPECS) },
+  { name: 'workflow', handler: 'workflow', globalUsage: helpLines(WORKFLOW) },
 ];
 
 const GLOBAL_FLAGS = [
@@ -113,6 +140,7 @@ module.exports = {
   COMMANDS,
   MEMORY: { ...MEMORY, helpLines: helpLines(MEMORY), usageRows: usageRows(MEMORY) },
   SPECS: { ...SPECS, helpLines: helpLines(SPECS), usageRows: usageRows(SPECS) },
+  WORKFLOW: { ...WORKFLOW, helpLines: helpLines(WORKFLOW), usageRows: usageRows(WORKFLOW) },
   GLOBAL_FLAGS,
   renderDetailedHelp,
 };

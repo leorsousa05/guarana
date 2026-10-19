@@ -63,14 +63,51 @@ const SKILL_LINES = Object.entries(STATE_SKILL)
 
 const TASK_STATES = new Set(['coding', 'verifying', 'debugging']);
 
+function preferenceEnabled(preferences, name) {
+  return preferences?.[name]?.enabled !== false;
+}
+
+function verificationEnabled(preferences, taskOverride) {
+  return preferenceEnabled(preferences, 'verify') || taskOverride === true;
+}
+
+function preferenceOverrides(preferences, taskOverride) {
+  const policies = [];
+  if (!preferenceEnabled(preferences, 'specs')) {
+    policies.push(
+      '### Specs automation preference (disabled)',
+      '- Do not automatically create or update human-readable task records under `.specs`, and do not automatically dispatch `worker-specs`.',
+      '- Preserve operational `.specs/state/workflow.json` and all existing human-readable `.specs` records unchanged.',
+      '- An explicit user request for `.specs` work may override this preference for that task.',
+    );
+  }
+  if (!preferenceEnabled(preferences, 'verify')) {
+    policies.push(
+      '### Independent verification preference (disabled)',
+      taskOverride === true
+        ? '- A task-scoped explicit verification override is active. Dispatch `worker-verify` when verifying, then advance with `verify_pass` or `verify_fail`; this does not change the saved preference.'
+        : '- Do not automatically dispatch `worker-verify`. The primary may run proportionate direct checks, then record the skip with `workflow_tick` action `verify_skip`; never call or describe this as PASS/VALIDATED or claim independent verification.',
+      ...(taskOverride === true ? [] : [
+        '- If the user expressly asks for verification, first call `workflow_tick` with action `force` and skill `guarana:verify`, then follow the active task override; this does not change saved preferences.',
+      ]),
+    );
+  }
+  return policies.length ? `\n\n## Workflow preference overrides\n${policies.join('\n')}` : '';
+}
+
 // Always-resident orchestration block: state overview + how the loop advances.
-export function buildSystemBlock(workflow) {
+export function buildSystemBlock(workflow, preferences) {
   const skill = skillForState(workflow.state);
   const delegated = TASK_STATES.has(workflow.state);
+  const verifyEnabled = verificationEnabled(preferences, workflow.verificationOverride);
   const delegationRule = workflow.state === 'coding'
-    ? '- Call the native Task tool with subagent `worker-code`; pass the exact condition, budget, and state pointers, wait for its diff/stop-reason return, then advance with `code_complete`.'
+    ? verifyEnabled
+      ? '- Call the native Task tool with subagent `worker-code`; pass the exact condition, budget, and state pointers, wait for its diff/stop-reason return, then advance with `code_complete`.'
+      : '- Call the native Task tool with subagent `worker-code`; pass the exact condition, budget, and state pointers, wait for its diff/stop-reason return, then run proportionate direct checks if useful and advance from coding with `verify_skip` (do not dispatch worker-verify).'
     : workflow.state === 'verifying'
-      ? '- Call the native Task tool with subagent `worker-verify` in a fresh context; pass the condition, evidence, and state pointers, wait for criterion-level verdict/proofs, then advance with `verify_pass` or `verify_fail`.'
+      ? verifyEnabled
+        ? '- Call the native Task tool with subagent `worker-verify` in a fresh context; pass the condition, evidence, and state pointers, wait for criterion-level verdict/proofs, then advance with `verify_pass` or `verify_fail`.'
+        : '- Do not automatically dispatch `worker-verify`; the primary may run proportionate direct checks, then advance with `verify_skip` (not `verify_pass`).'
       : workflow.state === 'debugging'
         ? '- After a confirmed failure, call the native Task tool with subagent `worker-debug`; pass the failure and state pointers, wait for root cause/mitigation, then decide whether to start a code fix or re-verify.'
         : '';
@@ -115,7 +152,8 @@ export function buildSystemBlock(workflow) {
 }
 
 // The completion action the model must call to advance from the current state.
-export function completionAction(state) {
+export function completionAction(state, preferences, taskOverride = false) {
+  if (state === 'verifying' && !verificationEnabled(preferences, taskOverride)) return 'verify_skip';
   return {
     planning: 'plan_complete',
     building: 'run_start',
@@ -127,19 +165,20 @@ export function completionAction(state) {
 
 // The injected context for the current state: orchestration block + the active
 // skill's full SKILL.md body + a closing line naming the completion action.
-export function buildInjection(workflow, { memoryContext, directory } = {}) {
+export function buildInjection(workflow, { memoryContext, directory, preferences } = {}) {
   const skill = skillForState(workflow.state);
-  const block = buildSystemBlock(workflow);
+  const block = buildSystemBlock(workflow, preferences);
+  const policy = preferenceOverrides(preferences, workflow.verificationOverride);
   const memory = memoryContext && memoryContext.count > 0
     ? `\n\n<!-- guarana memory (automatic context) -->\n${JSON.stringify(memoryContext)}\n<!-- end guarana memory -->`
     : '';
-  if (!skill || TASK_STATES.has(workflow.state)) return block + memory;
+  if (!skill || TASK_STATES.has(workflow.state)) return block + memory + policy;
   const body = resolveSkillBody(skill, directory);
-  const action = completionAction(workflow.state);
+  const action = completionAction(workflow.state, preferences, workflow.verificationOverride);
   const close = action
     ? `\n\nWorkflow: when this step completes, call \`workflow_tick\` with action \`${action}\`.`
     : '';
-  return [block + memory, body ? `\n\n<!-- guarana:${skill} (injected) -->\n${body}${close}` : '']
+  return [block + memory, body ? `\n\n<!-- guarana:${skill} (injected) -->\n${body}${close}` : '', policy]
     .filter(Boolean)
     .join('\n');
 }

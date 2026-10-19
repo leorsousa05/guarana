@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { usePoll } from './hooks/usePoll.js';
+import { useEffect, useRef, useState } from 'react';
+import { PollIntervalContext, usePoll } from './hooks/usePoll.js';
 import { useLiveTick } from './hooks/useLiveTick.js';
 import { Header } from './components/Header.jsx';
 import { Sidebar } from './components/Sidebar.jsx';
@@ -11,35 +11,71 @@ import { Memory } from './components/Memory.jsx';
 import { Workflow } from './components/Workflow.jsx';
 import { Overview } from './components/Overview.jsx';
 import { Skills } from './components/Skills.jsx';
-import { Models } from './components/Models.jsx';
+import { Settings } from './components/Settings.jsx';
 
-const VIEWS = ['overview', 'now', 'runs', 'specs', 'workflow', 'memory', 'skills', 'models'];
+const VIEWS = ['overview', 'now', 'runs', 'specs', 'workflow', 'memory', 'skills', 'settings'];
 
-// Read the active view from the URL hash (#/runs -> 'runs'), defaulting to
-// 'now'. Keeps the selected section deep-linkable and shareable.
-export function viewFromHash() {
+// Read a valid deep link first, then use the saved start page when the URL has
+// no recognized route. A malformed saved value falls back to Overview.
+export function viewFromHash(startPage = 'overview') {
   const m = window.location.hash.match(/^#\/?([a-z-]+)/);
-  return m && VIEWS.includes(m[1]) ? m[1] : 'overview';
+  if (m && VIEWS.includes(m[1])) return m[1];
+  return VIEWS.includes(startPage) ? startPage : 'overview';
 }
 
 export default function App() {
+  const webSettingsPoll = usePoll('/api/web/settings', 15000);
+  const [webSettings, setWebSettings] = useState(null);
+
+  useEffect(() => {
+    if (webSettingsPoll.data) setWebSettings(webSettingsPoll.data);
+  }, [webSettingsPoll.data]);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = webSettings?.effective?.appearance?.theme || 'light';
+  }, [webSettings]);
+
+  const pollIntervalMs = (webSettings?.effective?.refresh?.intervalSeconds || 5) * 1000;
+  return (
+    <PollIntervalContext.Provider value={pollIntervalMs}>
+      <Dashboard
+        webSettings={webSettings}
+        webSettingsError={webSettingsPoll.error}
+        onWebSettingsUpdated={setWebSettings}
+        pollIntervalMs={pollIntervalMs}
+      />
+    </PollIntervalContext.Provider>
+  );
+}
+
+function Dashboard({ webSettings, webSettingsError, onWebSettingsUpdated, pollIntervalMs }) {
   const liveTick = useLiveTick('/api/telemetry/stream');
   const summary = usePoll('/api/telemetry/summary', 5000, liveTick);
   const state = usePoll('/api/specs/state', 5000);
   const tracker = usePoll('/api/specs/tracker', 5000);
   const workflow = usePoll('/api/workflow/current', 5000);
-  const [active, setActive] = useState(viewFromHash);
+  const workflowSettings = usePoll('/api/workflow/settings', 15000);
+  const [active, setActive] = useState(() => viewFromHash());
   const [mergedEvents, setMergedEvents] = useState([]);
+  const startupApplied = useRef(false);
+  const startPage = webSettings?.effective?.appearance?.startPage || 'overview';
+  const startupReady = Boolean(webSettings);
 
-  // Keep the hash in sync with the active view (no re-navigation on mount).
   useEffect(() => {
-    const onHash = () => setActive(viewFromHash());
+    const onHash = () => setActive(viewFromHash(startPage));
     window.addEventListener('hashchange', onHash);
-    if (window.location.hash !== `#/${active}`) {
-      window.history.replaceState(null, '', `#/${active}`);
-    }
     return () => window.removeEventListener('hashchange', onHash);
-  }, []);
+  }, [startPage]);
+
+  useEffect(() => {
+    if (!startupReady || startupApplied.current) return;
+    const initialView = viewFromHash(startPage);
+    setActive(initialView);
+    if (window.location.hash && window.location.hash !== `#/${initialView}`) {
+      window.history.replaceState(null, '', `#/${initialView}`);
+    }
+    startupApplied.current = true;
+  }, [startupReady, startPage]);
 
   const selectView = (id) => {
     setActive(id);
@@ -69,12 +105,12 @@ export default function App() {
       }
     };
     load();
-    const id = setInterval(load, 5000);
+    const id = setInterval(load, pollIntervalMs);
     return () => {
       cancelled = true;
       clearInterval(id);
     };
-  }, [recentIDs]);
+  }, [recentIDs, pollIntervalMs]);
 
   const lastEventTs = mergedEvents.length ? mergedEvents[mergedEvents.length - 1].ts : null;
   return (
@@ -99,7 +135,16 @@ export default function App() {
           {active === 'workflow' && <Workflow data={workflow.data} />}
           {active === 'memory' && <Memory />}
           {active === 'skills' && <Skills />}
-          {active === 'models' && <Models />}
+          {active === 'settings' && (
+            <Settings
+              webSettings={webSettings}
+              webSettingsError={webSettingsError}
+              onWebSettingsUpdated={onWebSettingsUpdated}
+              workflowSettings={workflowSettings.data}
+              workflowSettingsError={workflowSettings.error}
+              refreshWorkflowSettings={workflowSettings.refetch}
+            />
+          )}
         </div>
       </div>
     </main>
