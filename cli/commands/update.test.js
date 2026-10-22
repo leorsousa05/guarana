@@ -92,11 +92,13 @@ it('detects color capability from the injected stdout stream', () => {
 
 it('updates the global skill and runtime targets under an isolated home directory', () => {
   const originalHome = process.env.HOME;
+  const originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
   const originalCwd = process.cwd();
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-update-home-'));
   const output = captureStreams();
   try {
     process.env.HOME = home;
+    process.env.XDG_CONFIG_HOME = path.join(home, '.config');
     process.chdir(home);
     update.run([], { useProject: false, ...output });
 
@@ -115,6 +117,8 @@ it('updates the global skill and runtime targets under an isolated home director
   } finally {
     if (originalHome === undefined) delete process.env.HOME;
     else process.env.HOME = originalHome;
+    if (originalXdgConfigHome === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
     process.chdir(originalCwd);
     fs.rmSync(home, { recursive: true, force: true });
   }
