@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-10-22T17:32:50.074Z
+Last updated: 2026-10-22T17:45:01.929Z
 
 ## Per-skill status
 | Skill | Status |
@@ -24,7 +24,7 @@ Last updated: 2026-10-22T17:32:50.074Z
 | Guarana optional model advisor | **VALIDATED** — UI criteria 11–14 and ADR-027 runtime proof |
 
 ## Current step
-Fresh independent worker-verify PASS on the exact 1.4.0 release candidate for criteria 1–5; ordinary local gates and package inventory pass, smoke was not run, and no commit/push/release operation occurred. The release remains TASKED and .specs/state/known-issues.md is unchanged. Node 22/24 CI is pending after push.
+GitHub-only delivery is complete: the full authorized source/spec/policy tree is on origin/main at 0d7fdee8237b6ccad5a824ada1d72aec6e9e4f6c, and GitHub Actions run 39824601849 passed on Node 22.x and 24.x after the XDG test-fixture correction. Smoke tests remain prohibited and were not run; no npm publication or v1.4.0 tag was requested or performed. The separate full 1.4.0 package release remains TASKED pending explicit authorization.
 
 ## Dashboard redesign final validation — 2026-10-11
 
@@ -71,7 +71,7 @@ Validated before this task: the post-bootstrap-fix release gate, final archive, 
 - Browser proof confirms 375px document/body width, 351px content scroll/client widths for the Models sections and discovery areas, stacked grids, no clipped Models descendants, visible keyboard focus, polite status announcement, and reduced-motion behavior. Global navigation's horizontal scrolling is intentional; page content does not overflow.
 - Detailed proof and check outcomes: `changes/2026-10-09-models-page-overhaul.md`. Shipping was not confirmed; status is VALIDATED, not SHIPPED.
 - Budget: ADR-005 defaults.
-- Pending writes: Normal commit/push and exact remote-SHA verification; Node 22/24 CI must pass before publication or tag.
+- Pending writes: The separate full 1.4.0 npm package release and v1.4.0 tag remain TASKED and require later explicit authorization.
 
 ## Proofs that exist
 Task-1 proofs for all 7 skills in `.specs/features/guarana/proofs/`; all acceptance criteria mapped; worker-verify PASS on every skill. CLI acceptance: 6/6 checks PASS (recorded in changes/2026-08-21-cli.md). Release readiness evidence is in `changes/2026-10-02-release-readiness.md`; 1.0.0 candidate evidence and revalidation follow-up are in `changes/2026-10-07-release-candidate-1.0.0.md` and `features/release/release-candidate-1.0.0-smoke.jsonl`. Spec lifecycle write proof: `changes/2026-10-03-spec-lifecycle-writes.md`. Automatic skill-creation proof: `changes/2026-10-05-automatic-skill-creation.md`, `changes/2026-10-05-skill-trigger-guidance.md`, and validated routing clarity in `changes/2026-10-07-skill-routing-clarity.md`. Native Task worker dispatch proof is in `changes/2026-10-07-native-task-worker-dispatch.md` and `features/orchestrator/subagent-dispatch-smoke.jsonl`. Dashboard skill-scope count proof: `changes/2026-10-05-dashboard-skill-scope-counts.md`.
