@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-10-22T17:45:01.929Z
+Last updated: 2026-10-22T17:49:54.617Z
 
 ## Per-skill status
 | Skill | Status |
@@ -24,7 +24,7 @@ Last updated: 2026-10-22T17:45:01.929Z
 | Guarana optional model advisor | **VALIDATED** — UI criteria 11–14 and ADR-027 runtime proof |
 
 ## Current step
-GitHub-only delivery is complete: the full authorized source/spec/policy tree is on origin/main at 0d7fdee8237b6ccad5a824ada1d72aec6e9e4f6c, and GitHub Actions run 39824601849 passed on Node 22.x and 24.x after the XDG test-fixture correction. Smoke tests remain prohibited and were not run; no npm publication or v1.4.0 tag was requested or performed. The separate full 1.4.0 package release remains TASKED pending explicit authorization.
+GitHub-only delivery is complete. Source/test commits 3df50820cc77c5f5152aac74920f66e36dffaddd and 0d7fdee8237b6ccad5a824ada1d72aec6e9e4f6c were pushed normally; read-only origin/main matched 0d7fdee8237b6ccad5a824ada1d72aec6e9e4f6c immediately after that source/test push, and CI run 39824601849 passed both Node 22.x and 24.x. The later record-only documentation commit 873ba43daaf3a4b0d18a25b7ef6dc9f88ba2fca0 was pushed normally; read-only origin/main matched it at that checkpoint, and CI run 39825721822 on that commit passed both Node 22.x and 24.x and every ordinary step. Before this record correction, local main and origin/main were both 873ba43daaf3a4b0d18a25b7ef6dc9f88ba2fca0. Smoke tests remain prohibited by ADR-036 and none ran. No npm publication or v1.4.0 tag was requested or performed; the separate full 1.4.0 package release remains TASKED.
 
 ## Dashboard redesign final validation — 2026-10-11
 
