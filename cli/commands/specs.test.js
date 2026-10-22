@@ -8,6 +8,7 @@ const path = require('node:path');
 const os = require('node:os');
 const specs = require('./specs.js');
 const { validateSpecs } = require('../lib/specs-validator.js');
+const { recordSpecs } = require('../lib/spec-record.js');
 
 const BIN = path.join(__dirname, '..', '..', 'bin', 'guarana.js');
 
@@ -190,6 +191,10 @@ No actual criterion here.
 });
 
 describe('guarana specs record --stdin', () => {
+  it('documents the versioned v1 task and v2 issue-status contract in help', () => {
+    assert.match(specs.HELP, /schema v1 task handoffs or schema v2 known-issue status updates/);
+    assert.match(specs.HELP, /status-only v2 touches known-issues\.md, combined task\+issue writes are atomic/);
+  });
   function handoff(overrides = {}) {
     return { schema:'v1', task:{ slug:'api', title:'API', featurePath:'.specs/features/api/api.md', trackerName:'api', status:'IMPLEMENTED', goal:'Expose an API', requirements:[], assumptions:[], scope:[], acceptanceCriteria:['GET returns 200'], currentStep:'Implementing API', pendingWrites:[], next:'Validate API', proof:['npm test'], ...overrides } };
   }
@@ -201,6 +206,14 @@ describe('guarana specs record --stdin', () => {
     fs.mkdirSync(path.dirname(handoffPath), { recursive: true });
     fs.writeFileSync(handoffPath, payload);
     return spawnSync(process.execPath,[BIN,'specs','record','--file',file],{cwd:root,encoding:'utf8'});
+  }
+  function withKnownIssues(root, content = '# Known Issues\n\n## API failure\n- **Status:** Existing status.\n\n## API failure follow-up\n- **Status:** Keep this status.\n') {
+    const file = path.join(root, '.specs/state/known-issues.md');
+    fs.writeFileSync(file, content);
+    return file;
+  }
+  function issueHandoff(updates, task) {
+    return { schema: 'v2', knownIssueStatusUpdates: updates, ...(task === undefined ? {} : { task }) };
   }
   const recordPaths = ['README.md', 'state/project-state.md', 'features/api/api.md'];
   function expectStructuralFailure(root, payload, expectedError) {
@@ -220,6 +233,7 @@ describe('guarana specs record --stdin', () => {
       validProject(root);
       const first=invoke(root,JSON.stringify(handoff())); assert.equal(first.status,0,first.stdout);
        const report=JSON.parse(first.stdout); assert.equal(report.ok,true); assert.equal(report.validator.ok,true);
+       assert.deepEqual(Object.keys(report), ['ok', 'changed', 'validator']);
        assert.equal(Object.hasOwn(report,'removedTrackerNames'),false);
        const state=fs.readFileSync(path.join(root,'.specs/state/project-state.md'),'utf8');
        assert.ok(state.includes('- Goal: Validate the API spec.\n- Pending writes: none.'));
@@ -291,12 +305,121 @@ describe('guarana specs record --stdin', () => {
       assert.ok(report.changed.includes('.specs/README.md'));
       assert.ok(report.changed.includes('.specs/state/project-state.md'));
       assert.ok(report.changed.includes('.specs/features/api/api.md'));
-      assert.deepEqual(fs.readFileSync(statePath),Buffer.from(original.replace('- Pending writes: previous.\r\n','- Pending writes: implementation\r\n')));
+      const updated = fs.readFileSync(statePath, 'utf8');
+      const timestampLine = updated.match(/^Last updated: (.+)$/m)?.[0];
+      assert.ok(timestampLine);
+      const timestamp = timestampLine.slice('Last updated: '.length);
+      assert.equal(new Date(timestamp).toISOString(), timestamp);
+      assert.deepEqual(Buffer.from(updated), Buffer.from(original
+        .replace('# Project State\r\n', `# Project State\r\n${timestampLine}\r\n`)
+        .replace('- Pending writes: previous.\r\n','- Pending writes: implementation\r\n')));
 
       const repeated=invoke(root,JSON.stringify(payload));
       assert.equal(repeated.status,0,repeated.stdout);
       assert.deepEqual(JSON.parse(repeated.stdout).changed,[]);
     } finally { fs.rmSync(root,{recursive:true,force:true}); }
+  });
+  it('replaces currentStep using CRLF without changing unrelated project-state bytes', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-record-current-step-crlf-'));
+    try {
+      validProject(root);
+      const statePath = path.join(root, '.specs/state/project-state.md');
+      const original = '# Project State\r\n' +
+        'Last updated: 2001-02-03T04:05:06.000Z\r\n\r\n' +
+        '## Current step\r\nOld step.\r\n\r\n' +
+        '## Checkpoint\r\n- Goal: Preserve this goal.\r\n- Pending writes: previous.\r\n\r\n' +
+        '## Follow-up\r\nKeep this section and spacing.  \r\n';
+      fs.writeFileSync(statePath, original);
+
+      const result = invoke(root, JSON.stringify(handoff({ currentStep: 'New step.', pendingWrites: ['implementation'] })));
+      assert.equal(result.status, 0, result.stdout);
+      assert.ok(JSON.parse(result.stdout).changed.includes('.specs/state/project-state.md'));
+      const updated = fs.readFileSync(statePath, 'utf8');
+      const timestampLine = updated.match(/^Last updated: (.+)$/m)?.[0];
+      assert.ok(timestampLine);
+      assert.equal(new Date(timestampLine.slice('Last updated: '.length)).toISOString(), timestampLine.slice('Last updated: '.length));
+      assert.doesNotMatch(updated, /(?<!\r)\n|\r(?!\n)/);
+      assert.equal(updated, original
+        .replace('Last updated: 2001-02-03T04:05:06.000Z', timestampLine)
+        .replace('## Current step\r\nOld step.\r\n\r\n## Checkpoint', '## Current step\r\nNew step.\r\n\r\n## Checkpoint')
+        .replace('- Pending writes: previous.', '- Pending writes: implementation'));
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+  it('preserves trailing CRLF bytes when inserting a missing currentStep', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-record-current-step-missing-crlf-'));
+    try {
+      validProject(root);
+      const statePath = path.join(root, '.specs/state/project-state.md');
+      const trailingSuffix = '## Follow-up\r\nPreserve this unrelated trailing content.  \r\n\r\n';
+      const original = '# Project State\r\n' +
+        'Last updated: 2001-02-03T04:05:06.000Z (old note)\r\n\r\n' +
+        '## Checkpoint\r\n- Goal: Preserve this goal.\r\n- Pending writes: none.\r\n\r\n' +
+        trailingSuffix;
+      fs.writeFileSync(statePath, original);
+
+      const result = invoke(root, JSON.stringify(handoff({ currentStep: 'Inserted current step' })));
+      assert.equal(result.status, 0, result.stdout);
+      const updated = fs.readFileSync(statePath, 'utf8');
+      const timestampLine = updated.match(/^Last updated: (.+)$/m)?.[0];
+      assert.ok(timestampLine);
+      const timestamp = timestampLine.slice('Last updated: '.length);
+      assert.equal(new Date(timestamp).toISOString(), timestamp);
+      assert.doesNotMatch(updated, /(?<!\r)\n|\r(?!\n)/);
+
+      const originalPrefix = original.slice(0, original.length - trailingSuffix.length)
+        .replace('Last updated: 2001-02-03T04:05:06.000Z (old note)', timestampLine);
+      assert.equal(updated, `${originalPrefix}${trailingSuffix}## Current step\r\nInserted current step\r\n`);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+  it('refreshes an existing Last updated field only on changed state and keeps replay stable', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-record-last-updated-'));
+    try {
+      validProject(root);
+      const statePath = path.join(root, '.specs/state/project-state.md');
+      const original = '# Project State\r\n' +
+        'Last updated: 2001-02-03T04:05:06.000Z (old note)\r\n\r\n' +
+        '## Current step\r\nReady.\r\n\r\n' +
+        '## Checkpoint\r\n- Goal: Validate the API spec.\r\n- Pending writes: none.\r\n';
+      fs.writeFileSync(statePath, original);
+      const payload = handoff({ pendingWrites: ['planning'] });
+      delete payload.task.currentStep;
+
+      const first = invoke(root, JSON.stringify(payload));
+      assert.equal(first.status, 0, first.stdout);
+      const report = JSON.parse(first.stdout);
+      assert.ok(report.changed.includes('.specs/state/project-state.md'));
+      const updated = fs.readFileSync(statePath, 'utf8');
+      const timestampLine = updated.match(/^Last updated: (.+)$/m)?.[0];
+      assert.ok(timestampLine);
+      const timestamp = timestampLine.slice('Last updated: '.length);
+      assert.equal(new Date(timestamp).toISOString(), timestamp);
+      assert.ok(!timestamp.includes('('));
+      assert.equal(updated, original
+        .replace('Last updated: 2001-02-03T04:05:06.000Z (old note)', timestampLine)
+        .replace('- Pending writes: none.', '- Pending writes: planning'));
+
+      const replay = invoke(root, JSON.stringify(payload));
+      assert.equal(replay.status, 0, replay.stdout);
+      assert.deepEqual(JSON.parse(replay.stdout).changed, []);
+      assert.equal(fs.readFileSync(statePath, 'utf8'), updated);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+  it('inserts a missing Last updated field after the project-state heading', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-record-last-updated-missing-'));
+    try {
+      validProject(root);
+      const statePath = path.join(root, '.specs/state/project-state.md');
+      const payload = handoff({ pendingWrites: ['planning'] });
+      delete payload.task.currentStep;
+
+      const result = invoke(root, JSON.stringify(payload));
+      assert.equal(result.status, 0, result.stdout);
+      const state = fs.readFileSync(statePath, 'utf8');
+      assert.match(state, /^# Project State\nLast updated: .+\n\n## Current step/m);
+      const timestamp = state.match(/^Last updated: (.+)$/m)?.[1];
+      assert.ok(timestamp);
+      assert.equal(new Date(timestamp).toISOString(), timestamp);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
   });
   it('updates only the checkpoint pending-writes line and reports the state change', () => {
     for (const [pendingWrites, rendered] of [
@@ -311,11 +434,15 @@ describe('guarana specs record --stdin', () => {
         const original='# Project State\n\n## Current step\nImplementing API\n\n## Checkpoint\n- Goal: Preserve this goal.\n- Other checkpoint content: Keep this line.\n- Pending writes: previous.\n\n## Follow-up\nLeave this section alone.\n';
         fs.writeFileSync(statePath,original);
 
-        const result=invoke(root,JSON.stringify(handoff({pendingWrites})));
-        assert.equal(result.status,0,result.stdout);
-        const report=JSON.parse(result.stdout);
-        assert.ok(report.changed.includes('.specs/state/project-state.md'));
-        assert.equal(fs.readFileSync(statePath,'utf8'),original.replace('- Pending writes: previous.',`- Pending writes: ${rendered}`));
+         const result=invoke(root,JSON.stringify(handoff({pendingWrites})));
+         assert.equal(result.status,0,result.stdout);
+         const report=JSON.parse(result.stdout);
+         assert.ok(report.changed.includes('.specs/state/project-state.md'));
+         const updated=fs.readFileSync(statePath,'utf8');
+         const timestampLine=updated.match(/^Last updated: (.+)$/m)?.[0];
+         assert.ok(timestampLine);
+         assert.equal(updated,original.replace('# Project State\n',`# Project State\n${timestampLine}\n`)
+           .replace('- Pending writes: previous.',`- Pending writes: ${rendered}`));
 
         const repeated=invoke(root,JSON.stringify(handoff({pendingWrites})));
         assert.equal(repeated.status,0,repeated.stdout);
@@ -331,12 +458,16 @@ describe('guarana specs record --stdin', () => {
       const original='# Project State\n\n## Current step\nImplementing API\n\n## Checkpoint\n- Goal: Preserve this goal.\n- Other checkpoint content: Keep this line.\n\n## Follow-up\n- Pending writes: Do not change.\n';
       fs.writeFileSync(statePath,original);
 
-      const result=invoke(root,JSON.stringify(handoff({pendingWrites:['planning']})));
-      assert.equal(result.status,0,result.stdout);
-      const report=JSON.parse(result.stdout);
-      assert.ok(report.changed.includes('.specs/state/project-state.md'));
-      assert.equal(fs.readFileSync(statePath,'utf8'),original.replace('- Other checkpoint content: Keep this line.\n\n## Follow-up',
-        '- Other checkpoint content: Keep this line.\n- Pending writes: planning\n\n## Follow-up'));
+       const result=invoke(root,JSON.stringify(handoff({pendingWrites:['planning']})));
+       assert.equal(result.status,0,result.stdout);
+       const report=JSON.parse(result.stdout);
+       assert.ok(report.changed.includes('.specs/state/project-state.md'));
+       const updated=fs.readFileSync(statePath,'utf8');
+       const timestampLine=updated.match(/^Last updated: (.+)$/m)?.[0];
+       assert.ok(timestampLine);
+       assert.equal(updated,original.replace('# Project State\n',`# Project State\n${timestampLine}\n`)
+         .replace('- Other checkpoint content: Keep this line.\n\n## Follow-up',
+         '- Other checkpoint content: Keep this line.\n- Pending writes: planning\n\n## Follow-up'));
     } finally { fs.rmSync(root,{recursive:true,force:true}); }
   });
   it('updates records from the fixed file handoff and removes it', () => {
@@ -350,6 +481,154 @@ describe('guarana specs record --stdin', () => {
       assert.ok(report.changed.includes('.specs/README.md'));
       assert.equal(fs.existsSync(path.join(root,'.specs/state/worker-specs-handoff.json')),false);
     } finally { fs.rmSync(root,{recursive:true,force:true}); }
+  });
+  it('updates only the last exact Status bullet in a unique H2 and preserves every other byte', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-record-v2-status-only-'));
+    try {
+      validProject(root);
+      const statePath = path.join(root, '.specs/state/project-state.md');
+      const projectStateBefore = Buffer.from(
+        '# Project State\r\nLast updated: 2020-01-02T03:04:05.000Z\r\n\r\n' +
+        '## Current step\r\nReady.\r\n\r\n## Checkpoint\r\n' +
+        '- Goal: Validate the API spec.\r\n- Pending writes: none.\r\n', 'utf8');
+      fs.writeFileSync(statePath, projectStateBefore);
+      const knownPath = path.join(root, '.specs/state/known-issues.md');
+      const original = Buffer.from(
+        '# Known Issues\r\n\r\n## API failure\r\n' +
+        '- **Status:** Earlier history.\r\n' +
+        '- **Status at 2026-01-01 (superseded):** Historical label.\r\n' +
+        '- **Status:** Most recent old status.  \r\n' +
+        'Keep this line and its spacing.\r\n\r\n' +
+        '## API failure follow-up\r\n- **Status:** Unchanged section.\r\n', 'utf8');
+      fs.writeFileSync(knownPath, original);
+      const otherPaths = ['README.md', 'state/project-state.md', 'features/api/api.md'].map((rel) => path.join(root, '.specs', rel));
+      const otherBefore = otherPaths.map((file) => fs.readFileSync(file));
+
+      const result = invokeFile(root, JSON.stringify(issueHandoff([{ heading: 'API failure', status: 'Resolved by focused fix' }])));
+      assert.equal(result.status, 0, result.stdout);
+      const report = JSON.parse(result.stdout);
+      assert.deepEqual(report.changed, ['.specs/state/known-issues.md']);
+      assert.deepEqual(report.updatedKnownIssueHeadings, ['API failure']);
+      assert.ok(!result.stdout.includes('Resolved by focused fix'));
+      const expected = Buffer.from(original.toString('utf8').replace(
+        '- **Status:** Most recent old status.  \r\n',
+        '- **Status:** Resolved by focused fix  \r\n'));
+      assert.deepEqual(fs.readFileSync(knownPath), expected);
+      otherPaths.forEach((file, index) => assert.deepEqual(fs.readFileSync(file), otherBefore[index], file));
+      assert.deepEqual(fs.readFileSync(statePath), projectStateBefore);
+
+      const repeated = invokeFile(root, JSON.stringify(issueHandoff([{ heading: 'API failure', status: 'Resolved by focused fix' }])));
+      assert.equal(repeated.status, 0, repeated.stdout);
+      assert.deepEqual(JSON.parse(repeated.stdout).changed, []);
+      assert.deepEqual(fs.readFileSync(knownPath), expected);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+  it('commits a combined task and issue-status v2 handoff and rolls back validator failures', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-record-v2-combined-'));
+    try {
+      validProject(root);
+      const knownPath = withKnownIssues(root);
+      const payload = issueHandoff([{ heading: 'API failure', status: 'Resolved' }], handoff().task);
+      const result = invokeFile(root, JSON.stringify(payload));
+      assert.equal(result.status, 0, result.stdout);
+      const report = JSON.parse(result.stdout);
+      assert.ok(report.changed.includes('.specs/README.md'));
+      assert.ok(report.changed.includes('.specs/state/project-state.md'));
+      assert.ok(report.changed.includes('.specs/features/api/api.md'));
+      assert.ok(report.changed.includes('.specs/state/known-issues.md'));
+      assert.deepEqual(report.updatedKnownIssueHeadings, ['API failure']);
+      assert.match(fs.readFileSync(knownPath, 'utf8'), /- \*\*Status:\*\* Resolved/);
+      const statePath = path.join(root, '.specs/state/project-state.md');
+      const combinedTimestamp = fs.readFileSync(statePath, 'utf8').match(/^Last updated: (.+)$/m)?.[1];
+      assert.ok(combinedTimestamp);
+      assert.equal(new Date(combinedTimestamp).toISOString(), combinedTimestamp);
+
+      const featurePath = path.join(root, '.specs/features/api/api.md');
+      fs.writeFileSync(featurePath, fs.readFileSync(featurePath, 'utf8').replace('../../decisions/ADR-001-api-shape.md', 'missing.md'));
+      const rollbackState = fs.readFileSync(statePath, 'utf8')
+        .replace(/^Last updated:.*$/m, 'Last updated: 2001-02-03T04:05:06.000Z (rollback sentinel)')
+        .replace('- Pending writes: none.', '- Pending writes: pending before rollback.');
+      fs.writeFileSync(statePath, rollbackState);
+      const rollbackTimestamp = rollbackState.match(/^Last updated:.*$/m)[0];
+      const targets = ['README.md', 'state/project-state.md', 'features/api/api.md', 'state/known-issues.md'].map((rel) => path.join(root, '.specs', rel));
+      const before = targets.map((file) => fs.readFileSync(file));
+      const failed = invokeFile(root, JSON.stringify(issueHandoff([{ heading: 'API failure', status: 'Changed but rolled back' }], handoff().task)));
+      assert.equal(failed.status, 1, failed.stdout);
+      assert.equal(JSON.parse(failed.stdout).error, 'validateSpecs failed');
+      targets.forEach((file, index) => assert.deepEqual(fs.readFileSync(file), before[index], file));
+      assert.equal(fs.readFileSync(statePath, 'utf8').match(/^Last updated:.*$/m)[0], rollbackTimestamp);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+  it('rolls back earlier combined writes when the known-issues write fails', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-record-v2-io-rollback-'));
+    try {
+      validProject(root);
+      const knownPath = withKnownIssues(root);
+      const targets = ['README.md', 'state/project-state.md', 'features/api/api.md', 'state/known-issues.md'].map((rel) => path.join(root, '.specs', rel));
+      const before = targets.map((file) => fs.readFileSync(file));
+      const originalWrite = fs.writeFileSync;
+      let failOnce = true;
+      fs.writeFileSync = function (file, ...args) {
+        if (path.resolve(file) === path.resolve(knownPath) && failOnce) {
+          failOnce = false;
+          throw new Error('simulated write failure');
+        }
+        return originalWrite.call(this, file, ...args);
+      };
+      try {
+        assert.throws(() => recordSpecs(JSON.stringify(issueHandoff(
+          [{ heading: 'API failure', status: 'New status' }], handoff().task)), root), /simulated write failure/);
+      } finally {
+        fs.writeFileSync = originalWrite;
+      }
+      assert.equal(failOnce, false);
+      targets.forEach((file, index) => assert.deepEqual(fs.readFileSync(file), before[index], file));
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+  it('rejects malformed v2 envelopes and non-exact or ambiguous issue sections before writes', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-record-v2-invalid-'));
+    try {
+      validProject(root);
+      const knownPath = withKnownIssues(root);
+      const paths = ['README.md', 'state/project-state.md', 'features/api/api.md', 'state/known-issues.md'].map((rel) => path.join(root, '.specs', rel));
+      const before = paths.map((file) => fs.readFileSync(file));
+      const rejected = (payload, valueSentinels = [], expected = before) => {
+        const result = invoke(root, JSON.stringify(payload));
+        assert.equal(result.status, 1, result.stdout);
+        assert.equal(result.stderr, '');
+        const report = JSON.parse(result.stdout);
+        assert.equal(report.ok, false);
+        assert.deepEqual(report.changed, []);
+        for (const sentinel of valueSentinels) assert.ok(!report.error.includes(sentinel), report.error);
+        paths.forEach((file, index) => assert.deepEqual(fs.readFileSync(file), expected[index], file));
+      };
+
+      rejected({ schema: 'v1', ...handoff(), knownIssueStatusUpdates: [{ heading: 'API failure', status: 'must-not-echo' }] }, ['must-not-echo']);
+      rejected({ schema: 'v2' });
+      rejected(issueHandoff([]));
+      for (const updates of [null, 'bad', [null], [{}], [{ heading: 42, status: 'secret-status' }],
+        [{ heading: '', status: 'secret-status' }], [{ heading: 'API failure\nextra', status: 'secret-status' }],
+        [{ heading: 'API failure', status: null }], [{ heading: 'API failure', status: ' \t ' }],
+        [{ heading: 'API failure', status: 'line one\nline two' }],
+        [{ heading: 'API failure', status: 'one' }, { heading: 'API failure', status: 'two' }]]) {
+        rejected(issueHandoff(updates), ['secret-status', 'line one', 'line two']);
+      }
+      rejected(issueHandoff([{ heading: 'API', status: 'No substring matching' }]));
+      rejected(issueHandoff([{ heading: 'Missing issue', status: 'No section' }]));
+
+      fs.writeFileSync(knownPath, '# Known Issues\n\n## API failure\n- **Symptom:** no status bullet\n');
+      const missingBulletBefore = paths.map((file) => fs.readFileSync(file));
+      rejected(issueHandoff([{ heading: 'API failure', status: 'new' }]), [], missingBulletBefore);
+      paths.forEach((file, index) => assert.deepEqual(fs.readFileSync(file), missingBulletBefore[index], file));
+
+      fs.writeFileSync(knownPath, '# Known Issues\n\n## API failure\n- **Status:** first\n\n## API failure\n- **Status:** second\n');
+      const duplicateHeadingBefore = paths.map((file) => fs.readFileSync(file));
+      rejected(issueHandoff([{ heading: 'API failure', status: 'new' }]), [], duplicateHeadingBefore);
+      paths.forEach((file, index) => assert.deepEqual(fs.readFileSync(file), duplicateHeadingBefore[index], file));
+
+      fs.writeFileSync(knownPath, before.at(-1));
+      rejected(issueHandoff([{ heading: 'API failure', status: 'new' }], { slug: 'invalid-task' }));
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
   });
   it('cleans malformed file handoff without partially writing records', () => {
     const root=fs.mkdtempSync(path.join(os.tmpdir(),'guarana-record-file-bad-'));

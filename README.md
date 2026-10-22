@@ -25,7 +25,7 @@ task requests automatically move through planning, implementation, verification,
 and memory, while the important state stays inspectable on disk.
 
 <p>
-  <a href="https://github.com/leorsousa05/guarana"><img src="https://img.shields.io/badge/version-1.3.1-7c3aed?style=flat-square" alt="Version 1.3.1"></a>
+  <a href="https://github.com/leorsousa05/guarana"><img src="https://img.shields.io/badge/version-1.4.0-7c3aed?style=flat-square" alt="Version 1.4.0"></a>
   <img src="https://img.shields.io/badge/license-MIT-2563eb?style=flat-square" alt="MIT license">
 </p>
 
@@ -65,9 +65,9 @@ only the active skill into the current turn.
 ### Requirements and support
 
 - **Node.js 22 or newer.** CI validates Node 22.x and 24.x.
-- **OpenCode:** Guarana targets OpenCode's plugin API. Each release is smoke-tested
-  against the latest stable OpenCode version; older versions are not in the
-  support contract unless separately validated. See [release checks](RELEASING.md).
+- **OpenCode:** Guarana targets OpenCode's plugin API. Package and host smoke
+  tests are retired and are not release validation; see the [no-smoke policy and
+  ordinary release checks](RELEASING.md).
 
 Install Guarana globally:
 
@@ -250,9 +250,8 @@ npm run build
 
 ## Status
 
-Guarana `1.3.1` is the current local, unpublished version. The `1.0.0` release
-gate and provider-backed OpenCode host smoke are historical evidence; the `1.3.1`
-release gate is not yet complete.
+Guarana `1.4.0` is the version documented in this repository; publication and
+Git tagging are separate maintainer actions.
 
 ## License
 

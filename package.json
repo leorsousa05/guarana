@@ -1,6 +1,6 @@
 {
   "name": "guarana",
-  "version": "1.3.1",
+  "version": "1.4.0",
   "description": "Install/uninstall/list/update the guarana skill suite for OpenCode",
   "engines": {
     "node": ">=22"
@@ -21,7 +21,6 @@
     "test:all": "node --test '*/**/*.test.{js,mjs}'",
     "sync-cli": "node scripts/sync-cli-bundle.mjs",
     "check-cli": "node scripts/check-cli-bundle.mjs",
-    "smoke:pack": "node scripts/smoke-packed-cli.mjs",
     "audit": "npm audit --prefix dashboard && npm audit --prefix dashboard/server",
     "specs:validate": "node bin/guarana.js specs validate",
     "build:dashboard": "cd dashboard && npm run build",

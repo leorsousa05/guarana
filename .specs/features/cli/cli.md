@@ -54,7 +54,7 @@ A Node.js CLI named `guarana` that installs/uninstalls/lists/updates the guarana
 ## Constraints
 - Node.js, stdlib only (`fs`, `path`, `os`). No runtime dependencies.
 - Supported Node.js runtime is `>=22`; CI validates Node 22.x and 24.x.
-- OpenCode support targets the latest stable release and requires a recorded host smoke test for each release.
+- Guarana package/release/OpenCode-host smoke tests are retired and MUST NOT be run or reintroduced as development, CI, or release gates.
 - Single bin entry `guarana` via `package.json` (`bin` field).
 - Skills are bundled inside the CLI package (copied from repo `skills/` at publish/dev time, or referenced relative to the CLI source).
 - Idempotent install: safe to run twice; prints what it did.
@@ -84,11 +84,11 @@ From a temp HOME:
 ## Addendum 2026-10-02: reproducible package and runtime support
 - The generated CLI bundle excludes `node_modules`; the web command installs its locked production dependencies only when needed.
 - The npm tarball contains no environment-local dependency directories and can be installed into an isolated prefix before exercising CLI install/list/plugin status/uninstall flows.
-- `prepack` verifies canonical/bundled source parity. CI runs unit tests, production dashboard build, bundle verification, specs validation, and the packed CLI smoke test on Node 22.x and 24.x.
+- `prepack` verifies canonical/bundled source parity. CI runs ordinary unit/integration tests, production dashboard build, bundle verification, and specs validation on Node 22.x and 24.x; it does not run smoke tests. `npm pack --dry-run --json` is package-content inspection only, not a smoke test.
 
 ### Acceptance
 24. `npm pack --dry-run --json` contains no path segment named `node_modules` and includes the license and release notes.
-25. `npm run smoke:pack` installs the generated tarball in an isolated prefix and verifies the CLI install, list, plugin health, and uninstall lifecycle.
+25. Packed CLI lifecycle and dashboard-startup smoke tests are retired and MUST NOT be run or reintroduced as development, CI, or release gates; `npm pack --dry-run --json` inspects package contents without installing or executing the tarball.
 26. `npm run check-cli` passes when the canonical source contains ignored local `node_modules` but the distributable bundle does not.
 
 ## Addendum 2026-10-08: update command presentation

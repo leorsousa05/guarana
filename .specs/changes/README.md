@@ -6,6 +6,9 @@ Entry format: date · feature · what validated / failed / re-opened · proof pa
 
 ## Records
 
+### 2026-10-20 — specs recorder
+- [Versioned known-issue status updates](2026-10-20-spec-record-known-issue-status.md) — schema-v2 status-only/combined writes with v1 compatibility; independent worker-verify PASS (9/9); real known-issues file unchanged; not shipped
+
 ### 2026-10-09 — global Guarana runtime update
 - [Global runtime update handoff](2026-10-09-global-guarana-update-handoff.md) — global 1.1.0 skill suite, plugins, engines, and worker profiles refreshed; independent worker-verify PASS; Advisor restart/settings and stale project-plugin caveats preserved; no code or release claim
 

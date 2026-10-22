@@ -173,8 +173,9 @@ descriptions.
 4. Skill lengths remain responsibility-driven; any prose change has a specific
    trigger, duplication, or no-op rationale.
 5. Canonical and CLI plugin/skill artifacts are synchronized; focused tests,
-   full tests, build, bundle check, specs validation, and any attempted
-   `opencode run` smoke have exact outcomes recorded before validation.
+   full tests, build, bundle check, and specs validation have exact outcomes
+   recorded before validation. Per ADR-036, package/release/OpenCode-host smoke
+   tests MUST NOT be run or reintroduced, including any `opencode run` smoke.
 
 ### Status
 

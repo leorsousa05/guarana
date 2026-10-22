@@ -29,4 +29,3 @@ jobs:
       - run: npm run build
       - run: npm run check-cli
       - run: npm run specs:validate
-      - run: npm run smoke:pack

@@ -42,11 +42,11 @@ const SPECS = {
     },
     {
       rows: ['  guarana specs record --stdin'],
-      details: ['    Read a schema v1 JSON handoff and transactionally update .specs records.'],
+      details: ['    Read schema v1 task handoffs or schema v2 known-issue status updates (optionally combined with a task).'],
     },
     {
       rows: ['  guarana specs record --file .specs/state/worker-specs-handoff.json'],
-      details: ['    Read and remove the fixed schema v1 JSON handoff file.'],
+      details: ['    Read/remove the fixed handoff; status-only v2 touches known-issues.md, combined task+issue writes are atomic.'],
     },
     { rows: ['  guarana specs --help                  Show this help'] },
     { rows: ['  guarana specs -h                      Show this help'] },

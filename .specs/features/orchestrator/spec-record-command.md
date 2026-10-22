@@ -1,6 +1,6 @@
 # Feature spec: Deterministic `.specs` Record Command
 
-**Status: VALIDATED**
+**Status: SHIPPED**
 
 ## Goal
 Automate mechanical `.specs` tracker, checkpoint, and feature-status/proof receipt updates from a versioned JSON handoff, while leaving requirement discovery, acceptance decisions, and fact/proof formulation with `worker-specs` and its primary.
@@ -57,8 +57,16 @@ Receipts are updated only inside the target feature's managed markers. For an ex
 7. For schema-v1 records, `pendingWrites` updates the existing `- Pending writes:` checkpoint line: `['planning']` renders as `- Pending writes: planning`, multiple entries are all represented joined by `; `, and an empty array renders `none.`. The update preserves unrelated checkpoint lines and the existing `Current step` rendering semantics, reports `.specs/state/project-state.md` in `changed` when it changes, and a second identical call is idempotent. Tests cover these cases while existing structural validation and rollback behavior remain unchanged.
 8. For schema-v1 records, omitting optional `currentStep` preserves the stored `## Current step` content; supplying a non-empty value retains the prior rendering behavior. Tests cover omission and explicit values without changing pendingWrites, idempotency, or rollback behavior.
 
+## Follow-up: project-state Last updated refresh
+The recorder currently updates the project-state checkpoint without refreshing the mechanical top-level `Last updated:` field. This bounded follow-up adds the timestamp refresh to task-recording operations while retaining the established record and CLI contracts.
+
+9. For a schema-v1 task or combined schema-v2 task-plus-issue recording, refresh the single top-level `Last updated:` value to a pure ISO 8601 timestamp when and only when the recorder's other mechanical project-state updates change the file. Replace the whole value; if the field is absent, insert it after `# Project State`.
+10. An identical replay does not rewrite the timestamp or report project-state as changed. A status-only schema-v2 known-issue update does not modify project-state or its timestamp.
+11. Preserve unrelated project-state bytes and line-ending style outside managed timestamp, checkpoint, and current-step fields; report changed paths accurately and include the timestamp in all-or-nothing rollback.
+12. Do not change the schema or CLI JSON contract, or make unrelated code or record edits. Focused tests prove timestamp refresh on a changed project-state file, pure ISO value replacement, insertion when absent, replay stability, status-only schema-v2 no-touch, and rollback preservation. Preserve optional-currentStep, pendingWrites, schema-v2, and existing dirty worktree changes.
+
 <!-- guarana:record:start -->
-Status: VALIDATED
-Proof: Final worker-verify PASS 19/19; the recorder feature was independently validated.
+Status: SHIPPED
+Proof: Final independent worker-verify result: PASS on all 5 criteria (AND verdict).; node --test cli/commands/specs.test.js: 31 passed, 0 failed.; git diff --check: exit 0, no output.; node bin/guarana.js specs validate . --json: ok:true; 195 files scanned, 72 feature specs, 35 ADRs, 214 links, issues: [].; Timestamp replacement/insertion and v1/combined-v2 refresh: cli/lib/spec-record.js:40-59,285-292; tests cli/commands/specs.test.js:374-422,526-544.; Replay stability and status-only isolation: cli/commands/specs.test.js:401-404,485-523.; CRLF replacement and trailing-byte insertion: cli/commands/specs.test.js:322-372.; Rollback and compatibility: cli/commands/specs.test.js:230-245,291-320,424-473,526-590.
 Change: none
 <!-- guarana:record:end -->

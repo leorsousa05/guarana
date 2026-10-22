@@ -81,6 +81,7 @@ test('worker profiles include canonical skill procedures and distinct permission
   }
   assert.match(specsEditRules, /"\.specs\/conventions\.md": allow/);
   const forbiddenSpecsVariants = [
+    'README.md',
     '.specs/architecture.md.bak',
     '.specs/architecture/subsystem.md',
     '.specs/conventions.md.bak',
@@ -95,6 +96,26 @@ test('worker profiles include canonical skill procedures and distinct permission
   assert.match(specs, /Do not invent requirements, acceptance decisions/);
   assert.match(specs, /dispatched only when a durable human-readable `.specs` record will\s+change/i);
   assert.match(specs, /material\s+alternatives/i);
+  assert.match(specs, /For an existing mutable `\.specs` record, use Edit only to change the\s+specific semantic narrative passage that supplied, confirmed facts explicitly\s+supersede; preserve unrelated and historical text verbatim\./);
+  assert.match(specs, /writes only its recorder-owned fields and does not rewrite arbitrary\s+narrative/);
+  assert.match(specs, /Keep tracker, checkpoint, status, and receipt fields exclusively\s+in\s+`specs record`/);
+  assert.match(specs, /project-root\s+`README\.md` is outside this worker's `.specs` authority and\s+permissions/);
+  assert.match(specs, /Append a new ADR only when the supplied facts establish a durable[\s\S]*?with material\s+alternatives\. ADRs are append-only; never revise an existing ADR/);
+  assert.match(specs, /Do\s+not rewrite historical change or verification evidence/);
+  assert.match(specs, /If a request is out\s+of scope or Edit is denied, stop and report the exact path\s+and reason; do not\s+broaden the edit or bypass permissions/);
+  assert.match(specs, /An OpenCode `edit` denial does not by itself establish whether `specs record`\s+ran/);
+  assert.match(specs, /Report the exact denied operation and path/);
+  assert.match(specs, /observed event\s+sequence: whether `specs record` ran/);
+  assert.match(specs, /`yes`, `no` only when observed not to have\s+run, or `unknown`/);
+  assert.match(specs, /exact JSON `ok` and `changed` values when available/);
+  assert.match(specs, /If a recorder result with `ok: true` precedes a later Edit denial, report its\s+exact `changed` paths as committed and report the denial as a separate event/);
+  assert.match(specs, /For a no-run\/unknown outcome or `ok: false`, report only observed facts/);
+  assert.match(specs, /do not\s+infer that no paths committed, that rollback completed, or that zero changes\s+occurred without evidence/);
+  assert.match(specs, /Do not invoke substitute writes\/commands or retry/);
+  assert.doesNotMatch(specs, /An OpenCode `edit` denial means `specs record` did not run/);
+  assert.doesNotMatch(specs, /`run: no`, `ok: unavailable`, and `changed: none`/);
+  assert.doesNotMatch(specs, /claim no\s+paths committed/);
+  assert.match(specs, /When `specs record` returns `ok: false` with a detailed `task\.\*` path and\s+expected form, report that exact blocker; do not rerun/);
   assert.match(specs, /Before selecting any record path, read `.specs\/conventions\.md`/);
   assert.match(specs, /reuse the existing feature record[\s\S]*instead of creating a\s+duplicate/);
   assert.match(specs, /features\/<domain>\/<stable-concise-kebab-case-scope-slug>\.md/);

@@ -22,12 +22,13 @@ status, proof, or pending-writes delta; final verification handoffs record exact
 proof/status changes. Project-state records task start/end or a material
 blocker/status, not every stage. Run validation only after a record write.
 
-Append an ADR only when the supplied facts establish a durable architectural,
+Append a new ADR only when the supplied facts establish a durable architectural,
 contract, data, security, privacy, or integration decision with material
-alternatives. Do not turn tactical implementation choices into ADRs or invent
-alternatives. A known-issue handoff is eligible only for a confirmed reproducible
-product failure with a useful durable mitigation; reject tool/verifier scope errors
-and transient permission/environment failures as issue-recording requests.
+alternatives. ADRs are append-only; never revise an existing ADR. Do not turn
+tactical implementation choices into ADRs or invent alternatives. A known-issue
+handoff is eligible only for a confirmed reproducible product failure with a
+useful durable mitigation; reject tool/verifier scope errors and transient
+permission/environment failures as issue-recording requests.
 
 ## Input contract
 
@@ -85,16 +86,36 @@ existing record and return a concise blocker/question instead of guessing.
    `node bin/guarana.js specs record --file .specs/state/worker-specs-handoff.json`).
    Do not use stdin, heredocs, or arbitrary shell. The command deletes the
    temporary handoff on completion. It owns mechanical tracker, checkpoint,
-   status, and receipt formatting; do not manually edit those fields. Retain responsibility for
-   semantic requirements, acceptance criteria, factual proof, independent
-   verification decisions, and explicit shipping confirmation. Preserve
-   existing semantic text; only supply creation content when the feature is new.
+   status, and receipt formatting; do not manually edit those fields. Retain
+   responsibility for semantic requirements, acceptance criteria, factual
+   proof, independent verification decisions, and explicit shipping confirmation.
+   Preserve existing semantic text; only supply creation content when the feature
+   is new. For an existing mutable `.specs` record, use Edit only to change the
+   specific semantic narrative passage that supplied, confirmed facts explicitly
+   supersede; preserve unrelated and historical text verbatim. `specs record`
+   writes only its recorder-owned fields and does not rewrite arbitrary narrative.
+   Keep tracker, checkpoint, status, and receipt fields exclusively in
+   `specs record`.
 3. Do not edit `.specs/conventions.md` unless the handoff explicitly requests a
    naming-convention change. Do not edit workflow JSON, telemetry, memory, code,
    or unrelated files. Do not call `workflow_tick`, dispatch nested tasks, or
-   perform verification in place of the independent verifier.
+   perform verification in place of the independent verifier. The project-root
+   `README.md` is outside this worker's `.specs` authority and permissions. Do
+   not rewrite historical change or verification evidence. If a request is out
+   of scope or Edit is denied, stop and report the exact path and reason; do not
+   broaden the edit or bypass permissions.
  4. Inspect the command's JSON output, changed paths, and validator summary. Report
     the result as returned; do not claim success if it fails.
+
+An OpenCode `edit` denial does not by itself establish whether `specs record`
+ran. Report the exact denied operation and path, then the observed event
+sequence: whether `specs record` ran (`yes`, `no` only when observed not to have
+run, or `unknown`), and the exact JSON `ok` and `changed` values when available.
+If a recorder result with `ok: true` precedes a later Edit denial, report its
+exact `changed` paths as committed and report the denial as a separate event.
+For a no-run/unknown outcome or `ok: false`, report only observed facts; do not
+infer that no paths committed, that rollback completed, or that zero changes
+occurred without evidence. Do not invoke substitute writes/commands or retry.
 
 ## Schema-v1 handoff
 
@@ -143,10 +164,52 @@ path with the same safe segment rules. Optional `verification` for `VALIDATED` m
 status also requires at least one non-empty `proof` item. `SHIPPED` requires
 `shipped: true`.
 
-When the command reports a detailed `task.*` path and expected form, use it to
-correct only the handoff. Do not infer missing facts, add defaults, normalize
-values or enum spellings, or weaken the schema; if a required fact is unknown,
-ask for it instead.
+When `specs record` returns `ok: false` with a detailed `task.*` path and
+expected form, report that exact blocker; do not rerun after the failed result.
+Do not infer missing facts, add defaults, normalize values or enum spellings, or
+weaken the schema; if a required fact is unknown, ask for it instead.
+
+## Schema-v2 known-issue status handoff
+
+Use schema v2 only to update the status of an existing known issue. Do not put
+issue updates into a schema-v1 handoff: Guarana 1.3.1 accepts only v1 and can
+silently ignore unknown v1 fields. A v2 handoff is deliberately fail-closed on
+that older CLI; if it rejects `schema: "v2"`, stop and report the compatibility
+blocker rather than changing the schema or retrying as v1.
+
+For a status-only update, omit `task` and use this shape, replacing the example
+heading/status only with supplied facts:
+
+```json
+{
+  "schema": "v2",
+  "knownIssueStatusUpdates": [
+    {
+      "heading": "Exact existing H2 heading",
+      "status": "The supplied single-line status update."
+    }
+  ]
+}
+```
+
+`knownIssueStatusUpdates` is a non-empty array. Each `heading` must exactly
+match one unique H2 title in `.specs/state/known-issues.md`; do not use a
+substring, a new heading, or duplicate a requested heading. Each `status` is
+non-empty, single-line free-form text. The recorder changes only the last exact
+`- **Status:**` bullet in that section; earlier status history, `Status at ...`
+labels, and all other content remain intact. Status-only mode changes no other
+record. For a combined handoff, add `task` using the existing schema-v1 task
+shape; task and issue-status writes commit or roll back together.
+
+Write the JSON to `.specs/state/worker-specs-handoff.json`, then invoke exactly
+`guarana specs record --file .specs/state/worker-specs-handoff.json` (or
+`node bin/guarana.js specs record --file .specs/state/worker-specs-handoff.json`).
+Do not use stdin, heredocs, or an alternate path. The command removes the
+temporary handoff on completion. Inspect its JSON result and report the exact
+changed paths and `updatedKnownIssueHeadings`; this heading list does not include
+status prose. If the heading is missing/ambiguous, its exact Status bullet is
+missing, or validation fails, preserve the records and report the blocker rather
+than editing around the recorder.
 
 ## Return contract
 

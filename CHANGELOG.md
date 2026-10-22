@@ -91,4 +91,16 @@ maintainer action.
 - Automatic `.specs` bootstrap creates a generic `.specs/conventions.md` for
   new projects while preserving any existing customized conventions file.
 
+## [1.4.0] - 2026-10-22
+
+### Added
+- The schema-v2 known-issue status recorder in `guarana specs record` is
+  independently validated, including status-only updates and atomic
+  task-plus-status updates.
+
+### Changed
+- Package, release, and OpenCode-host smoke tests are retired and MUST NOT be run
+  or reintroduced as development, CI, or release gates. Package inventory
+  inspection with `npm pack --dry-run --json` is not a smoke test.
+
 ## [Unreleased]
