@@ -1,9 +1,9 @@
 # Feature spec: Orchestrator intent and provenance safety follow-up
 
-**Status: VALIDATED**
+**Status: SHIPPED**
 
 ## Goal
-Record the bounded orchestrator intent/provenance follow-up while preserving the parent feature status and project-shared workflow contract. The V2 setup adapter correction, regression, explicit plugin-adoption CLI, offline checks, and authorized live isolation gate are validated. Git push remains pending; no shipping, publish, tag, or version change is claimed.
+Record the bounded orchestrator intent/provenance follow-up while preserving the parent feature status and project-shared workflow contract. The V2 setup adapter correction, regression, explicit plugin-adoption CLI, offline checks, and authorized live isolation gate are validated. The validated follow-up was pushed normally to origin/main as Git-only delivery; no npm publication, tag, or version change occurred.
 
 ## Requirements
 - Portuguese informational requests remain read-only; explicit Portuguese and English mutations and guarana skill forcing retain their accepted behavior.
@@ -14,7 +14,7 @@ Record the bounded orchestrator intent/provenance follow-up while preserving the
 ## Assumptions and scope
 - The accepted orchestrator intent, prompt-data trust, provenance, and native Task child-isolation follow-up.
 - Earlier implementation, test, plugin-only deployment, and post-restart runtime evidence are historical and do not establish the current overall live-isolation criterion.
-- No GitHub push, npm publish, tag, or version action.
+- Git-only delivery to origin/main was confirmed after validation; no npm publication, tag, or version change occurred.
 - The accepted ADR-039 plugin-adoption slice is independently verified offline; its actual global adoption/install and live isolation gate are documented in the completed live-gate proof below.
 
 ## Acceptance criteria
@@ -24,7 +24,7 @@ Record the bounded orchestrator intent/provenance follow-up while preserving the
 4. V2 setup uses the documented plugin-context shape: the context API client exposes ctx.session.get({sessionID}); the adapter does not depend on ctx.client. It recognizes direct matching SessionInfo and retains the optional data-envelope/error fallback.
 5. V1 nested path/query plus data decoding remains compatible.
 6. The setup regression uses a context with top-level session.get and no client property. Its agentless child metadata lookup is asserted with the existing {sessionID, directory} argument object and preserves workflow bytes/state, prevents bootstrap and parent-workflow injection, and retains native Task worker identity. The completed live gate used one global adoption, one plugins-only install, one restart invocation, read-only post-restart checks, and exactly one read-only native worker-verify Task. The project workflow file was byte-identical immediately before and after that Task; no probe, retry, second Task, or second restart occurred.
-7. The offline compatibility regression, full suite, CLI-sync check, diff check, and pre-record specs validation pass. These checks do not establish live deployment or runtime isolation; no shipping claim is made.
+7. The offline compatibility regression, full suite, CLI-sync check, diff check, and pre-record specs validation pass. These checks do not establish live deployment or runtime isolation by themselves; the completed live gate is recorded below.
 8. The separate ADR-039 offline CLI-adoption slice satisfies its six independently verified criteria: exact syntax/allowlist and rejection cases; fail-closed preconditions and no-write rejections; single-entry hash-only success with byte/manifest preservation and ordinary-error rollback; isolated standard install without weakening strict install/uninstall preflight; CLI documentation/help; and independent focused/full/check/spec validation. The offline PASS is distinct from, and is supplemented by, the completed live-isolation proof below.
 
 ## Latest live Task-isolation recurrence (2026-10-23)
@@ -101,10 +101,10 @@ Exactly one `opencode service restart` invocation was issued. That tool call was
 
 Exactly one live native read-only `worker-verify` Task ran and reported the global orchestrator up-to-date/deployed. Primary SHA-256 comparison immediately before and after the Task established that project `.specs/state/workflow.json` was byte-identical. No probe, retry, second Task, or second restart occurred.
 
-Independent offline proof also passed: adoption CLI overall PASS (6/6); `node --test cli/commands/plugin.test.js cli/main.test.js` PASS (58/58); `npm test` PASS (605/605); check-cli and diff-check PASS; specs validation PASS (208 files, 80 features, 39 ADRs, 238 links, 0 issues). Together the offline and live evidence validate this bounded follow-up. The parent orchestrator overall status and Portuguese classifier resolution are unchanged. Git push remains pending; no commit, push, npm publish, tag, or version change is claimed, and this is not SHIPPED.
+Independent offline proof also passed: adoption CLI overall PASS (6/6); `node --test cli/commands/plugin.test.js cli/main.test.js` PASS (58/58); `npm test` PASS (605/605); check-cli and diff-check PASS; specs validation PASS (208 files, 80 features, 39 ADRs, 238 links, 0 issues). Together the offline and live evidence validate this bounded follow-up. The validated follow-up was pushed normally to origin/main, and a read-only remote-ref check confirmed the pushed ref matched. No force push, npm release/publication, tag, or version change occurred; delivery is Git-only. The parent orchestrator overall status and Portuguese classifier resolution are unchanged.
 
 <!-- guarana:record:start -->
-Status: VALIDATED
-Proof: Global node bin/guarana.js plugin adopt guarana-orchestrator.js --accept-current succeeded exactly once; immediate assertions confirmed installed plugin bytes unchanged and only the selected manifest hash changed.; Read-only preflight passed for 3 plugins, 3 engines, and 0 profile writes; one node bin/guarana.js plugin install --plugins-only succeeded; all three global plugins match current bundles, plugin status shows current and engines deployed/healthy, and worker/advisor profile snapshot matches pre-install baseline.; Exactly one opencode service restart invocation was issued; the call was interrupted and user confirmed restart. Post-restart read-only opencode service status and /api/info succeeded; location-scoped /api/plugin showed guarana.orchestrator active from the global plugin path.; Exactly one live native read-only worker-verify Task reported global orchestrator up-to-date/deployed; primary SHA-256 comparison immediately before/after proved .specs/state/workflow.json byte-identical. No probe, retry, second Task, or second restart occurred.; Independent offline proof: adoption CLI PASS 6/6; node --test cli/commands/plugin.test.js cli/main.test.js PASS 58/58; npm test PASS 605/605; check-cli and diff-check PASS; specs validation PASS with 208 files, 80 features, 39 ADRs, 238 links, and 0 issues.
+Status: SHIPPED
+Proof: The live gate passed exactly as recorded in the current feature and change records.; The validated follow-up was pushed normally to origin/main; read-only git ls-remote origin refs/heads/main confirmed the remote ref matched the pushed commit.; No force push, npm release/publication, tag, or version change occurred.; cli/main.test.js remains a pre-existing unrelated, uncommitted unstaged change and is not attributed to this follow-up.
 Change: .specs/changes/2026-10-23-orchestrator-intent-provenance-safety.md
 <!-- guarana:record:end -->

@@ -1,6 +1,6 @@
 # Change — Orchestrator intent and provenance safety follow-up
 
-**Current status:** VALIDATED — the V2 setup adapter correction and regression, ADR-039 adoption CLI, offline checks, and completed authorized live isolation gate passed. GitHub push remains pending; not SHIPPED.
+**Current status:** SHIPPED — the V2 setup adapter correction and regression, ADR-039 adoption CLI, offline checks, and completed authorized live isolation gate passed; the validated follow-up was pushed normally to origin/main as Git-only delivery. No npm release/publication, tag, or version change occurred.
 
 **Historical status at the earlier checkpoint:** VALIDATED · 2026-10-23 · GitHub push pending
 
@@ -18,9 +18,9 @@ At the earlier checkpoint, the bounded follow-up to the orchestrator feature was
 - `npm run check-cli` and `git diff --check` passed. Final specs validation (`node bin/guarana.js specs validate . --json`) returned `ok:true`: 207 files scanned, 80 feature specs, 38 ADRs, 234 links, zero issues. Package inventory contained 131 files, included required documentation, and had no `node_modules` paths.
 - Global plugin-only deployment completed. The installed plugin hash matches canonical and CLI copies; plugin status is up-to-date and engine health is OK. The user confirmed service restart and supplied post-restart API v2.1.3, a changed PID, and active `/api/plugin` status. No PID value or session identifier is recorded.
 
-## Shipping boundary
+## Shipping boundary at the earlier checkpoint
 
-The completed gate validates this bounded follow-up. GitHub push remains pending; no npm publish, tag, or version action occurred. This is VALIDATED, not SHIPPED.
+At that checkpoint, the completed gate validated this bounded follow-up, but GitHub push remained pending; no npm publish, tag, or version action had occurred. The status was VALIDATED, not SHIPPED.
 
 ## Latest live Task-isolation recurrence (2026-10-23)
 
@@ -68,4 +68,8 @@ Exactly one `opencode service restart` invocation was issued. The tool call was 
 
 Exactly one live native read-only `worker-verify` Task reported the global orchestrator up-to-date/deployed. Primary SHA-256 comparison immediately before and after that Task established `.specs/state/workflow.json` was byte-identical. No probe, retry, second Task, or second restart occurred.
 
-Offline proof: adoption CLI overall PASS (6/6); `node --test cli/commands/plugin.test.js cli/main.test.js` PASS (58/58); `npm test` PASS (605/605); check-cli and diff-check PASS; specs validation PASS (208 files, 80 features, 39 ADRs, 238 links, 0 issues). The bounded follow-up is VALIDATED. GitHub push remains pending; no commit, push, npm publish, tag, or version change is claimed; it is not SHIPPED. The parent orchestrator overall status and Portuguese classifier resolution are unchanged.
+Offline proof: adoption CLI overall PASS (6/6); `node --test cli/commands/plugin.test.js cli/main.test.js` PASS (58/58); `npm test` PASS (605/605); check-cli and diff-check PASS; specs validation PASS (208 files, 80 features, 39 ADRs, 238 links, 0 issues). The bounded follow-up was VALIDATED at the time of that gate. The parent orchestrator overall status and Portuguese classifier resolution are unchanged.
+
+## Post-push receipt (2026-10-23)
+
+The validated follow-up was pushed normally to origin/main, and a read-only remote-ref check confirmed the remote ref matched. No force push, npm release/publication, tag, or version change occurred. `cli/main.test.js` remains an unrelated, uncommitted change and is not attributed to this follow-up.
