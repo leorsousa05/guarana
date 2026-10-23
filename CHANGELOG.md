@@ -91,6 +91,16 @@ maintainer action.
 - Automatic `.specs` bootstrap creates a generic `.specs/conventions.md` for
   new projects while preserving any existing customized conventions file.
 
+## [1.5.0] - 2026-10-22 (unpublished candidate)
+
+### Changed
+- Blocker recovery uses bounded evidence searches and verification proportional
+  to the changed criteria.
+- `workflow_tick(start_task)` starts work atomically while preserving normal
+  workflow history.
+- Primary workflow progress reports are mandatory after each meaningful phase
+  or subtask and distinguish phase completion from whole-task completion.
+
 ## [1.4.0] - 2026-10-22
 
 ### Added

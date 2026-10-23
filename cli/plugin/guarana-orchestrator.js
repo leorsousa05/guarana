@@ -16,7 +16,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const pluginDir = path.dirname(fileURLToPath(import.meta.url));
 const ORCHESTRATOR_INJECTION_MARKER = '<!-- guarana orchestrator injection -->';
 const ADVISOR_OPT_IN_MARKER = '<!-- guarana-advisor-opt-in -->';
-const MEMORY_CONTEXT_GROUPS = ['decisions', 'bugs', 'solutions', 'refactors', 'preferences', 'superseded', 'atoms'];
+const MEMORY_CONTEXT_GROUPS = ['project_context', 'global_preferences'];
 const WORKER_AGENT_NAMES = new Set(['worker-code', 'worker-verify', 'worker-debug', 'worker-specs', 'guarana-advisor']);
 const INJECTION_CACHE_SYMBOL = Symbol.for('guarana.orchestrator.memory-injection-cache');
 const injectedMemoryBySession = globalThis[INJECTION_CACHE_SYMBOL] || new Map();
@@ -409,14 +409,12 @@ export const GuaranaOrchestrator = async ({ directory }) => {
           : Promise.resolve({ decisions: [], bugs: [], solutions: [], refactors: [], preferences: [], superseded: [], atoms: [], count: 0 }),
         e.tools.memoryGetGlobalPreferences(userVaultDir, { limit: 3 }),
       ]);
-      const preferences = [
-        ...(projectContext.preferences || []),
-        ...globalPreferences.preferences,
-      ];
+      const projectNodes = ['decisions', 'bugs', 'solutions', 'refactors', 'preferences', 'superseded', 'atoms']
+        .flatMap((group) => projectContext[group] || []);
       return {
-        ...projectContext,
-        preferences,
-        count: projectContext.count + globalPreferences.count,
+        global_preferences: globalPreferences.preferences,
+        project_context: projectNodes,
+        count: projectNodes.length + globalPreferences.count,
       };
     } catch (err) {
       append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
@@ -507,23 +505,27 @@ export const GuaranaOrchestrator = async ({ directory }) => {
     },
     workflow_tick: {
       description:
-        'Advance the guarana workflow state machine. Actions: new_task (start/re-plan), plan_complete, run_start, code_complete, verify_pass, verify_fail, verify_skip, fix_start, debug_complete, abort, force (with skill). Call when a step completes so the loop continues automatically.',
+        'Advance the guarana workflow state machine. Actions: new_task (start/re-plan), plan_complete, run_start, start_task, code_complete, verify_pass, verify_fail, verify_skip, fix_start, debug_complete, abort, force (with skill). Use start_task only after guarana:plan discovery is closed and any required worker-specs record write is reported; provide explicit nonempty goal and condition. It atomically performs new_task -> plan_complete -> run_start. Do not skip planning or ask the user to accept a shortcut. Individual transitions remain available for genuinely open planning and other stage changes.',
       args: {
         action: {
           type: 'string',
           enum: [
-            'new_task', 'plan_complete', 'run_start', 'code_complete',
+            'new_task', 'plan_complete', 'run_start', 'start_task', 'code_complete',
             'verify_pass', 'verify_fail', 'verify_skip', 'fix_start', 'debug_complete',
             'abort', 'force',
           ],
           description: 'the transition to apply',
         },
-        goal: { type: 'string', description: 'goal text (new_task / re-plan)' },
-        condition: { type: 'string', description: 'verifiable condition for the task' },
+        goal: { type: 'string', description: 'goal text (new_task / re-plan); required and nonempty for start_task' },
+        condition: { type: 'string', description: 'verifiable condition for the task; required and nonempty for start_task' },
         skill: { type: 'string', description: 'skill name when action=force' },
         note: { type: 'string', description: 'optional human note' },
       },
       execute: async (args, context = {}) => {
+        if (typeof context?.sessionID !== 'string' || !context.sessionID.trim()
+          || typeof context?.agent !== 'string' || !context.agent.trim()) {
+          return JSON.stringify({ ok: false, error: 'workflow_tick requires nonempty sessionID and agent caller identity.' });
+        }
         if (isWorkerContext(context.sessionID, context.agent)) {
           return JSON.stringify({ ok: false, error: 'Task workers cannot advance the parent workflow; return the worker contract to the primary context.' });
         }
@@ -533,6 +535,11 @@ export const GuaranaOrchestrator = async ({ directory }) => {
             return { ok: false, error: `unknown action: ${action}`, state: c.state.load(directory).state };
           }
           const wf = c.state.load(directory);
+          if (action === 'start_task'
+            && (typeof args.goal !== 'string' || !args.goal.trim()
+              || typeof args.condition !== 'string' || !args.condition.trim())) {
+            return { ok: false, error: 'start_task requires explicit nonempty goal and condition', state: wf.state };
+          }
           const applied = c.state.apply(wf, action, {
             skill: args.skill || undefined,
             goal: args.goal != null ? args.goal : wf.goal,
@@ -544,7 +551,7 @@ export const GuaranaOrchestrator = async ({ directory }) => {
             return { ok: false, error: `illegal transition ${action} from ${wf.state}`, state: wf.state };
           }
           c.state.save(directory, applied);
-          if ((action === 'new_task' && args.goal) || action === 'force') {
+          if (((action === 'new_task' || action === 'start_task') && args.goal) || action === 'force') {
             if (workflowPreferences(c).specs.enabled) {
               try {
                 const skill = String(args.skill || applied.skill || 'plan').replace(/^guarana[:_-]?/i, '');
@@ -556,15 +563,18 @@ export const GuaranaOrchestrator = async ({ directory }) => {
           }
           latest = applied;
           memoryContext = await loadContext(applied.goal || applied.activeTask || '');
-          append({
-            ts: Date.now(),
-            type: 'workflow',
-            event: action,
-            from: wf.state,
-            to: applied.state,
-            skill: applied.skill,
-            note: args.note || '',
-          });
+          const history = action === 'start_task' ? applied.history.slice(-3) : [applied.history.at(-1)];
+          for (const entry of history) {
+            append({
+              ts: Date.now(),
+              type: 'workflow',
+              event: entry.event,
+              from: entry.from,
+              to: entry.to,
+              skill: c.state.skillForState(entry.to),
+              note: entry.note || '',
+            });
+          }
           return { ok: true, state: applied.state, skill: applied.skill, goal: applied.goal };
         })(args);
       },

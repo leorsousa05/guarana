@@ -53,7 +53,14 @@ describe('GuaranaMemory', () => {
   it('injects automatic memory rules distinguishing global preferences from project decisions', async () => {
     const output = { system: [] };
     await api['experimental.chat.system.transform']({}, output);
-    assert.match(output.system.join('\n'), /automatically.*clear/i);
+    assert.match(output.system.join('\n'), /automatically save only when user intent is unmistakably durable/i);
+    assert.match(output.system.join('\n'), /unmistakably durable/i);
+    assert.match(output.system.join('\n'), /ambiguous, do not save.*ask one clarifying question/i);
+    assert.match(output.system.join('\n'), /asks to put guidance in a skill or document.*without also creating a duplicate memory/i);
+    assert.match(output.system.join('\n'), /Before every save, call `memory_search`/i);
+    assert.match(output.system.join('\n'), /rel: "supersedes"/i);
+    assert.match(output.system.join('\n'), /Report the saved memory type and scope only after the save tool returns success/i);
+    assert.match(output.system.join('\n'), /Do not capture raw prompts, conversation transcripts, tool inputs, or tool outputs/i);
     assert.match(output.system.join('\n'), /scope: "global"/);
     assert.match(output.system.join('\n'), /scope: "project"/);
     assert.match(output.system.join('\n'), /ordinary task requests/);
@@ -177,6 +184,28 @@ describe('GuaranaMemory', () => {
       }));
       assert.equal(search.results.length, 1);
       assert.equal(search.results[0].scope, 'global');
+    } finally {
+      if (oldHome === undefined) delete process.env.HOME;
+      else process.env.HOME = oldHome;
+    }
+  });
+
+  it('accepts essential priority only for a global preference and exposes the optional schema', async () => {
+    const oldHome = process.env.HOME;
+    const fakeHome = path.join(tmpDir, 'priority-home');
+    process.env.HOME = fakeHome;
+    try {
+      const saved = JSON.parse(await api.tool.memory_save_node.execute({
+        type: 'preference', scope: 'global', priority: 'essential',
+        intent: 'response format', summary: 'Use concise numbered steps.',
+      }));
+      assert.equal(saved.priority, 'essential');
+      assert.deepEqual(api.tool.memory_save_node.args.priority.enum, ['essential', 'normal']);
+      const invalid = JSON.parse(await api.tool.memory_save_node.execute({
+        type: 'decision', scope: 'project', priority: 'essential',
+        intent: 'misuse', summary: 'must fail',
+      }));
+      assert.match(invalid.error, /priority is only valid/);
     } finally {
       if (oldHome === undefined) delete process.env.HOME;
       else process.env.HOME = oldHome;

@@ -91,6 +91,17 @@ function parseMemoryArgs(args) {
     return result;
   }
 
+  if (subcommand === 'delete') {
+    const id = args[1] && !args[1].startsWith('--') ? args[1] : undefined;
+    if (!id) fail('missing node id: guarana memory delete <id> --scope project|global --confirm');
+    const rest = args.slice(2);
+    const flags = parseFlags(rest, { '--scope': 'scope' });
+    if (!flags.scope) fail('memory delete requires --scope project|global');
+    if (flags.scope !== 'project' && flags.scope !== 'global') fail(`invalid --scope value: ${flags.scope}`);
+    if (!rest.includes('--confirm')) fail('memory delete requires explicit --confirm');
+    return { command: 'delete', id, scope: flags.scope, confirm: true };
+  }
+
   return { command: subcommand };
 }
 

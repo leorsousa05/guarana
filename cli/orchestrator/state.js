@@ -37,6 +37,9 @@ const TRANSITIONS = {
   new_task: { from: ['idle', 'completed', 'planning', 'building', 'coding', 'verifying', 'debugging'], to: 'planning' },
   plan_complete: { from: ['planning'], to: 'building' },
   run_start: { from: ['building'], to: 'coding' },
+  // Public kickoff is legal only once planning is complete. apply() expands it
+  // into the three ordinary transitions so history and telemetry retain them.
+  start_task: { from: ['planning'], to: 'coding' },
   code_complete: { from: ['coding'], to: 'verifying' },
   fix_start: { from: ['debugging'], to: 'coding' },
   debug_complete: { from: ['debugging'], to: 'verifying' },
@@ -83,6 +86,26 @@ export function canTransition(event, from) {
 export function apply(workflow, event, opts = {}) {
   const from = workflow.state;
   if (!canTransition(event, from)) return null;
+  if (event === 'start_task') {
+    if (typeof opts.goal !== 'string' || !opts.goal.trim()
+      || typeof opts.condition !== 'string' || !opts.condition.trim()) return null;
+
+    // Build the entire transition sequence in memory before the caller saves it.
+    // A rejected or failed step therefore cannot expose partial state/history.
+    let next = workflow;
+    const transitionOptions = { ...opts };
+    delete transitionOptions.skill;
+    for (const transition of ['new_task', 'plan_complete', 'run_start']) {
+      next = apply(next, transition, {
+        ...transitionOptions,
+        goal: opts.goal,
+        condition: opts.condition,
+        activeTask: opts.goal,
+      });
+      if (!next) return null;
+    }
+    return next;
+  }
   const to = event === 'force'
     ? stateForSkill(opts.skill) || from
     : TRANSITIONS[event].to;

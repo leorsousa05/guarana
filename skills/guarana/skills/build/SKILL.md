@@ -7,6 +7,14 @@ description: Use when starting or executing a run, managing run lifecycle (Frame
 
 The run skill. Four stages, always in order: **Frame → Run → Verify → Record**. Record is NEVER skipped — not on abort, not on error, not on cap.
 
+## User-facing progress
+In the primary chat, after every meaningful completed phase or subtask—including
+planning, each `worker-code` result, and verification—send a concise update with
+what completed, changed paths/behavior, the next action, and what remains or is
+blocked. A completed phase is not a completed task; planning completion is not
+task completion. After verification/final gates, the final update includes exact
+changed paths and checks/results.
+
 ## 0. Trigger classification (outer-loop entry)
 - **Heartbeat** — run once per turn/invocation.
 - **Cron / budget** — run on a schedule or when a budget threshold is reached.
@@ -22,6 +30,15 @@ worker budget, and the relevant state/spec pointers. Wait for its diff + stop
 reason before advancing `code_complete`; the primary context does not implement
 the delegated change. Each worker iteration: Perceive → Think → Act → Observe.
 Iterations never decide stopping — the guards do (guarana:verify).
+
+If evidence for one criterion is blocked, continue independent safe work that does
+not depend on that evidence. Do not repeat an identical denied request. Ask only
+for a material decision or actual privileged permission; do not replace a denied
+native Task dispatch with same-context work or bypass tool permissions.
+
+Select the smallest ordinary checks that map to the changed acceptance criteria.
+Broader tests are justified only by the acceptance condition or change impact; no
+smoke tests or elaborate/full E2E by default.
 
 ## 3. Verify
 Call native Task with `worker-verify` in a SEPARATE context from worker-code,
@@ -49,3 +66,5 @@ not satisfy the worker contract.
 ## Hard rules
 - Hard cap hit mid-Run → stop immediately, Record `hard-cap`. Never silently continue.
 - If a result can't fail the Verify gate, the run can't tell success from failure — fix the condition before running (hard truth 5).
+- Continue independent safe work around evidence blockers, but keep the hard caps,
+  native Task isolation, actual permission denials, and honest stop reason intact.

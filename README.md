@@ -25,7 +25,7 @@ task requests automatically move through planning, implementation, verification,
 and memory, while the important state stays inspectable on disk.
 
 <p>
-  <a href="https://github.com/leorsousa05/guarana"><img src="https://img.shields.io/badge/version-1.4.0-7c3aed?style=flat-square" alt="Version 1.4.0"></a>
+  <a href="https://github.com/leorsousa05/guarana"><img src="https://img.shields.io/badge/version-1.5.0%20unpublished%20candidate-7c3aed?style=flat-square" alt="Version 1.5.0 unpublished candidate"></a>
   <img src="https://img.shields.io/badge/license-MIT-2563eb?style=flat-square" alt="MIT license">
 </p>
 
@@ -250,8 +250,8 @@ npm run build
 
 ## Status
 
-Guarana `1.4.0` is the version documented in this repository; publication and
-Git tagging are separate maintainer actions.
+Guarana `1.5.0` is the local unpublished candidate documented in this repository;
+publication and Git tagging are separate maintainer actions.
 
 ## License
 

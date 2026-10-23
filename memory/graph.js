@@ -28,6 +28,12 @@ export function validateNode(node) {
     throw new MemoryValidationError(`node.status must be one of ${NODE_STATUSES.join("|")}`);
   if (typeof node.ts !== "number" || !Number.isFinite(node.ts))
     throw new MemoryValidationError("node.ts is required (number)");
+  if (node.priority !== undefined) {
+    if (node.type !== "preference" || node.scope !== "global")
+      throw new MemoryValidationError("node.priority is only valid for global preference nodes");
+    if (node.priority !== "essential" && node.priority !== "normal")
+      throw new MemoryValidationError('node.priority must be "essential" or "normal"');
+  }
   if (node.tags !== undefined && (!Array.isArray(node.tags) || node.tags.some((t) => typeof t !== "string")))
     throw new MemoryValidationError("node.tags must be an array of strings");
   if (

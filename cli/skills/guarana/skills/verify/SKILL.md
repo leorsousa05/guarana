@@ -26,8 +26,10 @@ acceptance criteria.
 For each acceptance criterion in the spec:
 1. Re-state the criterion's pass/fail condition.
 2. Apply the falsifiability test: if this criterion's failure would be undetectable, REJECT it (hard truth 5) — e.g., "output looks reasonable" is not a criterion.
-3. Demand the cited evidence (proof path, real output, diff inspection). Absence of evidence = FAIL, not neutrality.
-4. Verdict per criterion: PASS or FAIL + proof path.
+3. Before stopping for missing evidence, make bounded searches of supported authoritative and alternative sources. Respect tool scope, security, and policy; never fabricate proof or repeat an identical denied request.
+4. Report evidence status precisely: `not checked`, `unavailable in this context`, `contradictory`, or `absent`. A null/empty result from a scoped query does not establish absence; use `absent` only when supported by an adequately scoped search.
+5. Continue independent checks even when one source or criterion is blocked. Record what was searched, the attempts/results, and the best-supported conclusion; state the smallest concrete permission, source, or artifact that would unblock the missing check.
+6. Missing proof remains FAIL, not neutrality: never issue PASS/VALIDATED/SHIPPED without the required evidence. Verdict per criterion: PASS or FAIL + proof path (or exact evidence status and blocker).
 
 **Overall verdict = AND of all criteria.** Never issue a verdict without cited evidence.
 

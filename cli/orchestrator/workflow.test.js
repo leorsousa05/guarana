@@ -37,6 +37,10 @@ test('legal transitions', () => {
   assert.ok(canTransition('new_task', 'idle'));
   assert.ok(canTransition('new_task', 'completed'));
   assert.ok(canTransition('plan_complete', 'planning'));
+  assert.ok(canTransition('start_task', 'planning'));
+  for (const state of ['idle', 'building', 'coding', 'verifying', 'debugging', 'completed']) {
+    assert.ok(!canTransition('start_task', state), `start_task must reject ${state}`);
+  }
   assert.ok(!canTransition('plan_complete', 'idle'));
   assert.ok(canTransition('run_start', 'building'));
   assert.ok(canTransition('code_complete', 'coding'));
@@ -161,6 +165,55 @@ test('full happy path: idle -> ... -> completed', () => {
   assert.equal(w.skill, null);
 });
 
+test('start_task atomically records the three ordinary kickoff transitions and preserves goal/condition', () => {
+  const dir = tmp();
+  const planning = apply(createWorkflow(), 'new_task', {
+    goal: 'draft goal', condition: 'draft condition', ts: 1,
+  });
+  assert.ok(save(dir, planning));
+
+  const started = apply(planning, 'start_task', {
+    goal: 'Explicit implementation goal',
+    condition: 'The public kickoff reaches coding with all events persisted',
+    skill: 'verify',
+    ts: 2,
+  });
+  assert.ok(started);
+  assert.equal(started.state, 'coding');
+  assert.equal(started.skill, 'code');
+  assert.equal(started.goal, 'Explicit implementation goal');
+  assert.equal(started.condition, 'The public kickoff reaches coding with all events persisted');
+  assert.equal(started.activeTask, 'Explicit implementation goal');
+  assert.deepEqual(started.history.slice(-3).map(({ event, from, to }) => ({ event, from, to })), [
+    { event: 'new_task', from: 'planning', to: 'planning' },
+    { event: 'plan_complete', from: 'planning', to: 'building' },
+    { event: 'run_start', from: 'building', to: 'coding' },
+  ]);
+  assert.ok(started.history.slice(-3).every((entry) => entry.event !== 'start_task'));
+
+  assert.ok(save(dir, started));
+  assert.deepEqual(load(dir), started);
+});
+
+test('start_task rejects missing goal/condition and illegal states without partial state or history', () => {
+  const planning = apply(createWorkflow(), 'new_task', { goal: 'planned task' });
+  for (const options of [
+    { condition: 'condition without goal' },
+    { goal: 'goal without condition' },
+    { goal: '', condition: 'condition' },
+    { goal: 'goal', condition: '   ' },
+  ]) {
+    assert.equal(apply(planning, 'start_task', options), null);
+    assert.deepEqual(planning.history.map((entry) => entry.event), ['new_task']);
+    assert.equal(planning.state, 'planning');
+  }
+
+  const building = apply(planning, 'plan_complete');
+  assert.equal(apply(building, 'start_task', { goal: 'goal', condition: 'condition' }), null);
+  assert.equal(building.state, 'building');
+  assert.deepEqual(building.history.map((entry) => entry.event), ['new_task', 'plan_complete']);
+});
+
 test('verification failure routes to debugging, then back to verification', () => {
   let w = toVerifying();
   assert.equal(w.state, 'verifying');
@@ -177,7 +230,7 @@ test('debug Task delegation occurs after a verification failure, not on a green 
   assert.equal(failed.skill, 'debug');
   const debugging = apply(toVerifying(), failed.event, { skill: failed.skill });
   const debugInjection = buildInjection(debugging);
-  assert.match(debugInjection, /native Task tool with subagent `worker-debug`/);
+  assert.match(debugInjection, /call `worker-debug` in native Task/);
   assert.doesNotMatch(debugInjection, /guarana:debug \(injected\)/);
 
   const green = decide({ userText: 'all good', workflow: toVerifying() });
@@ -513,15 +566,23 @@ test('system block is always-on and names the skill', () => {
   assert.match(block, /Guarana workflow/);
   assert.match(block, /Current state: \*\*planning\*\*/);
   assert.match(block, /guarana:plan/);
-  assert.match(block, /Only explicit `guarana:<skill>` commands or clear product\/document\/configuration changes start planning/i);
-  assert.match(block, /informational and read-only requests create no task spec or tracker\/project-state writes/i);
-  assert.match(block, /primary owns requirements, acceptance, workflow transitions, and independent verification/i);
-  assert.match(block, /worker-code and worker-verify in separate native Task contexts/i);
-  assert.match(block, /worker-debug only for actionable confirmed failures/i);
-  assert.match(block, /`worker-specs` is dispatched only for a durable human-readable record change/i);
-  assert.match(block, /transient stage, budget, and current-step data belongs in operational workflow JSON/i);
-  assert.match(block, /Follow `guarana:plan` for requirements discovery, worker ownership, record cadence, ADR, and known-issue policy/i);
-  assert.ok(block.length < 1800, `always-on block unexpectedly long: ${block.length} chars`);
+  assert.match(block, /Plan only explicit `guarana:<skill>` commands or clear product\/doc\/config changes/i);
+  assert.match(block, /read-only\/info requests create no task spec or tracker\/project-state writes/i);
+  assert.match(block, /Primary owns requirements, acceptance, transitions, and verification/i);
+  assert.match(block, /workers use isolated native Task contexts and never call `workflow_tick`/i);
+  assert.match(block, /Use `worker-debug` only for actionable confirmed failures/i);
+  assert.match(block, /Dispatch `worker-specs` only for durable human-readable record changes/i);
+  assert.match(block, /Stage\/budget\/current-step data stays in workflow JSON/i);
+  assert.match(block, /Follow `guarana:plan` for discovery, worker ownership, records, ADRs, and known-issue policy/i);
+
+  for (const preferences of [undefined, { verify: { enabled: false } }]) {
+    let current = apply(createWorkflow(), 'new_task');
+    for (const event of [null, 'plan_complete', 'run_start', 'code_complete', 'verify_fail', 'debug_complete', 'verify_pass']) {
+      if (event) current = apply(current, event);
+      const currentBlock = buildSystemBlock(current, preferences);
+      assert.ok(currentBlock.length < 1800, `always-on block unexpectedly long: ${currentBlock.length} chars`);
+    }
+  }
 });
 
 test('planning injection asks about consequential unknowns before code dispatch', () => {
@@ -556,6 +617,24 @@ test('recording policies limit ADRs and known issues to durable actionable cases
   assert.match(plan, /durable architectural, contract, data, security, privacy,\s+or integration decision/i);
   assert.match(plan, /material alternatives/i);
   assert.match(plan, /tactical implementation\s+choices do not need ADRs/i);
+  assert.match(plan, /Evidence\/source map/);
+  assert.match(plan, /authoritative source, supported alternative source[\s\S]*access\/scope limit/i);
+  assert.match(plan, /Search feasible supported sources before asking/);
+  assert.match(plan, /routine authorized safe steps do not need user approval/i);
+  const verify = readSkill('verify');
+  assert.match(verify, /bounded searches of supported authoritative and alternative sources/i);
+  assert.match(verify, /`not checked`, `unavailable in this context`, `contradictory`, or `absent`/);
+  assert.match(verify, /A null\/empty result from a scoped query does not establish absence/i);
+  assert.match(verify, /Continue independent checks/i);
+  assert.match(verify, /Missing proof remains FAIL/i);
+  const build = readSkill('build');
+  assert.match(build, /continue independent safe work/i);
+  assert.match(build, /Do not repeat an identical denied request/i);
+  assert.match(build, /smallest ordinary checks that map to the changed acceptance criteria/i);
+  assert.match(build, /no\s+smoke tests or elaborate\/full E2E by default/i);
+  const code = readSkill('code');
+  assert.match(code, /smallest ordinary checks mapped to changed acceptance criteria/i);
+  assert.match(code, /Do not run smoke tests/i);
   assert.match(remember, /record task start\/end and material blockers or status changes in\s+`state\/project-state\.md`/i);
   assert.match(remember, /checkpoint[\s\S]*operational workflow\/run state/i);
   assert.match(remember, /actual build run/i);
@@ -573,7 +652,7 @@ test('recording policies limit ADRs and known issues to durable actionable cases
 });
 
 test('completionAction maps states to tick actions', () => {
-  assert.equal(completionAction('planning'), 'plan_complete');
+  assert.equal(completionAction('planning'), 'start_task');
   assert.equal(completionAction('coding'), 'code_complete');
   assert.equal(completionAction('verifying'), 'verify_pass|verify_fail');
   assert.equal(completionAction('verifying', { verify: { enabled: false } }), 'verify_skip');
@@ -587,37 +666,41 @@ test('injection includes the active skill full body (ponytail mechanism)', () =>
   assert.match(inj, /Guarana workflow/);
   assert.match(inj, /guarana:plan \(injected\)/);
   assert.match(inj, /# guarana:plan/);
-  assert.match(inj, /plan_complete/);
+  assert.match(inj, /action `start_task`/);
 });
 
 test('coding, verification, and debugging delegate to native Task workers without injecting worker bodies in the parent', () => {
   let workflow = createWorkflow();
   for (const event of ['new_task', 'plan_complete', 'run_start']) workflow = apply(workflow, event);
   const codeInjection = buildInjection(workflow);
-  assert.match(codeInjection, /native Task tool with subagent `worker-code`/);
-  assert.match(codeInjection, /wait for its diff\/stop-reason return/);
+  assert.match(codeInjection, /Call `worker-code` in native Task with exact condition, budget, and state pointers/);
+  assert.match(codeInjection, /inspect its diff\/stop reason/);
   assert.doesNotMatch(codeInjection, /guarana:code \(injected\)/);
-  assert.match(codeInjection, /worker subagents never call workflow_tick/);
+  assert.match(codeInjection, /workers use isolated native Task contexts and never call `workflow_tick`/i);
 
   workflow = apply(workflow, 'code_complete');
   const verifyInjection = buildInjection(workflow);
-  assert.match(verifyInjection, /native Task tool with subagent `worker-verify` in a fresh context/);
-  assert.match(verifyInjection, /criterion-level verdict\/proofs/);
+  assert.match(verifyInjection, /In a fresh native Task, call `worker-verify`/);
+  assert.match(verifyInjection, /criterion verdict\/proofs/);
   assert.doesNotMatch(verifyInjection, /guarana:verify \(injected\)/);
 
   workflow = apply(workflow, 'verify_fail');
   const debugInjection = buildInjection(workflow);
-  assert.match(debugInjection, /After a confirmed failure, call the native Task tool with subagent `worker-debug`/);
+  assert.match(debugInjection, /After a confirmed failure, call `worker-debug` in native Task/);
   assert.doesNotMatch(debugInjection, /guarana:debug \(injected\)/);
 
   const blocked = buildSystemBlock(workflow);
-  assert.match(blocked, /If Task is unavailable or denied, report the blocker and stop/);
+  assert.match(blocked, /if Task is unavailable\/denied, report the blocker and stop/i);
 });
 
 test('injection includes automatic memory context when supplied', () => {
   const w = apply(createWorkflow(), 'new_task', { goal: 'OAuth' });
   const inj = buildInjection(w, {
-    memoryContext: { count: 1, decisions: [{ summary: 'Use PKCE' }] },
+    memoryContext: {
+      count: 1,
+      global_preferences: [],
+      project_context: [{ id: 'mem-pkce', type: 'decision', scope: 'project', summary: 'Use PKCE' }],
+    },
   });
   assert.match(inj, /guarana memory \(automatic context\)/);
   assert.match(inj, /Use PKCE/);

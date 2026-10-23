@@ -168,6 +168,19 @@ async function run(args, context = {}) {
       }
       break;
     }
+    case 'delete': {
+      const scopedVault = parsed.scope === 'global'
+        ? vault.userVaultDir()
+        : vault.projectVaultDir(process.cwd());
+      requireVault(scopedVault);
+      try {
+        await tools.memoryDeleteNode(scopedVault, parsed);
+      } catch (err) {
+        fail(err.message);
+      }
+      stdoutLine(context, `deleted confirmed memory node ${parsed.id}`);
+      break;
+    }
     default:
       stderrLine(context, `unknown memory command: ${parsed.command}`);
       writeStdout(context, MEMORY_HELP);

@@ -45,7 +45,11 @@ record write is reported; calling `workflow_tick` alone never completes planning
    acceptance criteria. Criteria must distinguish a correct result from a plausible
    but wrong one. The worker reuses or creates the feature record and updates the
    tracker/project-state only for supplied durable task facts. Wait for changed
-   paths and validator status before `plan_complete`.
+   paths and validator status before closing planning. Once discovery is closed
+   and any required record write is reported, use `workflow_tick` action
+   `start_task` with explicit nonempty goal and condition. This completes the
+   planned stage transitions; it does not skip this skill. Keep `plan_complete`
+   available for genuinely open/partial planning and other individual transitions.
 2. **Intermediate milestones:** dispatch only when a material durable
    status/proof/pending-writes delta must be recorded. Do not dispatch for every
    lifecycle transition; stage, budget, and current-step data belongs in operational
@@ -86,6 +90,7 @@ constraints/integrations, and what observable result counts as done.
 
 Question policy:
 1. Investigate before asking; never ask for facts the repo/specs already answer.
+   Check feasible supported evidence sources and their scope/access limits first.
 2. Ask a small, coherent batch of the highest-impact questions (up to five per
    round). Use the question tool when available; otherwise ask plainly in chat.
 3. Do not ask questions just to appear thorough. A precise, low-risk task proceeds
@@ -96,10 +101,26 @@ Question policy:
    decision in an ADR only when it meets the ADR threshold above.
 5. If the human explicitly authorizes assumptions, write them down with their
    consequence and proceed only when the acceptance condition remains falsifiable.
+6. Ask for permission only when a real privileged access decision is required;
+   routine authorized safe steps do not need user approval.
 
 Discovery is complete when the outcome, boundaries, constraints, and acceptance
 condition are concrete enough to reject an incorrect implementation. Non-critical
 unknowns may remain as explicit, reversible assumptions.
+
+### Evidence/source map
+
+For each material acceptance criterion, identify the expected proof source before
+implementation: the criterion, authoritative source, supported alternative source
+if available, and any access/scope limit. Prefer direct repository artifacts,
+official/system-of-record output, or user-provided records according to the
+criterion. Search feasible supported sources before asking; a scoped empty result
+does not establish absence. Distinguish what is not checked from what cannot be
+accessed in this context.
+
+Ask only when a material decision cannot be safely inferred or actual privileged
+access/permission is required. Do not ask the user to approve routine, authorized
+safe inspection or work. Never bypass a denied tool or security/policy boundary.
 
 ## 2. Classify intent → route to exactly ONE skill
 | User intent | Route |

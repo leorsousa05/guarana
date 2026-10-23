@@ -25,6 +25,7 @@ const MEMORY = {
     { rows: ['  guarana memory review --list           List legacy draft nodes (id, type, intent, ts), most recent first'] },
     { rows: ['  guarana memory review <id> --confirm   Migrate a legacy draft (optional edits: --intent "..." --tags a,b)'] },
     { rows: ['  guarana memory review <id> --discard   Remove a legacy draft node and its edges'] },
+    { rows: ['  guarana memory delete <id> --scope <project|global> --confirm  Hard-delete one confirmed node and its edges'] },
     { rows: ['  guarana memory --help                  Show this help'] },
     { rows: ['  guarana memory -h                      Show this help'] },
   ],

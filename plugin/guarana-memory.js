@@ -15,9 +15,12 @@ const MEMORY_POLICY = [
   'Before answering each human message, notice whether it establishes a durable preference or project decision.',
   '- Standing instructions about how the user wants the assistant to behave ("always", "never", response style) are global `preference` memories; save with `memory_save_node` and `scope: "global"`.',
   '- Decisions, requirements, bugs, solutions, and refactors for the current codebase are project memories; save with the correct type and `scope: "project"`.',
-  '- Do this automatically when the intent is clear; do not wait for a memory command. Check for duplicates first and use `supersedes` when updating an existing preference.',
+  '- Automatically save only when user intent is unmistakably durable. If intent or durability is ambiguous, do not save; ask one clarifying question.',
+  '- If the user asks to put guidance in a skill or document, honor that destination without also creating a duplicate memory unless they separately ask for memory.',
+  '- Before every save, call `memory_search` in the intended scope and avoid duplicating an existing record. When a preference changes, link the new preference to the old one with `relatedTo: [{ id, rel: "supersedes" }]`.',
   '- Save a concise, reusable statement, link only real relationships, and do not save ordinary task requests, temporary instructions, inferred personal facts, or sensitive data.',
-  '- Global preferences are injected at session start and after context compaction; project memories are task-relevant. Do not claim a save succeeded unless the memory tool succeeds.',
+  '- Do not capture raw prompts, conversation transcripts, tool inputs, or tool outputs. Global preferences are injected at session start and after context compaction; project memories are task-relevant.',
+  '- Report the saved memory type and scope only after the save tool returns success; never claim a failed or unconfirmed save.',
   '',
   '## Guarana automatic skills',
   'After completing task work and before the final response, assess whether what surfaced is likely to help with similar future work.',
@@ -163,9 +166,14 @@ export const GuaranaMemory = async ({ directory }) => {
       if (!e || !e.tools) return JSON.stringify({ error: "memory engine not available" });
       const options = args || {};
       const scopedRead = handlerName === 'memorySearch' || handlerName === 'memoryGetContextForTask';
+      const scopedDelete = handlerName === 'memoryDeleteNode';
+      if (scopedDelete && options.scope == null)
+        return JSON.stringify({ error: 'scope is required and must be project or global' });
       const scope = options.scope || (scopedRead ? 'both' : 'project');
       if (!['project', 'global', 'both'].includes(scope))
         return JSON.stringify({ error: 'scope must be project, global, or both' });
+      if (scopedDelete && scope === 'both')
+        return JSON.stringify({ error: 'scope must be project or global for deletion' });
 
       if (scopedRead && scope === 'both') {
         const projectVault = e.vault.initVault(directory);
@@ -199,7 +207,9 @@ export const GuaranaMemory = async ({ directory }) => {
         return JSON.stringify(mergeContexts(projectContext, globalContext, preferences, limit));
       }
 
-      const vaultDir = vaultFor(e, scope);
+      const vaultDir = scopedDelete
+        ? (scope === 'global' ? e.vault.userVaultDir() : e.vault.projectVaultDir(directory))
+        : vaultFor(e, scope);
       const result = handlerName === 'memoryGetContextForTask'
         ? await e.tools[handlerName](vaultDir, options)
         : await e.tools[handlerName](vaultDir, options);
@@ -316,6 +326,7 @@ export const GuaranaMemory = async ({ directory }) => {
       args: {
         type: { type: "string", enum: ["decision", "bug", "solution", "refactor", "preference"] },
         scope: { type: "string", enum: ["project", "global"], description: "global for standing user preferences; project for current-project knowledge" },
+        priority: { type: "string", enum: ["essential", "normal"], description: "optional; valid only for global preference nodes" },
         intent: { type: "string", description: "what was happening" },
         summary: { type: "string", description: "the bug, solution, refactor, or decision and why it matters" },
         rejectedAlternatives: { type: "array", items: { type: "string" } },
@@ -355,6 +366,15 @@ export const GuaranaMemory = async ({ directory }) => {
         edits: { type: "object", description: "optional field edits applied on confirm" },
       },
       execute: runTool("memoryReviewDraft"),
+    },
+    memory_delete_node: {
+      description: 'Hard-delete one confirmed memory by exact ID. Explicit matching scope and confirm: true are mandatory; drafts must use memory_review_draft.',
+      args: {
+        id: { type: 'string', description: 'exact confirmed node ID' },
+        scope: { type: 'string', enum: ['project', 'global'], description: 'mandatory scope matching the node' },
+        confirm: { type: 'boolean', description: 'must be true to confirm deletion' },
+      },
+      execute: runTool('memoryDeleteNode'),
     },
   };
   // ---- End custom memory tools ----

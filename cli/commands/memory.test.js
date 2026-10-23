@@ -12,12 +12,14 @@ const { searchMemory } = require('./memory.js');
 const BIN = path.join(__dirname, '..', '..', 'bin', 'guarana.js');
 const MEMORY_COMMAND = path.join(__dirname, 'memory.js');
 
-function runResult(args, cwd) {
-  return spawnSync(process.execPath, [BIN, 'memory', ...args], { cwd, encoding: 'utf8' });
+function runResult(args, cwd, env = {}) {
+  return spawnSync(process.execPath, [BIN, 'memory', ...args], {
+    cwd, encoding: 'utf8', env: { ...process.env, ...env },
+  });
 }
 
-function run(args, cwd) {
-  const res = runResult(args, cwd);
+function run(args, cwd, env) {
+  const res = runResult(args, cwd, env);
   assert.equal(res.status, 0, `exit != 0 for: memory ${args.join(' ')}\nstdout: ${res.stdout}\nstderr: ${res.stderr}`);
   return res.stdout;
 }
@@ -141,6 +143,66 @@ describe('guarana memory review', () => {
     assert.ok(!nodes.some((x) => x.id === 'mem-a'));
     const edges = fs.readFileSync(path.join(cwd(), '.guarana', 'memory', 'edges.jsonl'), 'utf8');
     assert.ok(!edges.includes('mem-a'));
+  });
+});
+
+describe('guarana memory delete', () => {
+  const projectEdgesFile = () => path.join(cwd(), '.guarana', 'memory', 'edges.jsonl');
+
+  it('requires confirmation, exact ID, and scope; wrong scope, unknown IDs, and drafts stay untouched', () => {
+    writeNode(cwd(), { id: 'mem-confirmed-delete', type: 'decision', status: 'confirmed', scope: 'project', ts: 10, intent: 'x' });
+    writeNode(cwd(), { id: 'mem-draft-delete', type: 'atom', status: 'draft', scope: 'project', ts: 11, intent: 'y' });
+
+    for (const [args, diagnostic] of [
+      [['delete', 'mem-confirmed-delete'], 'requires --scope project|global'],
+      [['delete', 'mem-confirmed-delete', '--scope', 'project'], 'requires explicit --confirm'],
+    ]) {
+      const result = runResult(args, cwd());
+      assert.equal(result.status, 1);
+      assert.equal(result.stdout, '');
+      assert.match(result.stderr, new RegExp(diagnostic.replace(/[|]/g, '\\|')));
+    }
+
+    for (const id of ['mem-confirmed-delete', 'mem-draft-delete', 'mem-unknown']) {
+      const result = runResult(['delete', id, '--scope', 'global', '--confirm'], cwd());
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /unknown node id/);
+    }
+    const draft = runResult(['delete', 'mem-draft-delete', '--scope', 'project', '--confirm'], cwd());
+    assert.equal(draft.status, 1);
+    assert.match(draft.stderr, /not confirmed/);
+    assert.deepEqual(listNodes(cwd()).map((node) => node.id), ['mem-confirmed-delete', 'mem-draft-delete']);
+  });
+
+  it('deletes a confirmed project node and all its incident edges', () => {
+    writeNode(cwd(), { id: 'mem-delete-target', type: 'decision', status: 'confirmed', scope: 'project', ts: 10, intent: 'target' });
+    writeNode(cwd(), { id: 'mem-delete-retained', type: 'bug', status: 'confirmed', scope: 'project', ts: 11, intent: 'retained' });
+    fs.writeFileSync(projectEdgesFile(), [
+      { from: 'mem-delete-target', to: 'mem-delete-retained', rel: 'fixes', ts: 1 },
+      { from: 'mem-delete-retained', to: 'mem-delete-target', rel: 'relates-to', ts: 2 },
+      { from: 'mem-delete-retained', to: 'mem-delete-retained', rel: 'depends-on', ts: 3 },
+    ].map((edge) => JSON.stringify(edge)).join('\n') + '\n');
+
+    const out = run(['delete', 'mem-delete-target', '--scope', 'project', '--confirm'], cwd());
+    assert.match(out, /deleted confirmed memory node mem-delete-target/);
+    assert.deepEqual(listNodes(cwd()).map((node) => node.id), ['mem-delete-retained']);
+    const edges = fs.readFileSync(projectEdgesFile(), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.deepEqual(edges.map((edge) => edge.from), ['mem-delete-retained']);
+  });
+
+  it('deletes from an explicitly selected temporary global vault without initializing a missing one', () => {
+    const home = path.join(tmp, 'delete-home');
+    const globalVault = path.join(home, '.config', 'guarana', 'memory');
+    fs.mkdirSync(globalVault, { recursive: true });
+    fs.writeFileSync(path.join(globalVault, 'nodes.jsonl'), JSON.stringify({
+      id: 'mem-global-delete', type: 'preference', status: 'confirmed', scope: 'global', ts: 1, intent: 'private', summary: 'private text',
+    }) + '\n');
+    fs.writeFileSync(path.join(globalVault, 'edges.jsonl'), '');
+
+    const out = run(['delete', 'mem-global-delete', '--scope', 'global', '--confirm'], cwd(), { HOME: home });
+    assert.match(out, /deleted confirmed memory node mem-global-delete/);
+    assert.equal(fs.readFileSync(path.join(globalVault, 'nodes.jsonl'), 'utf8'), '');
+    assert.equal(fs.existsSync(path.join(home, '.config', 'guarana', 'memory', 'config.json')), false);
   });
 });
 

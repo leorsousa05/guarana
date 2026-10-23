@@ -33,11 +33,16 @@ test('worker profiles include canonical skill procedures and distinct permission
   assert.match(code, /edit: allow/);
   assert.match(code, /Read before edit/);
   assert.match(code, /diff \(or exact file list\)/);
+  assert.match(code, /smallest ordinary checks mapped to changed acceptance criteria/i);
+  assert.match(code, /Do not run smoke tests/i);
 
   const verify = generated[1].content;
   assert.match(verify, /edit: deny/);
   assert.match(verify, /Independent verifier/);
   assert.match(verify, /per-criterion PASS\/FAIL \+ proof path/);
+  assert.match(verify, /bounded searches of supported authoritative and alternative sources/i);
+  assert.match(verify, /`not checked`, `unavailable in this context`, `contradictory`, or `absent`/);
+  assert.match(verify, /Missing proof remains FAIL/i);
 
   const debug = generated[2].content;
   assert.match(debug, /"\*": deny/);

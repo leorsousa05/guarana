@@ -146,9 +146,15 @@ describe("graph CRUD", () => {
       { ...base, type: "nope" },
       { ...base, status: "nope" },
       { ...base, tags: "not-array" },
+      { ...base, priority: "essential" },
+      { ...base, type: "preference", scope: "project", priority: "normal" },
+      { ...base, type: "preference", scope: "global", priority: "urgent" },
     ]) {
       assert.throws(() => addNode(vaultDir, bad), MemoryValidationError);
     }
+    assert.equal(createNode(vaultDir, {
+      type: "preference", status: "confirmed", scope: "global", priority: "essential", ts: 2,
+    }).priority, "essential");
   });
 
   it("rejects edges referencing unknown node ids", () => {
@@ -316,6 +322,124 @@ describe("security", () => {
     const current = await memoryGetGlobalPreferences(globalVault, { limit: 3 });
     assert.equal(current.count, 1);
     assert.equal(current.preferences[0].id, replacement.id);
+    assert.equal(current.preferences[0].priority, "normal");
+  });
+
+  it("prioritizes the three newest essential global preferences and treats legacy priority as normal", async () => {
+    const { memoryGetGlobalPreferences } = await import("./tools.js");
+    const globalVault = initUserVault(path.join(tmpDir, "priority-home"));
+    const add = (id, ts, priority) => createNode(globalVault, {
+      id, type: "preference", status: "confirmed", scope: "global", ts,
+      ...(priority ? { priority } : {}), intent: id, summary: `Preference ${id}`,
+    });
+    add("normal-newest", 100);
+    add("essential-old", 10, "essential");
+    add("essential-middle", 30, "essential");
+    add("essential-newer", 40, "essential");
+    add("essential-newest", 50, "essential");
+    const capped = await memoryGetGlobalPreferences(globalVault, { limit: 20 });
+    assert.deepEqual(capped.preferences.map(({ id, priority }) => [id, priority]), [
+      ["essential-newest", "essential"],
+      ["essential-newer", "essential"],
+      ["essential-middle", "essential"],
+    ]);
+    assert.equal(capped.count, 3);
+
+    const legacyOnly = initUserVault(path.join(tmpDir, "legacy-priority-home"));
+    const legacy = createNode(legacyOnly, {
+      type: "preference", status: "confirmed", scope: "global", ts: 1,
+      intent: "legacy", summary: "No migration needed",
+    });
+    const legacyResult = await memoryGetGlobalPreferences(legacyOnly);
+    assert.equal(legacyResult.preferences[0].id, legacy.id);
+    assert.equal(legacyResult.preferences[0].priority, "normal");
+    assert.equal(getNode(legacyOnly, legacy.id).priority, undefined);
+  });
+
+  it("rejects priority on non-global preferences and unsupported priority values", async () => {
+    const { memorySaveNode } = await import("./tools.js");
+    for (const options of [
+      { type: "decision", scope: "global", priority: "essential" },
+      { type: "preference", scope: "project", priority: "normal" },
+      { type: "preference", scope: "global", priority: "urgent" },
+    ]) {
+      await assert.rejects(() => memorySaveNode(vaultDir, {
+        ...options, intent: "priority validation", summary: "must not persist",
+      }), /priority/);
+    }
+    assert.equal(listNodes(vaultDir).length, 0);
+  });
+
+  it("deletes only a confirmed exact-scope node and cleans incident edges", async () => {
+    const { memoryDeleteNode } = await import("./tools.js");
+    const target = createNode(vaultDir, {
+      type: "decision", status: "confirmed", scope: "project", intent: "target text", summary: "target summary",
+    });
+    const other = createNode(vaultDir, {
+      type: "bug", status: "confirmed", scope: "project", intent: "other", summary: "other",
+    });
+    createEdge(vaultDir, { from: target.id, to: other.id, rel: "fixes" });
+    createEdge(vaultDir, { from: other.id, to: target.id, rel: "relates-to" });
+    const retained = createEdge(vaultDir, { from: other.id, to: other.id, rel: "depends-on" });
+
+    assert.deepEqual(await memoryDeleteNode(vaultDir, {
+      id: target.id, scope: "project", confirm: true,
+    }), { id: target.id, deleted: true });
+    assert.equal(getNode(vaultDir, target.id), null);
+    assert.deepEqual(listEdges(vaultDir), [retained]);
+  });
+
+  it("requires ID, matching scope, explicit confirmation, and confirmed status for deletion", async () => {
+    const { memoryDeleteNode } = await import("./tools.js");
+    const confirmed = createNode(vaultDir, {
+      type: "decision", status: "confirmed", scope: "project", intent: "keep", summary: "keep",
+    });
+    const draft = createNode(vaultDir, {
+      type: "atom", status: "draft", scope: "project", intent: "draft", summary: "draft",
+    });
+    await assert.rejects(() => memoryDeleteNode(vaultDir, { scope: "project", confirm: true }), /id is required/);
+    await assert.rejects(() => memoryDeleteNode(vaultDir, { id: confirmed.id, confirm: true }), /scope is required/);
+    await assert.rejects(() => memoryDeleteNode(vaultDir, { id: confirmed.id, scope: "global", confirm: true }), /scope does not match/);
+    await assert.rejects(() => memoryDeleteNode(vaultDir, { id: confirmed.id, scope: "project" }), /confirmation is required/);
+    await assert.rejects(() => memoryDeleteNode(vaultDir, { id: "mem-unknown", scope: "project", confirm: true }), /unknown node id/);
+    await assert.rejects(() => memoryDeleteNode(vaultDir, { id: draft.id, scope: "project", confirm: true }), /not confirmed/);
+    assert.ok(getNode(vaultDir, confirmed.id));
+    assert.ok(getNode(vaultDir, draft.id));
+  });
+
+  it("uses lexical relevance gates for project seeds and expands one hop only from qualifying seeds", async () => {
+    const { memoryGetContextForTask } = await import("./tools.js");
+    const strong = createNode(vaultDir, {
+      type: "decision", status: "confirmed", scope: "project",
+      intent: "OAuth refresh token rotation", summary: "OAuth token refresh prevents expiry",
+    });
+    const incidental = createNode(vaultDir, {
+      type: "decision", status: "confirmed", scope: "project",
+      intent: "unrelated database migration deployment", summary: "The design note mentions token once",
+    });
+    const linked = createNode(vaultDir, {
+      type: "bug", status: "confirmed", scope: "project",
+      intent: "historic provider edge behavior", summary: "Retained through explicit relation",
+    });
+    const secondHop = createNode(vaultDir, {
+      type: "solution", status: "confirmed", scope: "project",
+      intent: "unrelated cache adjustment", summary: "Must not expand transitively",
+    });
+    const draft = createNode(vaultDir, {
+      type: "bug", status: "draft", scope: "project",
+      intent: "OAuth refresh token rotation", summary: "Draft is never retrieved",
+    });
+    createEdge(vaultDir, { from: strong.id, to: linked.id, rel: "relates-to" });
+    createEdge(vaultDir, { from: linked.id, to: secondHop.id, rel: "fixes" });
+
+    const context = await memoryGetContextForTask(vaultDir, { task: "OAuth refresh token rotation flow" });
+    const selected = ["decisions", "bugs", "solutions", "refactors", "preferences", "superseded", "atoms"]
+      .flatMap((group) => context[group]);
+    assert.ok(selected.some((node) => node.id === strong.id), "clear multi-term match passes");
+    assert.ok(selected.some((node) => node.id === linked.id), "one-hop neighbor of qualifying seed passes");
+    assert.ok(!selected.some((node) => node.id === incidental.id), "single incidental overlap fails");
+    assert.ok(!selected.some((node) => node.id === secondHop.id), "neighbor is not used as a second-hop seed");
+    assert.ok(!selected.some((node) => node.id === draft.id), "drafts stay excluded");
   });
 
   it("rejects invalid memory links before persisting an orphan node", async () => {

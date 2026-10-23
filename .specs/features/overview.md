@@ -19,8 +19,16 @@ The [orchestrator](orchestrator/orchestrator.md) sits above the skills and makes
 
 The validated [specs record command](orchestrator/spec-record-command.md) has a VALIDATED follow-up for [safe exact-name tracker-row removal](orchestrator/spec-record-tracker-removal.md), independently verified PASS and recorded VALIDATED in its feature spec and tracker, as described in [ADR-034](../decisions/ADR-034-safe-tracker-row-removal.md). The separate [known-issue status update](orchestrator/spec-record-known-issue-status.md) follow-up is VALIDATED under [ADR-035](../decisions/ADR-035-versioned-known-issue-status-updates.md), independently verified PASS (9/9), and recorded in [the 2026-10-20 change record](../changes/2026-10-20-spec-record-known-issue-status.md). The real known-issues file was unchanged; no commit, push, release, or shipping occurred.
 
+The TASKED [blocker-recovery and atomic-kickoff feature](orchestrator/blocker-recovery-and-atomic-kickoff.md) records evidence-gap recovery, proportionate verification, and the accepted `workflow_tick(start_task)` contract in [ADR-037](../decisions/ADR-037-atomic-workflow-task-kickoff.md).
+
+The VALIDATED [native `workflow_tick` caller-identity guard](orchestrator/workflow-tick-caller-identity-guard.md) is a bounded follow-up to [native Task worker dispatch](orchestrator/subagent-dispatch.md). It records fail-closed identity checks and explicitly leaves the unexplained external `unknown action: start_task` mismatch outside scope.
+
+The TASKED [global `workflow_tick` runtime deployment](orchestrator/global-workflow-tick-runtime-deployment.md) follow-up records the user-authorized all-plugin/engine installation and shared OpenCode service restart before execution. Deployment, restart, and isolated runtime proof remain pending; release actions are excluded.
+
+The existing [persistent memory feature](memory/memory.md) remains VALIDATED. Its separate [memory hardening follow-up](memory/memory-hardening.md) is now VALIDATED after fresh independent worker-verify returned overall PASS for all eight acceptance criteria. The accepted capture, confirmed-node erasure, retrieval, and bounded-trust context decisions remain recorded in [ADR-038](../decisions/ADR-038-safe-bounded-memory-context.md); no shipping is claimed.
+
 ## Release assurance
-The [release-readiness feature](release/release-readiness.md) defines the supported Node/OpenCode contract, reproducible npm packaging, and automated CI matrix. [Smoke-test retirement](release/smoke-test-retirement.md) states that package/release/OpenCode-host smoke tests MUST NOT be run or reintroduced; `npm pack --dry-run --json` remains package-content inspection only.
+The [release-readiness feature](release/release-readiness.md) defines the supported Node/OpenCode contract, reproducible npm packaging, and automated CI matrix. [Smoke-test retirement](release/smoke-test-retirement.md) states that package/release/OpenCode-host smoke tests MUST NOT be run or reintroduced; `npm pack --dry-run --json` remains package-content inspection only. The TASKED [Guarana 1.5.0 version-bump candidate](release/version-bump-1-5-0.md) records the authorized local unpublished version metadata for the validated [blocker-recovery and atomic-kickoff feature](orchestrator/blocker-recovery-and-atomic-kickoff.md); publication, tagging, commit, and push are excluded.
 
 ## Build order (hard rule)
 plan → build → code → verify → remember → debug → measure. Never start N+1 before N validates and ships. (The orchestrator layers on top of all shipped skills.)

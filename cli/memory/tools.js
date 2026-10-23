@@ -2,7 +2,7 @@
 // Plain async functions delegating to the engine; the plugin is a thin
 // wrapper. Zero deps. Handlers throw typed errors (MemoryValidationError);
 // the plugin boundary converts them to { error } results, never rethrows.
-import { searchVault } from "./search.js";
+import { isTaskRelevant, searchVault } from "./search.js";
 import {
   MemoryValidationError,
   EDGE_RELS,
@@ -67,6 +67,10 @@ export async function memorySaveNode(vaultDir, opts = {}) {
     throw new MemoryValidationError('scope must be "project" or "global"');
   const intent = requireStr(opts.intent, "intent");
   const summary = requireStr(opts.summary ?? opts.decision, "summary");
+  if (opts.priority !== undefined && (type !== "preference" || scope !== "global"))
+    throw new MemoryValidationError("priority is only valid for global preference nodes");
+  if (opts.priority !== undefined && opts.priority !== "essential" && opts.priority !== "normal")
+    throw new MemoryValidationError('priority must be "essential" or "normal"');
   const rejected = strArray(opts.rejectedAlternatives, "rejectedAlternatives");
   const tags = strArray(opts.tags, "tags");
   const relatedTo = opts.relatedTo ?? [];
@@ -90,6 +94,7 @@ export async function memorySaveNode(vaultDir, opts = {}) {
     type,
     status: "confirmed",
     scope,
+    ...(opts.priority !== undefined ? { priority: opts.priority } : {}),
     intent: sanitize(intent),
     summary: sanitize(summary),
     rejectedAlternatives: rejected.map(sanitize),
@@ -118,7 +123,9 @@ export async function memoryGetContextForTask(vaultDir, opts = {}) {
   const task = requireStr(opts.task, "task");
   const limit =
     Number.isInteger(opts.limit) && opts.limit > 0 ? opts.limit : DEFAULT_CTX_LIMIT;
-  const hits = await searchVault(vaultDir, { query: task, limit });
+  const hits = (await searchVault(vaultDir, { query: task, limit: Number.MAX_SAFE_INTEGER }))
+    .filter((node) => isTaskRelevant(task, node))
+    .slice(0, limit);
   const edges = listEdges(vaultDir);
   const picked = new Map(); // id -> { node, viaSupersedes }
   const add = (node, viaSupersedes) => {
@@ -170,26 +177,49 @@ export async function memoryGetContextForTask(vaultDir, opts = {}) {
 
 // Global user preferences are standing instructions, so retrieve them even
 // when their vocabulary does not overlap the current task.
-export async function memoryGetGlobalPreferences(vaultDir, { limit = 5 } = {}) {
+export async function memoryGetGlobalPreferences(vaultDir, { limit = 3 } = {}) {
   const nodes = listNodes(vaultDir)
-    .filter((n) => n.status === "confirmed" && n.type === "preference")
-    .sort((a, b) => b.ts - a.ts);
+    .filter((n) => n.status === "confirmed" && n.type === "preference" && n.scope === "global")
+    .sort((a, b) => {
+      const priority = (b.priority === "essential" ? 1 : 0) - (a.priority === "essential" ? 1 : 0);
+      return priority || b.ts - a.ts || String(a.id).localeCompare(String(b.id));
+    });
   const superseded = new Set(
     listEdges(vaultDir).filter((e) => e.rel === "supersedes").map((e) => e.to)
   );
   const preferences = nodes
     .filter((n) => !superseded.has(n.id))
-    .slice(0, Math.max(0, limit))
+    .slice(0, Math.min(3, Number.isInteger(limit) ? Math.max(0, limit) : 3))
     .map((n) => ({
       id: n.id,
       type: n.type,
       scope: "global",
+      priority: n.priority === "essential" ? "essential" : "normal",
       intent: n.intent || "",
       summary: n.summary || "",
       tags: n.tags || [],
       ts: n.ts,
     }));
   return { preferences, count: preferences.length };
+}
+
+// Confirmed-node deletion is intentionally separate from legacy draft review.
+export async function memoryDeleteNode(vaultDir, opts = {}) {
+  const id = requireStr(opts.id, "id");
+  if (opts.scope !== "project" && opts.scope !== "global")
+    throw new MemoryValidationError('scope is required and must be "project" or "global"');
+  if (opts.confirm !== true)
+    throw new MemoryValidationError("explicit confirmation is required");
+  const node = getNode(vaultDir, id);
+  if (!node) throw new MemoryValidationError(`unknown node id: ${id}`);
+  if (node.status !== "confirmed")
+    throw new MemoryValidationError(`node is not confirmed; use memory_review_draft for drafts: ${id}`);
+  // Legacy records without scope are scoped by the vault selected using the
+  // mandatory caller-supplied scope; explicit stored scopes must match it.
+  if (node.scope && node.scope !== opts.scope)
+    throw new MemoryValidationError(`node scope does not match requested scope: ${id}`);
+  removeNode(vaultDir, id);
+  return { id, deleted: true };
 }
 
 // memory_review_draft: legacy migration only. Confirm (flip status, optional

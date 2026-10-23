@@ -23,19 +23,23 @@ user states durable knowledge. Tool/file activity itself is telemetry, not memor
 | `memory_search({query,type?,scope?,since?,until?,limit?})` | Search confirmed memory; scope can be `project`, `global`, or `both` (default). |
 | `memory_get_context_for_task({task,scope?,limit?})` | Retrieve the task's relevant project/global subgraph; standing global preferences are included. |
 | `memory_save_decision({intent,decision,rejectedAlternatives?,tags?,author?})` | Backward-compatible project decision save. |
-| `memory_save_node({type,scope,intent,summary,relatedTo?,tags?,author?})` | Save a confirmed `decision`, `bug`, `solution`, `refactor`, or `preference`; use `global` for standing user preferences and `project` for current-project knowledge. |
+| `memory_save_node({type,scope,intent,summary,priority?,relatedTo?,tags?,author?})` | Save a confirmed `decision`, `bug`, `solution`, `refactor`, or `preference`; use `global` for standing user preferences and `project` for current-project knowledge. Optional `priority` (`essential` or `normal`) applies only to global preferences. |
 | `memory_review_draft({id,action:"confirm"\|"discard",edits?})` | Migrating or discarding legacy draft atoms from older versions. |
+| `memory_delete_node({id,scope,confirm:true})` | Hard-delete one confirmed node by exact ID; matching `project`/`global` scope and explicit confirmation are mandatory. Drafts remain on `memory_review_draft`. |
 | `skill_list({scope?})` | Check Guarana-generated skills in project/global scopes before proposing a new reusable procedure. |
 | `skill_create({name,description,scope,content})` | Persist a clear reusable procedure or project context as a native OpenCode skill; the tool never overwrites an existing name. |
 
 ## Explicit memory lifecycle
-When a user sets a lasting preference or makes a durable project decision, save
-it automatically with `memory_save_node` before answering. Search its scope to
-avoid duplicates; use a `supersedes` link when the user changes an existing
-preference. Add other `relatedTo` links only when the relation is real. Ordinary
-requests, temporary instructions, inferred personal facts, tool calls, and file
-edits do not create memory nodes. `memory_save_decision` remains for explicit
-decision saves.
+Automatically save only unmistakable durable intent with `memory_save_node`.
+If durability or intent is ambiguous, do not save and ask one clarifying question.
+If the user asks to put guidance in a skill or document, honor that destination
+without also creating duplicate memory unless memory is separately requested.
+Before every save, call `memory_search` in the intended scope and avoid duplicates;
+use a `supersedes` link when a preference changes. Add other `relatedTo` links only
+when the relation is real. Ordinary requests, temporary instructions, inferred
+personal facts, tool calls, file edits, prompts, and tool input/output do not create
+memory nodes. Report the saved type and scope only after a successful tool result.
+`memory_save_decision` remains for explicit decision saves.
 Legacy draft atoms from older versions are never retrieved automatically; use
 `memory_review_draft` only to migrate or discard them.
 

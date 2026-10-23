@@ -96,6 +96,7 @@ it('deploys, reports, and removes the skill engine with the plugin set', async (
     const output = captureStreams();
     await plugin.run(['status'], { useProject: true, ...output });
     assert.ok(output.output().stdout.includes('skill engine') && output.output().stdout.includes('deployed'));
+    assert.match(output.output().stdout, /engine health: ok/);
 
     plugin.uninstall(true, null, { stdout: output.stdout });
     assert.equal(fs.existsSync(path.dirname(installedEngine)), false);

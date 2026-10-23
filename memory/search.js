@@ -28,6 +28,19 @@ const nodeText = (n) =>
     .filter(Boolean)
     .join(" ");
 
+// A positive TF-IDF score can come from one incidental shared word. Automatic
+// task context requires at least two distinct query terms (or the only term in
+// a one-term query) and a minimum 25% query-term match.
+export function isTaskRelevant(query, node) {
+  const queryTokens = new Set(tokenize(query));
+  if (!queryTokens.size) return false;
+  const documentTokens = new Set(tokenize(nodeText(node)));
+  let matches = 0;
+  for (const token of queryTokens) if (documentTokens.has(token)) matches++;
+  const required = Math.min(queryTokens.size, Math.max(2, Math.ceil(queryTokens.size * 0.25)));
+  return matches >= required;
+}
+
 function cosine(a, b) {
   let dot = 0;
   let na = 0;

@@ -17,7 +17,7 @@ From guarana:plan's dispatch: ONE verifiable condition, budget (default 8k token
 2. **Read the design.** Inspect the relevant neighboring code, interfaces, tests, and project conventions. Identify the responsibilities and dependencies touched by the condition; follow established patterns when they fit.
 3. **Choose patterns by purpose.** Use a design pattern only when it addresses a concrete need in the change, such as a real behavior variation, responsibility boundary, or dependency. Refactor only as needed to implement the condition clearly and safely. Prefer the simplest design that fits; if no pattern solves a real problem, add none. Keep unrelated behavior and structure intact.
 4. **Smallest change.** Make the minimal diff satisfying the condition — because review and revert cost scale with diff size, and unrelated edits destroy both. Include only refactoring that directly supports this condition.
-5. **Self-check, not self-approve.** Check the diff against the condition, relevant conventions, and affected edge cases. Run appropriate focused checks when available. Pass here means "ready for worker-verify", never "done".
+5. **Self-check, not self-approve.** Check the diff against the condition, relevant conventions, and affected edge cases. Run the smallest ordinary checks mapped to changed acceptance criteria first; use broader tests only when required by acceptance or change impact. Do not run smoke tests. Pass here means "ready for worker-verify", never "done".
 6. **Return the contract:**
     - diff (or exact file list)
     - the verifiable condition addressed

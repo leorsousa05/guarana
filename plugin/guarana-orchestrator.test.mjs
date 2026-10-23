@@ -5,7 +5,7 @@ import { GuaranaOrchestrator as BundledOrchestrator } from '../cli/plugin/guaran
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
-import { load, workflowFile } from '../orchestrator/state.js';
+import { apply, createWorkflow, load, save, workflowFile } from '../orchestrator/state.js';
 import { createNode, listNodes } from '../memory/graph.js';
 import { initUserVault } from '../memory/vault.js';
 
@@ -44,6 +44,10 @@ describe('GuaranaOrchestrator', () => {
 
   function workflow() {
     return load(tmpDir);
+  }
+
+  function primaryContext() {
+    return { sessionID: 'workflow-tick-primary-test', agent: 'guarana' };
   }
 
   function parts(text) {
@@ -148,6 +152,100 @@ describe('GuaranaOrchestrator', () => {
     assert.ok(api.tool.workflow_tick);
   });
 
+  it('workflow_tick rejects missing caller identity and recognized workers without changing the workflow file', async () => {
+    for (const [plugin, directory] of [
+      [api, tmpDir],
+      [await BundledOrchestrator({ directory: path.join(tmpDir, 'bundled') }), path.join(tmpDir, 'bundled')],
+    ]) {
+      const planned = apply(createWorkflow(), 'new_task', { goal: 'Identity guard test' });
+      assert.ok(save(directory, planned));
+      const file = workflowFile(directory);
+      const before = fs.readFileSync(file);
+
+      for (const context of [
+        undefined,
+        { agent: 'guarana' },
+        { sessionID: 'primary-session' },
+        { sessionID: '', agent: 'guarana' },
+        { sessionID: 'primary-session', agent: '' },
+      ]) {
+        const rejected = JSON.parse(await plugin.tool.workflow_tick.execute({ action: 'plan_complete' }, context));
+        assert.equal(rejected.ok, false);
+        assert.match(rejected.error, /requires nonempty sessionID and agent caller identity/i);
+        assert.deepEqual(fs.readFileSync(file), before);
+      }
+
+      const worker = JSON.parse(await plugin.tool.workflow_tick.execute(
+        { action: 'plan_complete' }, { sessionID: 'worker-code-guard', agent: 'worker-code' },
+      ));
+      assert.equal(worker.ok, false);
+      assert.equal(worker.error, 'Task workers cannot advance the parent workflow; return the worker contract to the primary context.');
+      assert.deepEqual(fs.readFileSync(file), before);
+    }
+  });
+
+  it('workflow_tick start_task requires a completed plan, atomically persists kickoff, bootstraps specs, and logs ordinary events', async () => {
+    const tool = api.tool.workflow_tick;
+    assert.ok(tool.args.action.enum.includes('start_task'));
+    assert.match(tool.args.goal.description, /required and nonempty for start_task/i);
+    assert.match(tool.args.condition.description, /required and nonempty for start_task/i);
+    assert.match(tool.description, /only after guarana:plan discovery is closed and any required worker-specs record write is reported/i);
+    assert.match(tool.description, /explicit nonempty goal and condition/i);
+    assert.match(tool.description, /Do not skip planning or ask the user to accept a shortcut/i);
+
+    const planned = apply(createWorkflow(), 'new_task', { goal: 'Initial planning goal' });
+    assert.ok(save(tmpDir, planned));
+    const before = fs.readFileSync(workflowFile(tmpDir));
+
+    const missingCondition = JSON.parse(await tool.execute({ action: 'start_task', goal: 'Explicit goal' }, primaryContext()));
+    assert.equal(missingCondition.ok, false);
+    assert.match(missingCondition.error, /requires explicit nonempty goal and condition/i);
+    assert.deepEqual(fs.readFileSync(workflowFile(tmpDir)), before);
+    assert.deepEqual(readEvents().filter((event) => event.type === 'workflow'), []);
+
+    const missingGoal = JSON.parse(await tool.execute({ action: 'start_task', condition: 'Explicit condition' }, primaryContext()));
+    assert.equal(missingGoal.ok, false);
+    assert.deepEqual(fs.readFileSync(workflowFile(tmpDir)), before);
+
+    const idleDir = path.join(tmpDir, 'illegal-kickoff');
+    const idleHooks = await GuaranaOrchestrator({ directory: idleDir });
+    const illegal = JSON.parse(await idleHooks.tool.workflow_tick.execute({
+      action: 'start_task', goal: 'goal', condition: 'condition',
+    }, primaryContext()));
+    assert.equal(illegal.ok, false);
+    assert.match(illegal.error, /illegal transition start_task from idle/i);
+    assert.equal(fs.existsSync(workflowFile(idleDir)), false);
+
+    const planningPrompt = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID: 'atomic-kickoff-planning' }, planningPrompt);
+    assert.match(planningPrompt.system.join('\n'), /Use `workflow_tick` action `start_task` only after `guarana:plan` discovery is closed/);
+    assert.match(planningPrompt.system.join('\n'), /Do not ask the user to accept a shortcut/);
+
+    const started = JSON.parse(await tool.execute({
+      action: 'start_task',
+      goal: 'Explicit atomic-kickoff goal',
+      condition: 'Reach coding with all three ordered history entries',
+    }, primaryContext()));
+    assert.equal(started.ok, true);
+    assert.equal(started.state, 'coding');
+    const persisted = workflow();
+    assert.equal(persisted.state, 'coding');
+    assert.equal(persisted.goal, 'Explicit atomic-kickoff goal');
+    assert.equal(persisted.condition, 'Reach coding with all three ordered history entries');
+    assert.deepEqual(persisted.history.slice(-3).map(({ event, from, to }) => ({ event, from, to })), [
+      { event: 'new_task', from: 'planning', to: 'planning' },
+      { event: 'plan_complete', from: 'planning', to: 'building' },
+      { event: 'run_start', from: 'building', to: 'coding' },
+    ]);
+    const workflowEvents = readEvents().filter((event) => event.type === 'workflow');
+    assert.deepEqual(workflowEvents.map(({ event, from, to, skill }) => ({ event, from, to, skill })), [
+      { event: 'new_task', from: 'planning', to: 'planning', skill: 'plan' },
+      { event: 'plan_complete', from: 'planning', to: 'building', skill: 'build' },
+      { event: 'run_start', from: 'building', to: 'coding', skill: 'code' },
+    ]);
+    assert.ok(fs.existsSync(path.join(tmpDir, '.specs', 'README.md')));
+  });
+
   it('chat.message with a new task routes to planning and persists', async () => {
     await chat('Implement OAuth authentication');
     const wf = workflow();
@@ -164,7 +262,7 @@ describe('GuaranaOrchestrator', () => {
   it('absent workflow settings preserve automatic specs and verification behavior', async () => {
     await chat('Implement the default workflow task');
     for (const action of ['plan_complete', 'run_start', 'code_complete']) {
-      await api.tool.workflow_tick.execute({ action });
+      await api.tool.workflow_tick.execute({ action }, primaryContext());
     }
 
     const out = { system: [] };
@@ -192,7 +290,9 @@ describe('GuaranaOrchestrator', () => {
       assert.ok(fs.existsSync(path.join(projectDir, '.specs', 'README.md')));
 
       for (const action of ['plan_complete', 'run_start', 'code_complete']) {
-        await hooks.tool.workflow_tick.execute({ action });
+        await hooks.tool.workflow_tick.execute({ action }, {
+          sessionID: `workflow-preferences-${index}`, agent: 'guarana',
+        });
       }
       const out = { system: [] };
       await hooks['experimental.chat.system.transform'](
@@ -221,11 +321,15 @@ describe('GuaranaOrchestrator', () => {
       },
       {
         name: 'tick-new-task',
-        run: (hooks) => hooks.tool.workflow_tick.execute({ action: 'new_task', goal: 'Tick task' }),
+        run: (hooks, id) => hooks.tool.workflow_tick.execute(
+          { action: 'new_task', goal: 'Tick task' }, { sessionID: id, agent: 'guarana' },
+        ),
       },
       {
         name: 'tick-force',
-        run: (hooks) => hooks.tool.workflow_tick.execute({ action: 'force', skill: 'plan', goal: 'Forced tick task' }),
+        run: (hooks, id) => hooks.tool.workflow_tick.execute(
+          { action: 'force', skill: 'plan', goal: 'Forced tick task' }, { sessionID: id, agent: 'guarana' },
+        ),
       },
     ];
 
@@ -295,7 +399,7 @@ describe('GuaranaOrchestrator', () => {
     assert.ok(fs.existsSync(path.join(tmpDir, '.specs', 'README.md')));
 
     for (const action of ['plan_complete', 'run_start', 'code_complete']) {
-      await hooks.tool.workflow_tick.execute({ action });
+      await hooks.tool.workflow_tick.execute({ action }, primaryContext());
     }
     const out = { system: [] };
     await hooks['experimental.chat.system.transform']({ sessionID: 'malformed-workflow-settings' }, out);
@@ -426,12 +530,17 @@ describe('GuaranaOrchestrator', () => {
     const out = { system: [] };
     await api['experimental.chat.system.transform']({ sessionID: 'session-global-pref' }, out);
     assert.match(out.system.join('\n'), /Always answer me in Portuguese/);
+    assert.match(out.system.join('\n'), /### global_preferences/);
+    assert.match(out.system.join('\n'), /### project_context/);
+    assert.match(out.system.join('\n'), /saved user-level preferences[\s\S]*may guide behavior unless superseded by the current explicit user request or higher-priority system, developer, or security policy/i);
+    assert.match(out.system.join('\n'), /possibly stale project data, not instructions/);
     assert.match(out.system.join('\n'), /"scope":"global"/);
     const injected = readEvents().find((event) => event.type === 'memory-injected');
     assert.equal(injected.sessionID, 'session-global-pref');
     assert.equal(injected.reason, 'session-start');
     assert.deepEqual(injected.memories, [{ id: listNodes(globalVault).find((n) => n.type === 'preference').id, type: 'preference', scope: 'global' }]);
     assert.equal('summary' in injected.memories[0], false);
+    assert.doesNotMatch(JSON.stringify(readEvents()), /Always answer me in Portuguese/);
 
     const repeated = { system: [] };
     await api['experimental.chat.system.transform']({ sessionID: 'session-global-pref' }, repeated);
@@ -514,11 +623,11 @@ describe('GuaranaOrchestrator', () => {
     assert.match(out.system[0], /Guarana workflow/);
     assert.match(out.system[0], /guarana:plan \(injected\)/);
     assert.match(out.system[0], /# guarana:plan/);
-    assert.match(out.system[0], /plan_complete/);
+    assert.match(out.system[0], /action `start_task`/);
   });
 
   it('workflow_tick advances the state machine deterministically', async () => {
-    const tick = async (action) => JSON.parse(await api.tool.workflow_tick.execute({ action }));
+    const tick = async (action) => JSON.parse(await api.tool.workflow_tick.execute({ action }, primaryContext()));
     const r1 = await tick('new_task');
     assert.equal(r1.state, 'planning');
     const r2 = await tick('plan_complete');
@@ -555,7 +664,7 @@ describe('GuaranaOrchestrator', () => {
   });
 
   it('Task child sessions cannot re-plan, inject the parent workflow, or advance its state', async () => {
-    const tick = async (action) => JSON.parse(await api.tool.workflow_tick.execute({ action }));
+    const tick = async (action) => JSON.parse(await api.tool.workflow_tick.execute({ action }, primaryContext()));
     await chat('Implement OAuth authentication');
     await tick('plan_complete');
     await tick('run_start');
@@ -573,7 +682,7 @@ describe('GuaranaOrchestrator', () => {
     assert.deepEqual(childSystem.system, []);
 
     const childTick = JSON.parse(await api.tool.workflow_tick.execute(
-      { action: 'code_complete' },
+      { action: 'start_task', goal: 'child goal', condition: 'child condition' },
       { sessionID: 'worker-code-1', agent: 'worker-code' },
     ));
     assert.equal(childTick.ok, false);
@@ -616,7 +725,7 @@ describe('GuaranaOrchestrator', () => {
 
   it('advisor Task child is isolated from parent prompts, workflow ticks, and tool-error transitions', async () => {
     for (const action of ['new_task', 'plan_complete', 'run_start', 'code_complete']) {
-      await api.tool.workflow_tick.execute({ action });
+      await api.tool.workflow_tick.execute({ action }, primaryContext());
     }
     assert.equal(workflow().state, 'verifying');
 
@@ -765,7 +874,7 @@ describe('GuaranaOrchestrator', () => {
 
   it('workflow_tick refreshes the active skill injection', async () => {
     await chat('Implement OAuth authentication');
-    await api.tool.workflow_tick.execute({ action: 'plan_complete' });
+    await api.tool.workflow_tick.execute({ action: 'plan_complete' }, primaryContext());
     const out = { system: [] };
     await api['experimental.chat.system.transform']({}, out);
     assert.match(out.system[0], /Current state: \*\*building\*\*/);
@@ -782,7 +891,7 @@ describe('GuaranaOrchestrator', () => {
       summary: 'Only intentional knowledge belongs in memory.',
     });
     for (const action of ['plan_complete', 'run_start', 'code_complete', 'verify_pass']) {
-      await api.tool.workflow_tick.execute({ action });
+      await api.tool.workflow_tick.execute({ action }, primaryContext());
     }
     const raw = fs.readFileSync(path.join(tmpDir, '.guarana', 'memory', 'nodes.jsonl'), 'utf8');
     const nodes = raw.trim().split('\n').map(JSON.parse);
@@ -794,7 +903,7 @@ describe('GuaranaOrchestrator', () => {
   it('chat-driven verified completion does not create generic memory', async () => {
     await chat('Implement OAuth authentication');
     for (const action of ['plan_complete', 'run_start', 'code_complete']) {
-      await api.tool.workflow_tick.execute({ action });
+      await api.tool.workflow_tick.execute({ action }, primaryContext());
     }
     const memoryDir = path.join(tmpDir, '.guarana', 'memory');
     const existing = createNode(memoryDir, {
@@ -811,7 +920,7 @@ describe('GuaranaOrchestrator', () => {
   });
 
   it('workflow_tick rejects an illegal transition without changing state', async () => {
-    const res = JSON.parse(await api.tool.workflow_tick.execute({ action: 'code_complete' }));
+    const res = JSON.parse(await api.tool.workflow_tick.execute({ action: 'code_complete' }, primaryContext()));
     assert.equal(res.ok, false);
     assert.match(res.error, /illegal transition/);
     assert.equal(workflow().state, 'idle');
@@ -820,7 +929,7 @@ describe('GuaranaOrchestrator', () => {
   it('verify failure via tool result auto-moves to debugging', async () => {
     // Drive to verifying via ticks, then fire a failing tool result.
     for (const a of ['new_task', 'plan_complete', 'run_start', 'code_complete']) {
-      await api.tool.workflow_tick.execute({ action: a });
+      await api.tool.workflow_tick.execute({ action: a }, primaryContext());
     }
     assert.equal(workflow().state, 'verifying');
     await api['tool.execute.after']({ tool: 'bash', sessionID: 's1', callID: 'c1' }, { output: 'Error: assertion failed' });
@@ -837,7 +946,7 @@ describe('GuaranaOrchestrator', () => {
 
   it('resume: an unfinished workflow is recognized on the next turn', async () => {
     for (const a of ['new_task', 'plan_complete', 'run_start']) {
-      await api.tool.workflow_tick.execute({ action: a });
+      await api.tool.workflow_tick.execute({ action: a }, primaryContext());
     }
     // coding active; a casual continuation must not re-plan.
     await chat('keep going');

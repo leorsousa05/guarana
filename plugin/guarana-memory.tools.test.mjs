@@ -166,6 +166,44 @@ describe('GuaranaMemory tools (slice 3)', () => {
     });
   });
 
+  describe('memory_delete_node (confirmed-memory hardening)', () => {
+    it('requires exact scope and explicit confirmation, rejects unknown IDs and protects drafts', async () => {
+      const { dec, draft } = seedGraph();
+      const noScope = await call('memory_delete_node', { id: dec.id, confirm: true });
+      assert.match(noScope.error, /scope is required/);
+      const noConfirm = await call('memory_delete_node', { id: dec.id, scope: 'project' });
+      assert.match(noConfirm.error, /confirmation is required/);
+      const wrongScope = await call('memory_delete_node', { id: dec.id, scope: 'global', confirm: true });
+      assert.match(wrongScope.error, /unknown node id/);
+      assert.equal(fs.existsSync(path.join(tmpDir, 'home', '.config', 'guarana', 'memory')), false, 'failed deletion must not initialize another scope');
+      const unknown = await call('memory_delete_node', { id: 'mem-missing', scope: 'project', confirm: true });
+      assert.match(unknown.error, /unknown node id/);
+      const protectedDraft = await call('memory_delete_node', { id: draft.id, scope: 'project', confirm: true });
+      assert.match(protectedDraft.error, /not confirmed/);
+      assert.ok(getNode(vaultDir(), dec.id));
+      assert.ok(getNode(vaultDir(), draft.id));
+    });
+
+    it('deletes the exact confirmed node and incident edges without logging memory text', async () => {
+      const target = createNode(vaultDir(), {
+        type: 'decision', status: 'confirmed', scope: 'project',
+        intent: 'private-delete-sentinel', summary: 'unlogged memory text',
+      });
+      const other = createNode(vaultDir(), {
+        type: 'bug', status: 'confirmed', scope: 'project', intent: 'unrelated', summary: 'unrelated',
+      });
+      createEdge(vaultDir(), { from: target.id, to: other.id, rel: 'fixes' });
+      createEdge(vaultDir(), { from: other.id, to: target.id, rel: 'relates-to' });
+      const result = await call('memory_delete_node', { id: target.id, scope: 'project', confirm: true });
+      assert.deepEqual(result, { id: target.id, deleted: true });
+      assert.equal(getNode(vaultDir(), target.id), null);
+      assert.ok(!listEdges(vaultDir()).some((edge) => edge.from === target.id || edge.to === target.id));
+      const eventsFile = path.join(tmpDir, '.specs', 'state', 'telemetry', 'events.jsonl');
+      const telemetry = fs.existsSync(eventsFile) ? fs.readFileSync(eventsFile, 'utf8') : '';
+      assert.doesNotMatch(telemetry, /private-delete-sentinel|unlogged memory text/);
+    });
+  });
+
   describe('memory_get_context_for_task (criterion 13)', () => {
     it('returns a bounded grouped subgraph via 1-hop expansion', async () => {
       const { dec, old, bug, draft } = seedGraph();

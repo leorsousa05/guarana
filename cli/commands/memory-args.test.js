@@ -75,6 +75,9 @@ describe('parseMemoryArgs', () => {
     ['review discard ignores edits', ['review', 'node-1', '--discard', '--intent', 'ignored', '--tags', 'a,b'], {
       command: 'review', mode: 'edit', id: 'node-1', action: 'discard',
     }],
+    ['delete requires exact scope and confirmation', ['delete', 'node-1', '--scope', 'global', '--confirm'], {
+      command: 'delete', id: 'node-1', scope: 'global', confirm: true,
+    }],
     ['unknown subcommand', ['custom', 'arguments'], { command: 'custom' }],
   ];
 
@@ -104,6 +107,11 @@ describe('parseMemoryArgs', () => {
     [['review', '--confirm'], 'missing node id: guarana memory review <id> --confirm|--discard (or --list)'],
     [['review', 'node-1'], 'specify --confirm or --discard'],
     [['review', 'node-1', '--confirm', '--intent'], 'missing value for --intent'],
+    [['delete'], 'missing node id: guarana memory delete <id> --scope project|global --confirm'],
+    [['delete', 'node-1'], 'memory delete requires --scope project|global'],
+    [['delete', 'node-1', '--scope', 'both', '--confirm'], 'invalid --scope value: both'],
+    [['delete', 'node-1', '--scope', 'project'], 'memory delete requires explicit --confirm'],
+    [['delete', 'node-1', '--scope'], 'missing value for --scope'],
   ];
 
   for (const [args, diagnostic] of errors) {

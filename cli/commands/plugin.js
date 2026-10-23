@@ -195,14 +195,14 @@ function filesEqual(a, b) {
   }
 }
 
-// Async engine health: load the deployed engine's tools and confirm the four
+// Async engine health: load the deployed engine's tools and confirm the required
 // custom-tool handlers are present. Returns a status string (never throws).
 async function engineHealthy(engineTarget) {
   try {
     if (!fs.existsSync(path.join(engineTarget, 'tools.js'))) return 'not deployed';
     const tools = await import(pathToFileURL(path.join(engineTarget, 'tools.js')).href);
     const handlers = [
-      'memorySearch', 'memorySaveDecision', 'memoryGetContextForTask', 'memoryReviewDraft',
+      'memorySearch', 'memorySaveDecision', 'memoryGetContextForTask', 'memoryReviewDraft', 'memoryDeleteNode',
     ];
     const missing = handlers.filter((h) => typeof tools[h] !== 'function');
     return missing.length === 0 ? 'ok' : `missing handlers: ${missing.join(', ')}`;

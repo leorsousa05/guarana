@@ -50,6 +50,17 @@ errored tool result while in `verifying`) moves to `debugging`; a fix goes back 
 `coding`, then `verifying`, and a pass reaches `completed`. Illegal transitions are
 rejected — the machine cannot wedge.
 
+### Closing planning
+
+After `guarana:plan` discovery is closed and any required `worker-specs` record
+write is reported complete, call `workflow_tick(start_task)` once with explicit,
+nonempty `goal` and `condition`. This does not bypass discovery or required
+spec-record work. The action finishes in `coding` and preserves the three normal
+history entries in order: `new_task`, `plan_complete`, then `run_start`. If
+planning is still open, remain in `planning`; individual events, including
+`plan_complete` and `run_start`, remain available for an intentionally staged
+transition.
+
 ## How the loop runs
 
 1. `chat.message` → restore persisted workflow → `decide` → apply transition → persist.
