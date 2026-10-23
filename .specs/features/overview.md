@@ -23,6 +23,10 @@ The TASKED [blocker-recovery and atomic-kickoff feature](orchestrator/blocker-re
 
 The VALIDATED [native `workflow_tick` caller-identity guard](orchestrator/workflow-tick-caller-identity-guard.md) is a bounded follow-up to [native Task worker dispatch](orchestrator/subagent-dispatch.md). It records fail-closed identity checks and explicitly leaves the unexplained external `unknown action: start_task` mismatch outside scope.
 
+The bounded [intent and provenance safety follow-up](orchestrator/intent-provenance-safety.md) is VALIDATED after independent offline checks and the completed authorized live gate. One live native worker-verify Task preserved project workflow bytes after global plugin deployment and restart confirmation. GitHub push remains pending; the follow-up is not SHIPPED.
+
+The explicit plugin-ownership adoption decision is recorded in [ADR-039](../decisions/ADR-039-explicit-plugin-ownership-adoption.md); offline implementation proof and exact completed live-gate evidence are in the same orchestrator follow-up. No commit, push, publication, tag, or version change is claimed.
+
 The TASKED [global `workflow_tick` runtime deployment](orchestrator/global-workflow-tick-runtime-deployment.md) follow-up records the user-authorized all-plugin/engine installation and shared OpenCode service restart before execution. Deployment, restart, and isolated runtime proof remain pending; release actions are excluded.
 
 The existing [persistent memory feature](memory/memory.md) remains VALIDATED. Its separate [memory hardening follow-up](memory/memory-hardening.md) is now VALIDATED after fresh independent worker-verify returned overall PASS for all eight acceptance criteria. The accepted capture, confirmed-node erasure, retrieval, and bounded-trust context decisions remain recorded in [ADR-038](../decisions/ADR-038-safe-bounded-memory-context.md); no shipping is claimed.

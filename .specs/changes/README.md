@@ -6,6 +6,9 @@ Entry format: date · feature · what validated / failed / re-opened · proof pa
 
 ## Records
 
+### 2026-10-23 — orchestrator
+- [Intent and provenance safety follow-up](2026-10-23-orchestrator-intent-provenance-safety.md) — VALIDATED; offline adoption proof and completed live gate confirm global deployment and byte-identical project workflow across one native worker-verify Task; GitHub push pending, not shipped
+
 ### 2026-10-20 — specs recorder
 - [Versioned known-issue status updates](2026-10-20-spec-record-known-issue-status.md) — schema-v2 status-only/combined writes with v1 compatibility; independent worker-verify PASS (9/9); real known-issues file unchanged; not shipped
 

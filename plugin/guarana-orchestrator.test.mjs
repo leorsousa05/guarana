@@ -428,6 +428,18 @@ describe('GuaranaOrchestrator', () => {
         'Review the task and update me on the task status',
         'I need an update on the task status',
         'What does guarana:code do?',
+        'Como funciona o endpoint OAuth?',
+        'Como seria implementar uma fila local?',
+        'O que faz a integração atual?',
+        'Você pode me explicar como implementar PKCE?',
+        'Pode me explicar como implementar PKCE?',
+        'Me ajuda a entender como atualizar o README?',
+        'Quais mudanças são necessárias para corrigir o login?',
+        'Me diga como atualizar o README',
+        'Revise o fluxo de autenticação',
+        'Por que o teste falha?',
+        'Qual é a melhor forma de corrigir o login?',
+        'Por quê devo implementar PKCE?',
       ]) {
         await plugin['chat.message']({ sessionID: `read-only-${pluginIndex}` }, { parts: parts(text) });
         assert.equal(workflow().state, 'idle', text);
@@ -442,6 +454,8 @@ describe('GuaranaOrchestrator', () => {
     ]) {
       assert.equal(fs.existsSync(path.join(tmpDir, file)), false, `${file} must not be created`);
     }
+    assert.equal(fs.existsSync(path.join(tmpDir, '.guarana', 'memory')), false, 'read-only questions must not bootstrap the project memory vault');
+    assert.equal(fs.existsSync(path.join(process.env.HOME, '.config', 'guarana', 'memory')), false, 'read-only questions must not bootstrap the user memory vault');
   });
 
   it('explicit guarana skill commands still enter workflow and bootstrap task records', async () => {
@@ -460,6 +474,12 @@ describe('GuaranaOrchestrator', () => {
         'Update the project docs',
         'I need an update to the configuration file',
         'Can you update the config file?',
+        'Implemente a autenticação OAuth',
+        'Crie um teste para o endpoint',
+        'Atualize o README do projeto',
+        'Corrija o fluxo de login',
+        'Desenvolva um relatório de status',
+        'Escreva um teste de integração',
       ].entries()) {
         const projectDir = path.join(tmpDir, `targeted-update-${pluginIndex}-${index}`);
         const hooks = await plugin({ directory: projectDir });
@@ -489,6 +509,44 @@ describe('GuaranaOrchestrator', () => {
 
     assert.equal(workflow().state, 'planning');
     assert.equal(workflow().history.filter((entry) => entry.event === 'new_task').length, 1);
+  });
+
+  it('workflow telemetry records minimal provenance without user text, tool arguments, or tool output', async () => {
+    const userText = 'Implement provenance task USER_TEXT_SECRET';
+    const toolArgument = 'TOOL_ARGUMENT_SECRET';
+    const toolOutput = 'TOOL_OUTPUT_SECRET';
+    await api['chat.message'](
+      { sessionID: 'provenance-session', messageID: 'provenance-message', agent: 'guarana' },
+      { message: { id: 'provenance-message', agent: 'guarana' }, parts: parts(userText) },
+    );
+
+    for (const action of ['plan_complete', 'run_start', 'code_complete']) {
+      await api.tool.workflow_tick.execute({ action, note: toolArgument }, primaryContext());
+    }
+    await api['tool.execute.after'](
+      { tool: 'bash', sessionID: 'provenance-session', agent: 'guarana', callID: toolArgument },
+      { output: `Error: ${toolOutput}` },
+    );
+
+    const workflowEvents = readEvents().filter((event) => event.type === 'workflow');
+    assert.equal(workflowEvents.length, 5);
+    assert.deepEqual(
+      workflowEvents.map(({ source, sessionID, agent }) => ({ source, sessionID, agent })),
+      [
+        { source: 'chat.message', sessionID: 'provenance-session', agent: 'guarana' },
+        ...['plan_complete', 'run_start', 'code_complete'].map(() => ({
+          source: 'workflow_tick', sessionID: 'workflow-tick-primary-test', agent: 'guarana',
+        })),
+        { source: 'tool.execute.after', sessionID: 'provenance-session', agent: 'guarana' },
+      ],
+    );
+    const serialized = JSON.stringify(workflowEvents);
+    for (const secret of [userText, toolArgument, toolOutput]) assert.equal(serialized.includes(secret), false, secret);
+    for (const event of workflowEvents) {
+      assert.equal(Object.hasOwn(event, 'note'), false);
+      assert.equal(Object.hasOwn(event, 'args'), false);
+      assert.equal(Object.hasOwn(event, 'output'), false);
+    }
   });
 
   it('new tasks bootstrap specs and the memory vault automatically', async () => {
@@ -697,6 +755,94 @@ describe('GuaranaOrchestrator', () => {
       { output: 'Error: assertion failed' },
     );
     assert.equal(workflow().state, 'verifying');
+  });
+
+  it('chat.message resolves an unregistered agentless Task child from session metadata before classification', async () => {
+    let persisted = createWorkflow();
+    for (const action of ['new_task', 'plan_complete', 'run_start']) {
+      persisted = apply(persisted, action);
+    }
+    assert.ok(save(tmpDir, persisted));
+    const workflowPath = workflowFile(tmpDir);
+    const before = fs.readFileSync(workflowPath);
+    const lookups = [];
+    const childSessionID = 'metadata-only-task-child';
+    const childHooks = await GuaranaOrchestrator({
+      directory: tmpDir,
+      client: {
+        session: {
+          get: async (params) => {
+            lookups.push(params);
+            return { data: { id: childSessionID, parentID: 'primary-session', agent: 'worker-code' } };
+          },
+        },
+      },
+    });
+
+    // No session.created registration and no agent in either hook payload.
+    await childHooks['chat.message'](
+      { sessionID: childSessionID, messageID: 'child-message' },
+      { parts: parts('Implement a different task CHILD_PROMPT_SECRET') },
+    );
+    const childSystem = { system: [] };
+    await childHooks['experimental.chat.system.transform']({ sessionID: childSessionID }, childSystem);
+
+    assert.deepEqual(lookups, [{
+      path: { id: childSessionID },
+      query: { directory: tmpDir },
+    }]);
+    assert.deepEqual(fs.readFileSync(workflowPath), before);
+    assert.deepEqual(childSystem.system, []);
+    assert.equal(fs.existsSync(path.join(tmpDir, '.specs', 'README.md')), false);
+    assert.equal(fs.existsSync(path.join(tmpDir, '.guarana', 'memory')), false);
+    assert.equal(readEvents().filter((event) => event.type === 'workflow').length, 0);
+  });
+
+  it('agentless primary sessions keep classifying with metadata and gracefully fall back when lookup is unavailable', async () => {
+    const primaryLookups = [];
+    const primaryHooks = await GuaranaOrchestrator({
+      directory: tmpDir,
+      client: {
+        session: {
+          get: async (params) => {
+            primaryLookups.push(params);
+            return { data: { id: params.path.id, agent: 'guarana' } };
+          },
+        },
+      },
+    });
+    await primaryHooks['chat.message'](
+      { sessionID: 'metadata-primary', messageID: 'primary-message' },
+      { parts: parts('Implement a primary-session task') },
+    );
+    await primaryHooks['chat.message'](
+      { sessionID: 'metadata-primary', messageID: 'primary-follow-up' },
+      { parts: parts('Continue') },
+    );
+    assert.equal(primaryLookups.length, 1, 'resolved session role is cached');
+    assert.equal(primaryLookups[0].query.directory, tmpDir);
+    assert.equal(workflow().state, 'planning');
+    assert.equal(workflow().goal, 'Implement a primary-session task');
+
+    for (const [suffix, lookup] of [
+      ['missing', async () => ({ data: undefined })],
+      ['failure', async () => { throw new Error('LOOKUP_TOOL_SECRET'); }],
+    ]) {
+      const directory = path.join(tmpDir, `metadata-${suffix}`);
+      const hooks = await GuaranaOrchestrator({
+        directory,
+        client: { session: { get: lookup } },
+      });
+      const prompt = `Implement fallback task ${suffix} LOOKUP_PROMPT_SECRET`;
+      await hooks['chat.message'](
+        { sessionID: `metadata-primary-${suffix}`, messageID: `fallback-${suffix}` },
+        { parts: parts(prompt) },
+      );
+      assert.equal(load(directory).state, 'planning');
+      const events = fs.readFileSync(path.join(directory, '.specs', 'state', 'telemetry', 'events.jsonl'), 'utf8');
+      assert.equal(events.includes('LOOKUP_PROMPT_SECRET'), false);
+      assert.equal(events.includes('LOOKUP_TOOL_SECRET'), false);
+    }
   });
 
   it('worker-specs is recognized as an isolated Task child', async () => {
@@ -953,6 +1099,26 @@ describe('GuaranaOrchestrator', () => {
     const wf = workflow();
     assert.equal(wf.state, 'coding');
     assert.equal(wf.history.filter((h) => h.event === 'new_task').length, 1);
+  });
+
+  it('resumes the project-shared persisted workflow across distinct sessions without re-planning', async () => {
+    await api['chat.message'](
+      { sessionID: 'first-session', messageID: 'start-shared', agent: 'guarana' },
+      { parts: parts('Implement a project-shared workflow') },
+    );
+    assert.equal(load(tmpDir).state, 'planning');
+    assert.ok(fs.existsSync(workflowFile(tmpDir)));
+
+    const restartedPlugin = await GuaranaOrchestrator({ directory: tmpDir });
+    await restartedPlugin['chat.message'](
+      { sessionID: 'second-session', messageID: 'resume-shared', agent: 'guarana' },
+      { parts: parts('Como funciona a etapa atual?') },
+    );
+
+    const resumed = load(tmpDir);
+    assert.equal(resumed.state, 'planning');
+    assert.equal(resumed.history.filter((entry) => entry.event === 'new_task').length, 1);
+    assert.equal(resumed.goal, 'Implement a project-shared workflow');
   });
 
   it('never throws on corrupt persisted state', async () => {

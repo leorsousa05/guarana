@@ -140,6 +140,45 @@ function preflightUninstall(useProject, { pluginsOnly = false } = {}) {
   return { engines, plugins, profiles };
 }
 
+function adoptPlugin(useProject, args, { stdout = process.stdout } = {}) {
+  const usage = 'usage: guarana plugin adopt <plugin-file> --accept-current [--project]';
+  if (args.length === 1 && args[0] !== '--accept-current') {
+    throw new Error('refuse to adopt plugin: --accept-current is required');
+  }
+  if (args.length !== 2 || args[1] !== '--accept-current') throw new Error(usage);
+
+  const selected = PLUGINS.find(({ name }) => name === args[0]);
+  if (!selected) throw new Error(`refuse to adopt plugin: unknown Guarana plugin filename: ${args[0]}`);
+
+  const manifestFile = installManifestTarget(useProject);
+  const manifestState = engineArtifacts.manifestState(manifestFile);
+  if (!manifestState.exists) throw new Error(`refuse to adopt plugin: install manifest does not exist: ${manifestFile}`);
+  const entries = readPluginEntries(manifestState.manifest);
+  const matchingEntries = entries ? entries.filter(({ path: name }) => name === selected.name) : [];
+  if (matchingEntries.length !== 1) {
+    throw new Error(`refuse to adopt plugin: install manifest must contain exactly one tracked entry for ${selected.name}`);
+  }
+
+  const target = pluginTarget(useProject, selected.name);
+  const stat = maybeStat(target);
+  if (!stat) throw new Error(`refuse to adopt plugin: target does not exist: ${target}`);
+  if (!stat.isFile() || stat.isSymbolicLink()) {
+    throw new Error(`refuse to adopt plugin: target is not a regular non-symlink file: ${target}`);
+  }
+  const bytes = fs.readFileSync(target);
+  if (!bytes.toString('utf8', 0, 512).includes(selected.marker)) {
+    throw new Error(`refuse to adopt plugin: target has no recognized Guarana marker: ${target}`);
+  }
+  const currentHash = hash(bytes);
+  if (currentHash === matchingEntries[0].sha256) {
+    throw new Error(`refuse to adopt plugin: current bytes are already tracked for ${selected.name}`);
+  }
+
+  matchingEntries[0].sha256 = currentHash;
+  artifactTransaction.run([manifestFile], () => engineArtifacts.writeManifest(manifestFile, manifestState.manifest));
+  stdoutLine({ stdout }, `adopted current bytes for plugin ${selected.name}; updated its manifest SHA-256`);
+}
+
 function pluginUninstall(useProject, preflight = null, { pluginsOnly = false, skipTransaction = false, stdout = process.stdout } = {}) {
   const context = { stdout };
   const plan = preflight || preflightUninstall(useProject, { pluginsOnly });
@@ -257,6 +296,7 @@ async function run(args, { useProject, stdout = process.stdout, stderr = process
   switch (sub) {
     case 'install': pluginInstall(useProject, { ...context, pluginsOnly: args.includes('--plugins-only') }); break;
     case 'uninstall': pluginUninstall(useProject, null, { ...context, pluginsOnly: args.includes('--plugins-only') }); break;
+    case 'adopt': adoptPlugin(useProject, args.slice(1), context); break;
     case 'status': await pluginStatus(useProject, context); break;
     default:
       stderrLine(context, `unknown plugin command: ${sub === undefined ? '(missing)' : sub}`);

@@ -31,7 +31,6 @@ const ADVISOR_DISPATCH_HOOK_INPUTS_SYMBOL = Symbol.for('guarana.orchestrator.adv
 const advisorDispatchHookInputs = globalThis[ADVISOR_DISPATCH_HOOK_INPUTS_SYMBOL] || new WeakSet();
 globalThis[ADVISOR_DISPATCH_HOOK_INPUTS_SYMBOL] = advisorDispatchHookInputs;
 const ADVISOR_ARTIFACT_MARKER = '<!-- guarana-managed-advisor-artifact -->';
-
 function readJson(file) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return {}; }
 }
@@ -292,7 +291,7 @@ function resultText(output) {
   return '';
 }
 
-export const GuaranaOrchestrator = async ({ directory }) => {
+export const GuaranaOrchestrator = async ({ directory, client, session, sdkVersion = 'v1' }) => {
   const telemetryDir = path.join(directory, '.specs', 'state', 'telemetry');
   const eventsFile = path.join(telemetryDir, 'events.jsonl');
   const project = path.basename(directory);
@@ -309,6 +308,18 @@ export const GuaranaOrchestrator = async ({ directory }) => {
       /* swallow: telemetry must never throw */
     }
   };
+
+  const appendWorkflowEvent = ({ source, sessionID, agent, event, from, to, skill }) => append({
+    ts: Date.now(),
+    type: 'workflow',
+    source,
+    sessionID: typeof sessionID === 'string' ? sessionID : null,
+    agent: typeof agent === 'string' ? agent : null,
+    event,
+    from,
+    to,
+    skill,
+  });
 
   let corePromise = null;
   let coreFailed = false;
@@ -351,6 +362,7 @@ export const GuaranaOrchestrator = async ({ directory }) => {
   let memoryPromise = null;
   let activeSessionID = null;
   const childSessions = new Set();
+  const sessionRoleCache = new Map();
   const markChildSession = (sessionID) => {
     if (!sessionID) return;
     childSessions.delete(sessionID);
@@ -358,6 +370,34 @@ export const GuaranaOrchestrator = async ({ directory }) => {
     while (childSessions.size > 256) childSessions.delete(childSessions.values().next().value);
   };
   const isWorkerContext = (sessionID, agent) => childSessions.has(sessionID) || WORKER_AGENT_NAMES.has(agent);
+  const isMetadataChildSession = async (sessionID) => {
+    if (!sessionID) return false;
+    if (sessionRoleCache.has(sessionID)) return sessionRoleCache.get(sessionID);
+    try {
+      let response;
+      if (sdkVersion === 'v2') {
+        if (typeof session?.get !== 'function') return false;
+        response = await session.get({ sessionID, directory });
+      } else {
+        if (typeof client?.session?.get !== 'function') return false;
+        response = await client.session.get({ path: { id: sessionID }, query: { directory } });
+      }
+      const directResponse = sdkVersion === 'v2' && response?.id === sessionID;
+      const info = sdkVersion === 'v2'
+        ? (directResponse ? response : response?.data)
+        : response?.data;
+      if (!info || typeof info !== 'object') return false;
+      if (sdkVersion === 'v2' && info.id !== sessionID) return false;
+      const isChild = Boolean(info.parentID) || WORKER_AGENT_NAMES.has(info.agent);
+      sessionRoleCache.set(sessionID, isChild);
+      while (sessionRoleCache.size > 256) sessionRoleCache.delete(sessionRoleCache.keys().next().value);
+      if (isChild) markChildSession(sessionID);
+      return isChild;
+    } catch {
+      // Session metadata is best-effort; never expose prompt or tool data on lookup failure.
+      return false;
+    }
+  };
   const sessionCacheKey = (sessionID) => `${path.resolve(directory)}::${sessionID}`;
 
   const handleSessionCreated = async (event) => {
@@ -402,7 +442,7 @@ export const GuaranaOrchestrator = async ({ directory }) => {
     const e = await memoryPromise;
     if (!e) return null;
     try {
-      const userVaultDir = e.vault.initUserVault();
+      const userVaultDir = e.vault.userVaultDir();
       const [projectContext, globalPreferences] = await Promise.all([
         task
           ? e.tools.memoryGetContextForTask(e.vault.initVault(directory), { task, limit: 7 })
@@ -422,7 +462,7 @@ export const GuaranaOrchestrator = async ({ directory }) => {
     }
   };
 
-  const syncDecision = async (userText, lastResult, sessionID) => {
+  const syncDecision = async (userText, lastResult, sessionID, agent) => {
     if (sessionID) activeSessionID = sessionID;
     const c = await core();
     if (!c) return;
@@ -449,14 +489,14 @@ export const GuaranaOrchestrator = async ({ directory }) => {
             }
           }
           c.state.save(directory, next);
-          append({
-            ts: Date.now(),
-            type: 'workflow',
+          appendWorkflowEvent({
+            source: 'chat.message',
+            sessionID,
+            agent,
             event: d.event,
             from: wf.state,
             to: next.state,
             skill: d.skill,
-            note: d.note,
           });
         }
       }
@@ -565,14 +605,14 @@ export const GuaranaOrchestrator = async ({ directory }) => {
           memoryContext = await loadContext(applied.goal || applied.activeTask || '');
           const history = action === 'start_task' ? applied.history.slice(-3) : [applied.history.at(-1)];
           for (const entry of history) {
-            append({
-              ts: Date.now(),
-              type: 'workflow',
+            appendWorkflowEvent({
+              source: 'workflow_tick',
+              sessionID: context.sessionID,
+              agent: context.agent,
               event: entry.event,
               from: entry.from,
               to: entry.to,
               skill: c.state.skillForState(entry.to),
-              note: entry.note || '',
             });
           }
           return { ok: true, state: applied.state, skill: applied.skill, goal: applied.goal };
@@ -605,13 +645,14 @@ export const GuaranaOrchestrator = async ({ directory }) => {
         const agent = input?.agent || output?.message?.agent;
         if (WORKER_AGENT_NAMES.has(agent)) markChildSession(sessionID);
         if (isWorkerContext(sessionID, agent)) return;
+        if (!agent && sessionID && await isMetadataChildSession(sessionID)) return;
         const messageID = input?.messageID || output?.message?.id;
         if (!claimWorkflowMessage(directory, sessionID, messageID)) return;
         const text = userText((output && output.parts) || (input && input.parts));
         if (sessionID && text.includes(ADVISOR_OPT_IN_MARKER)) {
           advisorDispatchesBySession.delete(advisorSessionKey(directory, sessionID));
         }
-        await syncDecision(text, null, sessionID);
+        await syncDecision(text, null, sessionID, agent);
       } catch (err) {
         append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
       }
@@ -713,14 +754,14 @@ export const GuaranaOrchestrator = async ({ directory }) => {
           if (applied) {
             c.state.save(directory, applied);
             latest = applied;
-            append({
-              ts: Date.now(),
-              type: 'workflow',
+            appendWorkflowEvent({
+              source: 'tool.execute.after',
+              sessionID: input?.sessionID,
+              agent: input?.agent,
               event: 'verify_fail',
               from: 'verifying',
               to: 'debugging',
               skill: 'debug',
-              note: 'auto: tool result failure',
             });
           }
         }
@@ -732,7 +773,7 @@ export const GuaranaOrchestrator = async ({ directory }) => {
 };
 
 async function setupGuaranaOrchestrator(ctx) {
-  const hooks = await GuaranaOrchestrator({ directory: ctx.location.directory });
+  const hooks = await GuaranaOrchestrator({ directory: ctx.location.directory, session: ctx.session, sdkVersion: 'v2' });
   const directory = ctx.location.directory;
 
   await ctx.agent.transform((editor) => {

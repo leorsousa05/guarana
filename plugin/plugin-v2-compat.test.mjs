@@ -6,7 +6,7 @@ import path from 'node:path';
 import MemoryPlugin, { GuaranaMemory } from './guarana-memory.js';
 import OrchestratorPlugin, { GuaranaOrchestrator } from './guarana-orchestrator.js';
 import TelemetryPlugin, { GuaranaTelemetry } from './guarana-telemetry.js';
-import { load } from '../orchestrator/state.js';
+import { apply, createWorkflow, load, save, workflowFile } from '../orchestrator/state.js';
 
 const temporaryDirectories = [];
 function temporaryDirectory(prefix) {
@@ -21,7 +21,7 @@ afterEach(() => {
   }
 });
 
-function mockContext(directory, events = []) {
+function mockContext(directory, events = [], session = {}) {
   const tools = new Map();
   const toolHooks = new Map();
   const sessionHooks = new Map();
@@ -42,6 +42,7 @@ function mockContext(directory, events = []) {
       hook: async (name, hook) => toolHooks.set(name, hook),
     },
     session: {
+      ...session,
       hook: async (name, hook) => sessionHooks.set(name, hook),
     },
     agent: {
@@ -169,6 +170,114 @@ describe('hybrid V1/V2 plugin entrypoints', () => {
       cleanup();
       assert.equal(context.subscriptionSignal.aborted, true);
     } finally {
+      if (oldXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+      else process.env.XDG_CONFIG_HOME = oldXdg;
+    }
+  });
+
+  it('orchestrator V2 setup resolves agentless children using V2 session metadata before prompt processing', async () => {
+    const directory = temporaryDirectory('guarana-v2-orchestrator-child-');
+    const oldXdg = process.env.XDG_CONFIG_HOME;
+    process.env.XDG_CONFIG_HOME = path.join(directory, 'xdg');
+    const childSessionID = 'v2-agentless-child';
+    const envelopedChildSessionID = 'v2-enveloped-agentless-child';
+    const primarySessionID = 'v2-agentless-primary';
+    const failedSessionID = 'v2-agentless-lookup-failure';
+    const workflowPath = workflowFile(directory);
+    const startingWorkflow = ['new_task', 'plan_complete', 'run_start']
+      .reduce((workflow, event) => apply(workflow, event), createWorkflow());
+    assert.equal(startingWorkflow.state, 'coding');
+    assert.ok(save(directory, startingWorkflow));
+    const workflowBeforeChild = fs.readFileSync(workflowPath);
+    const sessionLookups = [];
+    const context = mockContext(directory, [], {
+      get: async (args) => {
+        sessionLookups.push(args);
+        if (args.sessionID === childSessionID) {
+          return { id: childSessionID, parentID: 'v2-parent-session', agent: 'worker-code' };
+        }
+        if (args.sessionID === envelopedChildSessionID) {
+          return { data: { id: envelopedChildSessionID, parentID: 'v2-parent-session', agent: 'worker-code' } };
+        }
+        if (args.sessionID === primarySessionID) {
+          return { id: primarySessionID, agent: 'guarana' };
+        }
+        return { error: { name: 'NotFoundError' } };
+      },
+    });
+    let cleanup;
+
+    try {
+      cleanup = await OrchestratorPlugin.setup(context);
+      await context.eventDrained;
+      assert.equal(Object.hasOwn(context, 'client'), false);
+      assert.equal(typeof context.session.get, 'function');
+      const promptHook = context.sessionHooks.get('prompt');
+      const contextHook = context.sessionHooks.get('context');
+
+      await promptHook({
+        sessionID: childSessionID,
+        messageID: 'v2-agentless-child-message',
+        prompt: { text: 'Implement a child-only task' },
+      });
+      const childContext = {
+        sessionID: childSessionID,
+        system: [{ type: 'text', text: 'existing system instructions' }],
+      };
+      const systemBeforeChild = structuredClone(childContext.system);
+      await contextHook(childContext);
+
+      assert.deepEqual(sessionLookups, [{ sessionID: childSessionID, directory }]);
+      assert.deepEqual(fs.readFileSync(workflowPath), workflowBeforeChild);
+      assert.deepEqual(load(directory), startingWorkflow);
+      assert.equal(fs.existsSync(path.join(directory, '.specs', 'README.md')), false);
+      assert.equal(fs.existsSync(path.join(directory, '.guarana', 'memory')), false);
+      assert.deepEqual(childContext.system, systemBeforeChild);
+
+      await promptHook({
+        sessionID: envelopedChildSessionID,
+        messageID: 'v2-enveloped-agentless-child-message',
+        prompt: { text: 'Implement an enveloped child-only task' },
+      });
+      const envelopedChildContext = {
+        sessionID: envelopedChildSessionID,
+        system: [{ type: 'text', text: 'existing enveloped-child system instructions' }],
+      };
+      const systemBeforeEnvelopedChild = structuredClone(envelopedChildContext.system);
+      await contextHook(envelopedChildContext);
+      assert.deepEqual(fs.readFileSync(workflowPath), workflowBeforeChild);
+      assert.deepEqual(load(directory), startingWorkflow);
+      assert.equal(fs.existsSync(path.join(directory, '.specs', 'README.md')), false);
+      assert.equal(fs.existsSync(path.join(directory, '.guarana', 'memory')), false);
+      assert.deepEqual(envelopedChildContext.system, systemBeforeEnvelopedChild);
+
+      await promptHook({
+        sessionID: primarySessionID,
+        messageID: 'v2-agentless-primary-message',
+        prompt: { text: 'Implement a V2 primary metadata task' },
+      });
+      assert.equal(load(directory).state, 'planning');
+      assert.equal(load(directory).goal, 'Implement a V2 primary metadata task');
+
+      await promptHook({
+        sessionID: failedSessionID,
+        messageID: 'v2-agentless-lookup-failure-message',
+        prompt: { text: 'Implement after metadata lookup failure' },
+      });
+      assert.equal(load(directory).state, 'planning');
+      assert.equal(load(directory).goal, 'Implement after metadata lookup failure');
+      assert.deepEqual(sessionLookups, [
+        { sessionID: childSessionID, directory },
+        { sessionID: envelopedChildSessionID, directory },
+        { sessionID: primarySessionID, directory },
+        { sessionID: failedSessionID, directory },
+      ]);
+
+      cleanup();
+      cleanup = null;
+      assert.equal(context.subscriptionSignal.aborted, true);
+    } finally {
+      cleanup?.();
       if (oldXdg === undefined) delete process.env.XDG_CONFIG_HOME;
       else process.env.XDG_CONFIG_HOME = oldXdg;
     }

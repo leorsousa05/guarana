@@ -187,6 +187,7 @@ guarana plugin install --plugins-only [--project]  Install plugins and engines; 
 guarana plugin status [--project]        Check plugin and engine health
 guarana plugin uninstall [--project]    Remove plugins, engines, and Guarana-managed profiles
 guarana plugin uninstall --plugins-only [--project]  Remove plugin files and the plugins manifest group; preserve engines and profiles
+guarana plugin adopt <plugin-file> --accept-current [--project]  Explicitly adopt one plugin's current marked bytes
 
 guarana memory init                      Initialize a vault manually
 guarana memory status                    Show node, edge, and draft counts
@@ -204,6 +205,15 @@ Memory commands always use `.guarana/memory/` under the current working
 directory. A global `--project` before `memory` does not switch the memory
 vault. For a memory search, put `--project HASH` after `search` to filter results
 by project hash (for example, `guarana memory search "term" --project HASH`).
+
+`guarana plugin adopt` is a deliberate ownership transition, not a force option.
+It accepts exactly one allowlisted Guarana plugin filename and requires the
+`--accept-current` acknowledgment, an existing valid manifest entry, a regular
+plugin file with that plugin's Guarana marker, and bytes that differ from the
+tracked hash. It updates only that manifest entry's SHA-256; plugin bytes and
+other manifest entries are preserved. Review the current plugin bytes before
+using it. Normal install and uninstall continue to reject tracked modifications
+unless this command explicitly records their current hash.
 
 ## Project Layout
 

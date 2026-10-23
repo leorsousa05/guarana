@@ -8,13 +8,13 @@ import { canTransition, skillForState, stateForSkill } from './state.js';
 
 // Start/re-plan only for requested changes. Topic nouns and investigative,
 // review, or problem-report language alone are not mutation intent.
-const MUTATION_ACTION = String.raw`(?:implement|implemente|build|create|add|make|fix|refactor|design|develop|update|modify|change|remove|delete|improve|document|edit|enable|disable|configure|criar|adicionar|implementar|construir|corrigir|refatorar|atualizar|alterar|documentar|editar|write\s+(?:(?:the|a|an)\s+)?(?:code|file|docs?|document(?:ation)?|readme|changelog|config(?:uration)?|adr|spec(?:ification)?s?|tests?))`;
+const MUTATION_ACTION = String.raw`(?:implement|implemente|build|create|crie|add|make|fix|refactor|design|develop|update|modify|change|remove|delete|improve|document|edit|enable|disable|configure|criar|adicionar|adicione|implementar|construir|construa|corrigir|corrija|refatorar|refatore|atualizar|atualize|alterar|altere|modificar|modifique|remover|remova|excluir|exclua|apagar|apague|melhorar|melhore|documentar|documente|editar|edite|habilitar|habilite|desabilitar|desabilite|configurar|configure|faça|desenvolva|escreva|write\s+(?:(?:the|a|an)\s+)?(?:code|file|docs?|document(?:ation)?|readme|changelog|config(?:uration)?|adr|spec(?:ification)?s?|tests?))`;
 const NEW_TASK_RE = new RegExp(`\\b${MUTATION_ACTION}\\b`, 'i');
 const DIRECT_MUTATION_RE = new RegExp(`^\\s*(?:(?:please|kindly)\\s+)?(${MUTATION_ACTION})\\b`, 'i');
 const POLITE_MUTATION_RE = new RegExp(`^\\s*(?:can|could|would)\\s+you\\s+(?:please\\s+)?(${MUTATION_ACTION})\\b`, 'i');
 const POLITE_MUTATION_TARGET_RE = /^(?!(?:me|us|about|on|for|with|from|by|in|at|into|onto|over|under|whether|if|what|why|how|when|where|who|which)\b)(?:(?:the|a|an|this|that|these|those|my|our|your|their|its)\s+)?[\w./-]+\b/i;
 const COMPOUND_MUTATION_RE = new RegExp(`\\b(?:and|then|also)\\s+(?:please\\s+)?(${MUTATION_ACTION})\\b`, 'i');
-const READ_ONLY_PREFIX_RE = /^\s*(?:what|why|when|where|who|how|explain|describe|summari[sz]e|review|audit|inspect|investigate|report|analy[sz]e|check|tell me|show me|should|could|would|can|do|does|is|are)\b/i;
+const READ_ONLY_PREFIX_RE = /^\s*(?:what|why|when|where|who|how|explain|describe|summari[sz]e|review|audit|inspect|investigate|report|analy[sz]e|check|tell me|show me|should|could|would|can|do|does|is|are|o\s+que|como|quando|onde|quem|qual|quais|explique|explica|descreva|descreve|resuma|revise|audite|inspecione|investigue|relate|analise|verifique|confira|me\s+(?:explique|explica|diga|conte|informe|mostre|descreva|ajude\s+a\s+entender|ajuda\s+a\s+entender)|(?:(?:voce|você)\s+)?(?:pode|poderia|consegue)\s+(?:me\s+)?(?:explicar|dizer|contar|informar|mostrar|descrever|detalhar|ajudar\s+a\s+entender)|(?:quero\s+saber|gostaria\s+de\s+saber)|devo|deveria|devemos)\b|^\s*por\s+qu[eê](?=\W|$)/i;
 
 function hasMutationTarget(action, remainder) {
   if (/^write\b/i.test(action)) return true;

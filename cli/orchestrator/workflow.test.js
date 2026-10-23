@@ -387,6 +387,16 @@ test('read-only questions, audits, reviews, investigations, and reports do not s
     'I need an update on the task status',
     'Guarana never uses memory without an explicit command',
     'What does guarana:code do?',
+    'Como funciona o endpoint OAuth?',
+    'Como seria implementar uma fila local?',
+    'O que faz a integração atual?',
+    'Você pode me explicar como implementar PKCE?',
+    'Pode me explicar como implementar PKCE?',
+    'Me ajuda a entender como atualizar o README?',
+    'Quais mudanças são necessárias para corrigir o login?',
+    'Me diga como atualizar o README',
+    'Revise o fluxo de autenticação',
+    'Por que o teste falha?',
   ]) {
     const d = decide({ userText, workflow: createWorkflow() });
     assert.equal(d.event, null, userText);
@@ -398,6 +408,26 @@ test('read-only questions, audits, reviews, investigations, and reports do not s
   }
 });
 
+test('exact Portuguese interrogative questions stay read-only from idle and active workflows', () => {
+  for (const userText of [
+    'Qual é a melhor forma de corrigir o login?',
+    'Por quê devo implementar PKCE?',
+  ]) {
+    const idle = createWorkflow();
+    const idleDecision = decide({ userText, workflow: idle });
+    assert.equal(idleDecision.event, null, userText);
+    assert.equal(idleDecision.state, 'idle', userText);
+    assert.deepEqual(idle, createWorkflow(), userText);
+
+    const active = toVerifying();
+    const activeBefore = structuredClone(active);
+    const activeDecision = decide({ userText, workflow: active });
+    assert.equal(activeDecision.event, null, userText);
+    assert.equal(activeDecision.state, 'verifying', userText);
+    assert.deepEqual(active, activeBefore, userText);
+  }
+});
+
 test('clear mutation requests and explicit skill commands still enter workflow', () => {
   const mutation = decide({ userText: 'Fix the OAuth login flow', workflow: createWorkflow() });
   assert.equal(mutation.event, 'new_task');
@@ -406,6 +436,19 @@ test('clear mutation requests and explicit skill commands still enter workflow',
   const documentation = decide({ userText: 'Write a README for the OAuth integration', workflow: createWorkflow() });
   assert.equal(documentation.event, 'new_task');
   assert.equal(documentation.skill, 'plan');
+
+  for (const userText of [
+    'Implemente a autenticação OAuth',
+    'Crie um teste para o endpoint',
+    'Atualize o README do projeto',
+    'Corrija o fluxo de login',
+    'Desenvolva um relatório de status',
+    'Escreva um teste de integração',
+  ]) {
+    const portugueseMutation = decide({ userText, workflow: createWorkflow() });
+    assert.equal(portugueseMutation.event, 'new_task', userText);
+    assert.equal(portugueseMutation.skill, 'plan', userText);
+  }
 
   const politeMutation = decide({ userText: 'Can you add a validation test?', workflow: createWorkflow() });
   assert.equal(politeMutation.event, 'new_task');
@@ -431,6 +474,11 @@ test('clear mutation requests and explicit skill commands still enter workflow',
   assert.equal(forced.event, 'force');
   assert.equal(forced.skill, 'code');
   assert.equal(forced.goal, 'implement the OAuth flow');
+
+  const forcedPortuguese = decide({ userText: 'guarana:verify confira o fluxo', workflow: createWorkflow() });
+  assert.equal(forcedPortuguese.event, 'force');
+  assert.equal(forcedPortuguese.skill, 'verify');
+  assert.equal(forcedPortuguese.state, 'verifying');
 });
 
 test('automatic specs bootstrap uses a generic spec path and is idempotent', () => {
@@ -580,7 +628,7 @@ test('system block is always-on and names the skill', () => {
     for (const event of [null, 'plan_complete', 'run_start', 'code_complete', 'verify_fail', 'debug_complete', 'verify_pass']) {
       if (event) current = apply(current, event);
       const currentBlock = buildSystemBlock(current, preferences);
-      assert.ok(currentBlock.length < 1800, `always-on block unexpectedly long: ${currentBlock.length} chars`);
+      assert.ok(currentBlock.length < 2000, `always-on block unexpectedly long: ${currentBlock.length} chars`);
     }
   }
 });

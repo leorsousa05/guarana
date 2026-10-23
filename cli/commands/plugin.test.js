@@ -12,7 +12,13 @@ const {
   legacyAdvisorAgentsTarget, advisorSettingsTarget, openCodeRootTarget, installManifestTarget,
 } = require('../lib/paths.js');
 const { PLUGIN_NAME, MEMORY_PLUGIN_NAME, ORCHESTRATOR_PLUGIN_NAME } = require('../constants.js');
+const { PLUGIN_MARKER, MEMORY_PLUGIN_MARKER, ORCHESTRATOR_PLUGIN_MARKER } = require('../lib/guard.js');
 const BIN = path.join(__dirname, '..', '..', 'bin', 'guarana.js');
+const PLUGIN_MARKERS = new Map([
+  [PLUGIN_NAME, PLUGIN_MARKER],
+  [MEMORY_PLUGIN_NAME, MEMORY_PLUGIN_MARKER],
+  [ORCHESTRATOR_PLUGIN_NAME, ORCHESTRATOR_PLUGIN_MARKER],
+]);
 
 function captureStreams() {
   let stdout = '';
@@ -620,6 +626,266 @@ it('refuses modified manifest-tracked plugins before install or uninstall mutati
   } finally {
     process.chdir(originalCwd);
     fs.rmSync(project, { recursive: true, force: true });
+  }
+});
+
+it('adopts current marked bytes for exactly one allowlisted plugin and leaves normal install strict', () => {
+  const originalCwd = process.cwd();
+  for (const name of [PLUGIN_NAME, MEMORY_PLUGIN_NAME, ORCHESTRATOR_PLUGIN_NAME]) {
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-plugin-adopt-'));
+    try {
+      process.chdir(project);
+      plugin.install(true, { quiet: true });
+      const target = pluginTarget(true, name);
+      const adoptedBytes = Buffer.from(`${PLUGIN_MARKERS.get(name)}\nlocal accepted revision\0\xff\n`);
+      fs.writeFileSync(target, adoptedBytes);
+
+      const manifestFile = installManifestTarget(true);
+      const beforeManifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+      beforeManifest.skills = { guarana: [{ path: 'skills/keep.md', sha256: 'a'.repeat(64) }] };
+      beforeManifest.future = { installMetadata: { enabled: true, label: 'preserve' } };
+      fs.writeFileSync(manifestFile, `${JSON.stringify(beforeManifest, null, 2)}\n`);
+      const beforeEntries = structuredClone(beforeManifest.plugins);
+
+      const adopted = spawnSync(process.execPath, [BIN, 'plugin', 'adopt', name, '--accept-current', '--project'], {
+        cwd: project,
+        encoding: 'utf8',
+      });
+      assert.equal(adopted.status, 0, adopted.stderr);
+      assert.equal(adopted.stderr, '');
+      assert.equal(adopted.stdout, `adopted current bytes for plugin ${name}; updated its manifest SHA-256\n`);
+      assert.deepEqual(fs.readFileSync(target), adoptedBytes, 'adoption must not touch plugin bytes');
+
+      const afterManifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+      const expectedManifest = structuredClone(beforeManifest);
+      expectedManifest.plugins.find((entry) => entry.path === name).sha256 =
+        crypto.createHash('sha256').update(adoptedBytes).digest('hex');
+      assert.deepEqual(afterManifest, expectedManifest, 'only the selected manifest hash may change');
+      const changedHashes = beforeEntries.filter((entry) =>
+        entry.sha256 !== afterManifest.plugins.find((after) => after.path === entry.path).sha256);
+      assert.deepEqual(changedHashes.map(({ path: entryPath }) => entryPath), [name]);
+
+      if (name === PLUGIN_NAME) {
+        const installed = spawnSync(process.execPath, [BIN, 'plugin', 'install', '--project'], {
+          cwd: project,
+          encoding: 'utf8',
+        });
+        assert.equal(installed.status, 0, installed.stderr);
+        assert.deepEqual(fs.readFileSync(target), fs.readFileSync(require('../constants.js').PLUGIN_BUNDLE));
+      }
+    } finally {
+      process.chdir(originalCwd);
+      fs.rmSync(project, { recursive: true, force: true });
+    }
+  }
+});
+
+it('adopts only the selected isolated global plugin scope when --project is omitted', () => {
+  const originalCwd = process.cwd();
+  const oldHome = process.env.HOME;
+  const oldXdg = process.env.XDG_CONFIG_HOME;
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-plugin-adopt-global-home-'));
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-plugin-adopt-global-project-'));
+  const xdg = path.join(home, 'xdg');
+  try {
+    process.env.HOME = home;
+    process.env.XDG_CONFIG_HOME = xdg;
+    process.chdir(project);
+    plugin.install(false, { quiet: true });
+
+    const target = pluginTarget(false, ORCHESTRATOR_PLUGIN_NAME);
+    const adoptedBytes = Buffer.from(`${PLUGIN_MARKERS.get(ORCHESTRATOR_PLUGIN_NAME)}\nlocal global revision\n`);
+    fs.writeFileSync(target, adoptedBytes);
+    const manifestFile = installManifestTarget(false);
+    const before = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+    const projectTreeBefore = snapshotTree(project);
+
+    const adopted = spawnSync(process.execPath, [BIN, 'plugin', 'adopt', ORCHESTRATOR_PLUGIN_NAME, '--accept-current'], {
+      cwd: project,
+      env: { ...process.env, HOME: home, XDG_CONFIG_HOME: xdg },
+      encoding: 'utf8',
+    });
+    assert.equal(adopted.status, 0, adopted.stderr);
+    assert.equal(adopted.stderr, '');
+    assert.deepEqual(fs.readFileSync(target), adoptedBytes);
+    const after = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+    const expected = structuredClone(before);
+    expected.plugins.find((entry) => entry.path === ORCHESTRATOR_PLUGIN_NAME).sha256 =
+      crypto.createHash('sha256').update(adoptedBytes).digest('hex');
+    assert.deepEqual(after, expected);
+    assert.deepEqual(snapshotTree(project), projectTreeBefore, 'global adoption must not touch project scope');
+  } finally {
+    process.chdir(originalCwd);
+    if (oldHome === undefined) delete process.env.HOME;
+    else process.env.HOME = oldHome;
+    if (oldXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = oldXdg;
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(project, { recursive: true, force: true });
+  }
+});
+
+it('rejects adoption without writes for missing acknowledgment, invalid names/arguments, manifests, entries, or targets', async () => {
+  const scenarios = [
+    { name: 'missing acknowledgment', args: [PLUGIN_NAME], error: /--accept-current is required/ },
+    { name: 'unknown plugin', args: ['custom-plugin.js', '--accept-current'], error: /unknown Guarana plugin filename/ },
+    { name: 'unexpected flag', args: [PLUGIN_NAME, '--force'], error: /usage: guarana plugin adopt/ },
+    { name: 'unexpected extra argument', args: [PLUGIN_NAME, '--accept-current', '--force'], error: /usage: guarana plugin adopt/ },
+    { name: 'duplicate acknowledgment', args: [PLUGIN_NAME, '--accept-current', '--accept-current'], error: /usage: guarana plugin adopt/ },
+    { name: 'wrong argument order', args: ['--accept-current', PLUGIN_NAME], error: /usage: guarana plugin adopt/ },
+    { name: 'missing plugin filename', args: ['--accept-current'], error: /usage: guarana plugin adopt/ },
+    { name: 'absent manifest', args: [PLUGIN_NAME, '--accept-current'], prepare: ({ manifestFile }) => fs.unlinkSync(manifestFile), error: /manifest does not exist/ },
+    { name: 'malformed manifest', args: [PLUGIN_NAME, '--accept-current'], prepare: ({ manifestFile }) => fs.writeFileSync(manifestFile, '{invalid json\n'), error: /invalid JSON/ },
+    {
+      name: 'unsupported manifest format', args: [PLUGIN_NAME, '--accept-current'],
+      prepare: ({ manifestFile }) => {
+        const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+        manifest.version = 99;
+        fs.writeFileSync(manifestFile, `${JSON.stringify(manifest, null, 2)}\n`);
+      },
+      error: /unsupported format/,
+    },
+    {
+      name: 'missing tracked entry', args: [PLUGIN_NAME, '--accept-current'],
+      prepare: ({ manifestFile }) => {
+        const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+        manifest.plugins = manifest.plugins.filter((entry) => entry.path !== PLUGIN_NAME);
+        fs.writeFileSync(manifestFile, `${JSON.stringify(manifest, null, 2)}\n`);
+      },
+      error: /exactly one tracked entry/,
+    },
+    {
+      name: 'duplicate tracked entry', args: [PLUGIN_NAME, '--accept-current'],
+      prepare: ({ manifestFile }) => {
+        const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+        manifest.plugins.push({ ...manifest.plugins.find((entry) => entry.path === PLUGIN_NAME) });
+        fs.writeFileSync(manifestFile, `${JSON.stringify(manifest, null, 2)}\n`);
+      },
+      error: /invalid plugin artifact entry/,
+    },
+    {
+      name: 'invalid tracked entry', args: [PLUGIN_NAME, '--accept-current'],
+      prepare: ({ manifestFile }) => {
+        const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+        manifest.plugins.find((entry) => entry.path === PLUGIN_NAME).sha256 = 'not-a-hash';
+        fs.writeFileSync(manifestFile, `${JSON.stringify(manifest, null, 2)}\n`);
+      },
+      error: /invalid plugin artifact entry/,
+    },
+    {
+      name: 'already tracked hash', args: [PLUGIN_NAME, '--accept-current'],
+      prepare: ({ manifestFile, target }) => {
+        const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+        manifest.plugins.find((entry) => entry.path === PLUGIN_NAME).sha256 =
+          crypto.createHash('sha256').update(fs.readFileSync(target)).digest('hex');
+        fs.writeFileSync(manifestFile, `${JSON.stringify(manifest, null, 2)}\n`);
+      },
+      error: /already tracked/,
+    },
+    {
+      name: 'missing target', args: [PLUGIN_NAME, '--accept-current'],
+      prepare: ({ target }) => fs.unlinkSync(target),
+      error: /target does not exist/,
+    },
+    {
+      name: 'symlink target', args: [PLUGIN_NAME, '--accept-current'],
+      prepare: ({ project, target }) => {
+        fs.unlinkSync(target);
+        const source = path.join(project, 'plugin-link-source.js');
+        fs.writeFileSync(source, 'source remains untouched\n');
+        fs.symlinkSync(source, target);
+      },
+      error: /not a regular non-symlink file/,
+    },
+    {
+      name: 'non-regular target', args: [PLUGIN_NAME, '--accept-current'],
+      prepare: ({ target }) => {
+        fs.unlinkSync(target);
+        fs.mkdirSync(target);
+      },
+      error: /not a regular non-symlink file/,
+    },
+    {
+      name: 'missing plugin-specific marker', args: [PLUGIN_NAME, '--accept-current'],
+      prepare: ({ target }) => fs.writeFileSync(target, '// some other plugin\nlocal bytes\n'),
+      error: /no recognized Guarana marker/,
+    },
+  ];
+
+  const originalCwd = process.cwd();
+  for (const scenario of scenarios) {
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-plugin-adopt-reject-'));
+    try {
+      process.chdir(project);
+      plugin.install(true, { quiet: true });
+      const target = pluginTarget(true, PLUGIN_NAME);
+      fs.writeFileSync(target, `${PLUGIN_MARKER}\nlocal accepted revision\n`);
+      const manifestFile = installManifestTarget(true);
+      const options = { project, target, manifestFile };
+      scenario.prepare?.(options);
+      const before = snapshotTree(project);
+      const streams = captureStreams();
+
+      await assert.rejects(plugin.run(['adopt', ...scenario.args], {
+        useProject: true,
+        ...streams,
+      }), scenario.error, scenario.name);
+      assert.deepEqual(streams.output(), { stdout: '', stderr: '' }, `${scenario.name} must not report success`);
+      assert.deepEqual(snapshotTree(project), before, `${scenario.name} must not write files`);
+      if (scenario.name === 'symlink target') assert.ok(fs.lstatSync(target).isSymbolicLink());
+    } finally {
+      process.chdir(originalCwd);
+      fs.rmSync(project, { recursive: true, force: true });
+    }
+  }
+});
+
+it('rolls back the manifest if an ordinary filesystem error follows its replacement', async () => {
+  const originalCwd = process.cwd();
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-plugin-adopt-rollback-'));
+  try {
+    process.chdir(project);
+    plugin.install(true, { quiet: true });
+    const target = pluginTarget(true, PLUGIN_NAME);
+    const pluginBytes = Buffer.from(`${PLUGIN_MARKER}\nlocal accepted revision\n`);
+    fs.writeFileSync(target, pluginBytes);
+    const manifestFile = installManifestTarget(true);
+    const manifestBytes = fs.readFileSync(manifestFile);
+    const before = snapshotTree(project);
+    const rename = fs.renameSync;
+    let injected = false;
+    fs.renameSync = function renameAndFailAfterManifestReplacement(source, destination) {
+      const result = rename.call(fs, source, destination);
+      if (!injected && destination === manifestFile && source.startsWith(`${manifestFile}.tmp-`)) {
+        injected = true;
+        throw new Error('simulated post-replacement filesystem error');
+      }
+      return result;
+    };
+    try {
+      await assert.rejects(plugin.run(['adopt', PLUGIN_NAME, '--accept-current'], { useProject: true }),
+        /simulated post-replacement filesystem error/);
+    } finally {
+      fs.renameSync = rename;
+    }
+
+    assert.equal(injected, true);
+    assert.deepEqual(fs.readFileSync(manifestFile), manifestBytes);
+    assert.deepEqual(fs.readFileSync(target), pluginBytes);
+    assert.deepEqual(snapshotTree(project), before, 'rollback must leave no temporary or partial file');
+  } finally {
+    process.chdir(originalCwd);
+    fs.rmSync(project, { recursive: true, force: true });
+  }
+});
+
+it('documents the explicit one-plugin ownership transition in help and README', () => {
+  const help = require('../help.js').HELP;
+  const readme = fs.readFileSync(path.join(__dirname, '..', '..', 'README.md'), 'utf8');
+  for (const text of [help, readme]) {
+    assert.match(text, /guarana plugin adopt <plugin-file> --accept-current \[--project\]/);
+    assert.match(text, /ownership transition/);
+    assert.match(text, /normal install\/uninstall ownership guards remain strict|Normal install and uninstall continue to reject tracked modifications/);
   }
 });
 

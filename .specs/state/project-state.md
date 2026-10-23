@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-10-23T00:49:03.349Z
+Last updated: 2026-10-23T21:16:23.037Z
 
 ## Per-skill status
 | Skill | Status |
@@ -24,7 +24,7 @@ Last updated: 2026-10-23T00:49:03.349Z
 | Guarana optional model advisor | **VALIDATED** — UI criteria 11–14 and ADR-027 runtime proof |
 
 ## Current step
-The global workflow_tick runtime deployment is SHIPPED after the explicitly authorized plugin-only install and confirmed server restart. The independent runtime guard proof remains valid; the post-restart verifier relied on supplied authenticated API observations rather than a fresh independent API fetch. The separate local 1.5.0 package release remains pending and unshipped.
+The bounded orchestrator intent/provenance follow-up is VALIDATED; Git push remains pending, so it is not SHIPPED.
 
 ## Dashboard redesign final validation — 2026-10-11
 
@@ -71,7 +71,7 @@ Validated before this task: the post-bootstrap-fix release gate, final archive, 
 - Browser proof confirms 375px document/body width, 351px content scroll/client widths for the Models sections and discovery areas, stacked grids, no clipped Models descendants, visible keyboard focus, polite status announcement, and reduced-motion behavior. Global navigation's horizontal scrolling is intentional; page content does not overflow.
 - Detailed proof and check outcomes: `changes/2026-10-09-models-page-overhaul.md`. Shipping was not confirmed; status is VALIDATED, not SHIPPED.
 - Budget: ADR-005 defaults.
-- Pending writes: The separate local 1.5.0 package release remains pending and outside this shipped global plugin-only deployment.
+- Pending writes: Git push remains pending; do not mark SHIPPED before it occurs.
 
 ## Proofs that exist
 Task-1 proofs for all 7 skills in `.specs/features/guarana/proofs/`; all acceptance criteria mapped; worker-verify PASS on every skill. CLI acceptance: 6/6 checks PASS (recorded in changes/2026-08-21-cli.md). Release readiness evidence is in `changes/2026-10-02-release-readiness.md`; 1.0.0 candidate evidence and revalidation follow-up are in `changes/2026-10-07-release-candidate-1.0.0.md` and `features/release/release-candidate-1.0.0-smoke.jsonl`. Spec lifecycle write proof: `changes/2026-10-03-spec-lifecycle-writes.md`. Automatic skill-creation proof: `changes/2026-10-05-automatic-skill-creation.md`, `changes/2026-10-05-skill-trigger-guidance.md`, and validated routing clarity in `changes/2026-10-07-skill-routing-clarity.md`. Native Task worker dispatch proof is in `changes/2026-10-07-native-task-worker-dispatch.md` and `features/orchestrator/subagent-dispatch-smoke.jsonl`. Dashboard skill-scope count proof: `changes/2026-10-05-dashboard-skill-scope-counts.md`.

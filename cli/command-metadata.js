@@ -101,6 +101,7 @@ const COMMANDS = [
       '  guarana plugin install --plugins-only [--project]  Install plugins and engines only',
       '  guarana plugin uninstall [--project]  Remove plugins, engines, and native profiles',
       '  guarana plugin uninstall --plugins-only [--project]  Remove only the three plugins',
+      '  guarana plugin adopt <plugin-file> --accept-current [--project]  Adopt current bytes for one marked plugin',
       '  guarana plugin status [--project]     Check plugin/engine/vault install health',
     ],
   },
