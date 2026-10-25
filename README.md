@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/leorsousa05/guarana"><img src="https://img.shields.io/github/stars/leorsousa05/guarana?style=for-the-badge&logo=github&logoColor=white&color=f59e0b" alt="GitHub stars"></a>
-  <a href="https://www.npmjs.com/package/guarana"><img src="https://img.shields.io/npm/v/guarana?style=for-the-badge&logo=npm&logoColor=white&color=cb3837" alt="npm version"></a>
+  <a href="https://github.com/leorsousa05/guarana/tree/v1.5.0"><img src="https://img.shields.io/badge/tag-v1.5.0%20Stable-7c3aed?style=for-the-badge&logo=github&logoColor=white" alt="GitHub tag v1.5.0, Stable"></a>
   <img src="https://img.shields.io/badge/core_dependencies-zero-059669?style=for-the-badge" alt="Zero core runtime dependencies">
   <br>
   <a href="https://opencode.ai/"><img src="https://img.shields.io/badge/runtime-OpenCode-111827?style=for-the-badge" alt="OpenCode runtime"></a>
@@ -25,9 +25,20 @@ task requests automatically move through planning, implementation, verification,
 and memory, while the important state stays inspectable on disk.
 
 <p>
-  <a href="https://github.com/leorsousa05/guarana"><img src="https://img.shields.io/badge/version-1.5.0%20Stable-7c3aed?style=flat-square" alt="Version 1.5.0 Stable"></a>
+  <img src="https://img.shields.io/badge/released-2026--10--25-7c3aed?style=flat-square" alt="Released October 25, 2026">
   <img src="https://img.shields.io/badge/license-MIT-2563eb?style=flat-square" alt="MIT license">
 </p>
+
+## What's New in 1.5.0
+
+> **Stable source/tag release · 2026-10-25** — see the [full changelog](CHANGELOG.md).
+
+| Area | Highlights |
+|---|---|
+| **Activity & Overview** | Live operational workbenches for execution, workflow context, active workers, Advisor runtime, and confirmed-memory context. |
+| **Model configuration** | Connected OpenCode providers and models, model-specific variant suggestions, and manual-entry fallbacks for Primary and Advisor. |
+| **Memory Graph** | Accessible Map/Index views, a pan-and-zoom map, selected-memory inspector, and stable selection positioning. |
+| **Workflow reliability** | Atomic task kickoff, bounded evidence-based blocker recovery, meaningful phase progress reports, and resilient late telemetry metadata. |
 
 ## The Short Version
 
@@ -69,10 +80,24 @@ only the active skill into the current turn.
   tests are retired and are not release validation; see the [no-smoke policy and
   ordinary release checks](RELEASING.md).
 
-Install Guarana globally:
+### Install from GitHub (v1.5.0)
+
+Guarana 1.5.0 is not published on npm. Clone the GitHub tag and link the local
+CLI:
 
 ```bash
-npm install -g guarana
+git clone --depth 1 --branch v1.5.0 https://github.com/leorsousa05/guarana.git
+cd guarana
+npm link
+```
+
+`npm link` registers the CLI from this local checkout globally; it does not
+download a `guarana` package from npm or publish anything. Keep the cloned
+checkout available while using the linked CLI.
+
+Then install Guarana's skills and plugins:
+
+```bash
 guarana install
 ```
 
