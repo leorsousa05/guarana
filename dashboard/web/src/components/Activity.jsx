@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { usePoll } from '../hooks/usePoll.js';
 import { fmtDur, fmtTs } from '../lib/format.js';
 import { EmptyState, Stamp } from './common.jsx';
 import { MemoryInjections } from './MemoryInjections.jsx';
 import { AdvisorHistoryModal } from './AdvisorHistoryModal.jsx';
+import { CompletedSubagentsModal } from './CompletedSubagentsModal.jsx';
 
 export function rootSessionFrom(summary) {
   const roots = (summary?.runs || []).filter((run) => !run.parentSessionID);
@@ -62,6 +63,43 @@ function safeAgentLabel(value) {
     : null;
 }
 
+const WORKER_SELECTION_KEY = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const WORKER_ACTIVITY_STATUSES = new Set(['busy', 'running', 'idle', 'retry', 'error', 'completed', 'dispatched', 'ok', 'observed']);
+
+function safeWorkerTimestamp(value) {
+  return Number.isFinite(value) && Number.isFinite(new Date(value).getTime()) ? value : null;
+}
+
+function safeWorkerActivity(events) {
+  return (Array.isArray(events) ? events : [])
+    .filter((event) => event && typeof event === 'object' && !Array.isArray(event)
+      && EVENT_LABELS[event.type] && safeWorkerTimestamp(event.ts) !== null)
+    .map((event) => ({
+      ts: event.ts,
+      type: event.type,
+      status: WORKER_ACTIVITY_STATUSES.has(event.status) ? event.status : 'observed',
+      ...(event.type === 'tool' && safeToolName(event.tool) ? { tool: safeToolName(event.tool) } : {}),
+      ...(typeof event.ok === 'boolean' ? { ok: event.ok } : {}),
+    }))
+    .sort((a, b) => b.ts - a.ts)
+    .slice(0, 20);
+}
+
+function safeOpenCodeWorker(worker) {
+  if (!worker || typeof worker !== 'object' || Array.isArray(worker)
+    || typeof worker.key !== 'string' || !WORKER_SELECTION_KEY.test(worker.key)) return null;
+  const agent = safeAgentLabel(worker.agent);
+  if (!agent || !RUNNING_STATUSES.has(worker.status)) return null;
+  return {
+    key: worker.key,
+    agent,
+    status: worker.status,
+    createdAt: safeWorkerTimestamp(worker.createdAt),
+    updatedAt: safeWorkerTimestamp(worker.updatedAt),
+    activity: safeWorkerActivity(worker.activity),
+  };
+}
+
 export function eventsForSession(events, sessionID) {
   return (events || []).filter((event) => event.sessionID === sessionID && EVENT_LABELS[event.type]);
 }
@@ -77,6 +115,10 @@ export function terminalTimeLabel(run) {
     return `${run.status === 'completed' ? 'Completed' : 'Terminal status observed'} · ${fmtTs(statusTs)}`;
   }
   return `Last observed · ${fmtTs(Number.isFinite(run.end) ? run.end : null)}`;
+}
+
+export function selectedRunDetailIsRenderable(run, showActiveDetails) {
+  return Boolean(run && (showActiveDetails || TERMINAL_STATUSES.has(run.status)));
 }
 
 export function buildSessionTree(runs) {
@@ -221,17 +263,43 @@ export function AdvisorPanel({ latestAdvisor, advisorStatus, configured, history
 }
 
 export function Activity({ summary, workflow, tick = 0 }) {
+  const openCode = usePoll('/api/opencode/active-subagents', 5000, tick);
+  return <ActivityContent summary={summary} workflow={workflow} tick={tick} openCodeState={openCode} />;
+}
+
+export function ActivityContent({ summary, workflow, tick = 0, openCodeState }) {
   const root = rootSessionFrom(summary);
   const runs = [...(summary?.runs || [])];
   const runningChildren = runs.filter((run) => run.parentSessionID && RUNNING_STATUSES.has(run.status));
-  const runningSubagents = runningChildren.length;
+  const openCodeData = openCodeState?.data;
+  const openCodeDetailsAvailable = !openCodeState?.error && openCodeData?.available === true;
+  const authoritativeCount = !openCodeState?.error
+    && openCodeData?.available === true
+    && Number.isSafeInteger(openCodeData.runningCount)
+    && openCodeData.runningCount >= 0
+    ? openCodeData.runningCount
+    : null;
+  const runningSubagents = authoritativeCount ?? runningChildren.length;
+  const showActiveDetails = runningSubagents > 0 && runningChildren.length > 0;
+  const openCodeWorkers = [];
+  const seenWorkerKeys = new Set();
+  for (const row of Array.isArray(openCodeData?.workers) ? openCodeData.workers.slice(0, 100) : []) {
+    const worker = safeOpenCodeWorker(row);
+    if (worker && !seenWorkerKeys.has(worker.key)) {
+      seenWorkerKeys.add(worker.key);
+      openCodeWorkers.push(worker);
+    }
+  }
   const completedChildren = runs.filter((run) => run.parentSessionID && TERMINAL_STATUSES.has(run.status));
   const recentCompletedChildren = [...completedChildren]
     .sort((a, b) => (b.statusTs ?? b.end ?? b.start ?? 0) - (a.statusTs ?? a.end ?? a.start ?? 0))
     .slice(0, 20);
   const sessionTree = activeSubagentTree(buildSessionTree(runs));
   const [selectedSessionID, setSelectedSessionID] = useState(() => runningChildren[0]?.sessionID || null);
+  const [selectedOpenCodeKey, setSelectedOpenCodeKey] = useState(null);
+  const selectedOpenCodeWorker = openCodeWorkers.find((worker) => worker.key === selectedOpenCodeKey) || openCodeWorkers[0] || null;
   const selectedRun = runs.find((run) => run.sessionID === selectedSessionID) || null;
+  const showSelectedRunDetail = selectedRunDetailIsRenderable(selectedRun, showActiveDetails);
   const events = usePoll(
     '/api/telemetry/events?limit=200',
     5000,
@@ -246,6 +314,18 @@ export function Activity({ summary, workflow, tick = 0 }) {
   const workflowPhase = WORKFLOW_PHASES.has(workflow?.state) ? workflow.state : 'idle';
   const totals = runs.reduce((sum, run) => ({ toolCalls: sum.toolCalls + (run.toolCalls || 0), tokens: sum.tokens + (run.tokens || 0), errors: sum.errors + (run.errors || 0) }), { toolCalls: 0, tokens: 0, errors: 0 });
   const observedEvents = events.data?.events || [];
+  const [showCompletedHistory, setShowCompletedHistory] = useState(false);
+  const completedHistoryTriggerRef = useRef(null);
+  const completedHistoryRows = recentCompletedChildren.map((run) => ({
+    sessionID: run.sessionID,
+    agent: safeAgentLabel(run.agent) || 'Subagent',
+    status: sessionLabel(run.status),
+    activity: eventActivity(latestEventForSession(observedEvents, run.sessionID), run),
+    started: fmtTs(run.start),
+    elapsed: fmtDur(run.durationMs),
+    terminalTime: terminalTimeLabel(run),
+    selected: selectedSessionID === run.sessionID,
+  }));
 
   const renderSession = (node, ancestors = new Set()) => {
     const run = node.run;
@@ -276,46 +356,61 @@ export function Activity({ summary, workflow, tick = 0 }) {
       <header className="activity-page-head">
         <p className="activity-kicker">Live operations</p>
         <h2 className="section-title">Activity</h2>
+        <p className="activity-description">A live view of observed workers, session state, and execution timelines.</p>
         <p className="activity-monitor-summary"><strong>{runningSubagents}</strong> running subagents · {runs.length} observed sessions</p>
       </header>
       <section className="activity-aggregates" aria-label="Observed aggregate totals">
         <strong>Aggregates · observed</strong><span>{runs.length} sessions</span><span>{runs.filter((run) => RUNNING_STATUSES.has(run.status)).length} busy/running</span><span>{totals.toolCalls} tool calls</span><span>{totals.errors} errors</span><span>{totals.tokens} tokens</span>
       </section>
-      <div className={`activity-inspector${selectedRun ? '' : ' activity-inspector--empty'}`}>
-        <div className="activity-session-navigation">
-          {runningSubagents > 0 && <section className="activity-sessions" aria-labelledby="activity-all-sessions-title">
+      <section className="activity-live-workbench" aria-label="Live execution workbench">
+        <div className="activity-live-roster">
+          <section className="activity-sessions" aria-labelledby="activity-opencode-workers-title">
+            <h3 id="activity-opencode-workers-title">OpenCode active workers</h3>
+            {openCodeWorkers.length > 0 ? <ul className="activity-agent-list activity-opencode-worker-list">
+              {openCodeWorkers.map((worker) => <li key={worker.key} className="activity-agent-node">
+                <button
+                  type="button"
+                  className={`activity-agent-button activity-opencode-worker-button${selectedOpenCodeWorker?.key === worker.key ? ' activity-agent-button--selected' : ''}`}
+                  aria-label={`Select OpenCode worker ${worker.agent}, ${worker.status}`}
+                  aria-pressed={selectedOpenCodeWorker?.key === worker.key}
+                  aria-controls="activity-opencode-worker-detail"
+                  onClick={() => setSelectedOpenCodeKey(worker.key)}
+                >
+                  <span className="activity-agent-name">{worker.agent}</span>
+                  <span className={`activity-status activity-status--${worker.status}`}>{worker.status}</span>
+                  <span className="activity-agent-time">Created · {fmtTs(worker.createdAt)} · Updated · {fmtTs(worker.updatedAt)}</span>
+                </button>
+              </li>)}
+            </ul> : <p className="activity-no-active" role="status">{openCodeDetailsAvailable ? 'No OpenCode worker details observed.' : 'OpenCode worker details unavailable.'}</p>}
+          </section>
+          <section className="activity-sessions" aria-labelledby="activity-all-sessions-title">
             <h3 id="activity-all-sessions-title">Agent sessions</h3>
-            <ul className="activity-agent-list">{sessionTree.map((node) => renderSession(node))}</ul>
-          </section>}
-          {runningSubagents === 0 && <p className="activity-no-active" role="status">No active subagents.</p>}
-          {completedChildren.length > 0 && <details className="activity-completed-subagents">
-            <summary>Recently completed subagents ({completedChildren.length})</summary>
-            {completedChildren.length > recentCompletedChildren.length && <p className="activity-completed-limit">Showing the 20 most recently observed.</p>}
-            <ul className="activity-agent-list">
-              {recentCompletedChildren.map((run) => {
-                const active = RUNNING_STATUSES.has(run.status);
-                const latest = latestEventForSession(observedEvents, run.sessionID);
-                const label = safeAgentLabel(run.agent);
-                return <li key={run.sessionID} className="activity-agent-node">
-                  <button
-                    type="button"
-                    className={`activity-agent-button${selectedSessionID === run.sessionID ? ' activity-agent-button--selected' : ''}`}
-                    aria-pressed={selectedSessionID === run.sessionID}
-                    onClick={() => setSelectedSessionID(run.sessionID)}
-                  >
-                    <span className="activity-agent-name">{label || 'Subagent'} · <code>{run.sessionID}</code></span>
-                    <span className={`activity-status activity-status--${active ? 'running' : sessionLabel(run.status)}`}>{sessionLabel(run.status)}</span>
-                    <span className="activity-agent-activity">{eventActivity(latest, run)}</span>
-                    <span className="activity-agent-time">Started · {fmtTs(run.start)} · elapsed {fmtDur(run.durationMs)}</span>
-                    <span className="activity-agent-time">{terminalTimeLabel(run)}</span>
-                  </button>
-                </li>;
-              })}
-            </ul>
-          </details>}
+            {showActiveDetails
+              ? <ul className="activity-agent-list">{sessionTree.map((node) => renderSession(node))}</ul>
+              : <p className="activity-no-active" role="status">{runningSubagents === 0 ? 'No active subagents.' : 'No active telemetry sessions observed.'}</p>}
+          </section>
+          {runningSubagents > 0 && runningChildren.length === 0 && <p className="activity-no-active" role="status">
+            OpenCode reports {runningSubagents} active subagent{runningSubagents === 1 ? '' : 's'}; telemetry details are not available.
+          </p>}
+          {completedChildren.length > 0 && <button
+            ref={completedHistoryTriggerRef}
+            type="button"
+            className="activity-completed-history-button"
+            aria-haspopup="dialog"
+            aria-expanded={showCompletedHistory}
+            aria-controls="completed-subagents-dialog"
+            onClick={() => setShowCompletedHistory(true)}
+          >Completed history · {completedChildren.length}</button>}
         </div>
-        {selectedRun && <SessionDetail key={selectedSessionID} run={selectedRun} tick={tick} />}
-      </div>
+        <section className="activity-live-details" aria-label="Selected worker and session details">
+          {selectedOpenCodeWorker
+            ? <OpenCodeWorkerDetail worker={selectedOpenCodeWorker} />
+            : <p className="activity-no-active" role="status">Select an observed OpenCode worker to view its details.</p>}
+          {showSelectedRunDetail
+            ? <SessionDetail key={selectedSessionID} run={selectedRun} tick={tick} />
+            : <p className="activity-no-active" role="status">Select an active or completed telemetry session to view its details.</p>}
+        </section>
+      </section>
       <div className="activity-supporting">
         <section className="activity-workflow-summary" aria-label="Workflow status">
           <h3>Workflow</h3>
@@ -327,8 +422,42 @@ export function Activity({ summary, workflow, tick = 0 }) {
         </aside>
       </div>
       {showHistory && <AdvisorHistoryModal state={history} onClose={() => setShowHistory(false)} />}
+      {showCompletedHistory && <CompletedSubagentsModal
+        rows={completedHistoryRows}
+        totalCount={completedChildren.length}
+        triggerRef={completedHistoryTriggerRef}
+        onSelectSession={setSelectedSessionID}
+        onClose={() => setShowCompletedHistory(false)}
+      />}
     </section>
   );
+}
+
+function OpenCodeWorkerDetail({ worker }) {
+  const events = worker.activity;
+  return <section id="activity-opencode-worker-detail" className="activity-session-detail activity-opencode-worker-detail" aria-labelledby="activity-opencode-detail-title">
+    <header className="activity-area-head">
+      <h3 id="activity-opencode-detail-title">Selected OpenCode worker</h3>
+      <Stamp word={worker.status} />
+    </header>
+    <dl className="activity-meta-grid activity-detail-meta">
+      <div><dt>agent</dt><dd>{worker.agent}</dd></div>
+      <div><dt>status</dt><dd>{worker.status}</dd></div>
+      <div><dt>created</dt><dd>{fmtTs(worker.createdAt)}</dd></div>
+      <div><dt>updated</dt><dd>{fmtTs(worker.updatedAt)}</dd></div>
+    </dl>
+    <section className="activity-session-timeline" aria-label={`Observed activity for ${worker.agent}`}>
+      <h4>Observed timeline</h4>
+      {!events.length && <p role="status">No matching telemetry activity observed for this worker.</p>}
+      {events.length > 0 && <ol className="activity-event-list">
+        {events.map((event, index) => <li key={`${event.ts}-${index}`}>
+          <span className="activity-event-name">{EVENT_LABELS[event.type]}{event.tool && <> · <code>{event.tool}</code></>}</span>
+          <span className={`activity-status activity-status--${event.status}`}>{event.status}</span>
+          <time dateTime={new Date(event.ts).toISOString()}>{fmtTs(event.ts)}</time>
+        </li>)}
+      </ol>}
+    </section>
+  </section>;
 }
 
 function SessionDetail({ run, tick }) {

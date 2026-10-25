@@ -6,6 +6,7 @@ import path from 'node:path';
 import MemoryPlugin, { GuaranaMemory } from './guarana-memory.js';
 import OrchestratorPlugin, { GuaranaOrchestrator } from './guarana-orchestrator.js';
 import TelemetryPlugin, { GuaranaTelemetry } from './guarana-telemetry.js';
+import { summarize } from '../dashboard/server/lib/telemetry.js';
 import { apply, createWorkflow, load, save, workflowFile } from '../orchestrator/state.js';
 
 const temporaryDirectories = [];
@@ -285,10 +286,59 @@ describe('hybrid V1/V2 plugin entrypoints', () => {
 
   it('telemetry setup adapts V2 tool hooks and the public event stream', async () => {
     const directory = temporaryDirectory('guarana-v2-telemetry-');
+    const childSessionID = 'telemetry-v2-child';
+    const parentSessionID = 'telemetry-v2-parent';
+    const idleChildSessionID = 'telemetry-v2-idle-child';
+    const sessionInfo = (id, fields = {}) => ({
+      id,
+      slug: `${id}-slug`,
+      projectID: 'telemetry-v2-project',
+      directory,
+      title: `Synthetic session ${id}`,
+      version: 'test-v2-version',
+      time: { created: 1, updated: 2 },
+      ...fields,
+    });
     const context = mockContext(directory, [
       {
         type: 'message.updated',
         properties: { info: { sessionID: 'telemetry-v2-session', tokens: { input: 2, output: 3 } } },
+      },
+      {
+        id: 'evt_setup_child_created',
+        type: 'session.created',
+        properties: { sessionID: childSessionID, info: sessionInfo(childSessionID) },
+      },
+      {
+        id: 'evt_setup_child_status',
+        type: 'session.status',
+        properties: { sessionID: childSessionID, status: { type: 'busy' } },
+      },
+      {
+        id: 'evt_setup_child_updated',
+        type: 'session.updated',
+        properties: { sessionID: childSessionID, info: sessionInfo(childSessionID, {
+          parentID: parentSessionID,
+          agent: 'worker-verify',
+          title: 'PRIVATE TASK TITLE SENTINEL',
+          metadata: {
+            prompt: 'PRIVATE PROMPT SENTINEL',
+            output: 'PRIVATE OUTPUT SENTINEL',
+            reasoning: 'PRIVATE REASONING SENTINEL',
+          },
+        }) },
+      },
+      {
+        id: 'evt_setup_idle_child_created',
+        type: 'session.created',
+        properties: { sessionID: idleChildSessionID, info: sessionInfo(idleChildSessionID, {
+          parentID: parentSessionID, agent: 'worker-verify',
+        }) },
+      },
+      {
+        id: 'evt_setup_idle_child_idle',
+        type: 'session.idle',
+        properties: { sessionID: idleChildSessionID },
       },
     ]);
     const cleanup = await TelemetryPlugin.setup(context);
@@ -307,7 +357,115 @@ describe('hybrid V1/V2 plugin entrypoints', () => {
     assert.ok(events.some((event) => event.type === 'tokens' && event.tokens === 5));
     assert.ok(events.some((event) => event.type === 'tool' && event.tool === 'task' && event.ok));
     assert.ok(events.some((event) => event.type === 'advisor-dispatch' && event.status === 'completed' && event.childSessionID === 'telemetry-v2-child'));
+    const serializedTelemetry = JSON.stringify(events);
+    const excludedValues = [
+      'evt_setup_child_created', 'evt_setup_child_status', 'evt_setup_child_updated',
+      'evt_setup_idle_child_created', 'evt_setup_idle_child_idle',
+      'PRIVATE TASK TITLE SENTINEL', 'PRIVATE PROMPT SENTINEL',
+      'PRIVATE OUTPUT SENTINEL', 'PRIVATE REASONING SENTINEL',
+    ];
+    assert.ok(excludedValues.every((value) => !serializedTelemetry.includes(value)), 'persisted telemetry excludes synthetic event IDs and private lifecycle values');
+
+    const runs = summarize(events);
+    const activeChild = runs.find((run) => run.sessionID === childSessionID);
+    assert.ok(
+      activeChild?.sessionID === childSessionID &&
+      activeChild.parentSessionID === parentSessionID &&
+      activeChild.agent === 'worker-verify' &&
+      activeChild.status === 'busy' &&
+      Number.isFinite(activeChild.statusTs),
+      'session summary retains the parent-linked running child identity required by Activity',
+    );
+    const idleChild = runs.find((run) => run.sessionID === idleChildSessionID);
+    assert.ok(
+      idleChild?.sessionID === idleChildSessionID &&
+      idleChild.parentSessionID === parentSessionID &&
+      idleChild.agent === 'worker-verify' &&
+      idleChild.status === 'idle' &&
+      Number.isFinite(idleChild.statusTs),
+      'session summary retains a distinct parent-linked idle child for Activity history',
+    );
     cleanup();
     assert.equal(context.subscriptionSignal.aborted, true);
+  });
+
+  it('telemetry resubscribes after an event-stream failure and records recovered events', async () => {
+    const directory = temporaryDirectory('guarana-v2-telemetry-retry-');
+    let subscriptionCount = 0;
+    let firstFailureComplete;
+    const firstFailure = new Promise((resolve) => { firstFailureComplete = resolve; });
+    let recoveredStreamComplete;
+    const recoveredStream = new Promise((resolve) => { recoveredStreamComplete = resolve; });
+    const context = {
+      location: { directory },
+      tool: { hook: async () => {} },
+      event: {
+        subscribe: () => {
+          subscriptionCount += 1;
+          const attempt = subscriptionCount;
+          return {
+            async *[Symbol.asyncIterator]() {
+              if (attempt === 1) {
+                try {
+                  throw new Error();
+                } finally {
+                  firstFailureComplete();
+                }
+              }
+              try {
+                yield { type: 'session.created', data: { sessionID: 'recovered-stream-session' } };
+              } finally {
+                recoveredStreamComplete();
+              }
+            },
+          };
+        },
+      },
+    };
+
+    const cleanup = await TelemetryPlugin.setup(context);
+    await firstFailure;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(subscriptionCount, 1, 'the failed stream is not retried immediately');
+    await recoveredStream;
+
+    assert.equal(subscriptionCount, 2);
+    assert.ok(readEvents(directory).some((event) => event.type === 'session' && event.sessionID === 'recovered-stream-session'));
+    cleanup();
+  });
+
+  it('telemetry cleanup aborts a pending event-stream retry', async () => {
+    const directory = temporaryDirectory('guarana-v2-telemetry-abort-retry-');
+    let subscriptionCount = 0;
+    let firstFailureComplete;
+    const firstFailure = new Promise((resolve) => { firstFailureComplete = resolve; });
+    let subscriptionSignal;
+    const context = {
+      location: { directory },
+      tool: { hook: async () => {} },
+      event: {
+        subscribe: ({ signal }) => {
+          subscriptionCount += 1;
+          subscriptionSignal = signal;
+          return {
+            async *[Symbol.asyncIterator]() {
+              try {
+                throw new Error();
+              } finally {
+                firstFailureComplete();
+              }
+            },
+          };
+        },
+      },
+    };
+
+    const cleanup = await TelemetryPlugin.setup(context);
+    await firstFailure;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    cleanup();
+    assert.equal(subscriptionSignal.aborted, true);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.equal(subscriptionCount, 1, 'cleanup prevents another subscription after the pending retry delay');
   });
 });

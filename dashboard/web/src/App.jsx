@@ -120,10 +120,19 @@ function Dashboard({ webSettings, webSettingsError, onWebSettingsUpdated, pollIn
       <div className="app-shell">
         <Sidebar active={active} onSelect={selectView} />
         <div className="app-content">
-          {summary.error && <ErrorBanner text={summary.error} />}
-          {!summary.data && !summary.error && <p className="loading" role="status">loading dashboard…</p>}
+          {active !== 'overview' && summary.error && <ErrorBanner text={summary.error} />}
+          {active !== 'overview' && !summary.data && !summary.error && <p className="loading" role="status">loading dashboard…</p>}
           {active === 'overview' && (
-            <Overview summary={summary.data} state={state.data} tracker={tracker.data} workflow={workflow.data} />
+            <Overview
+              summary={summary.data}
+              summaryError={summary.error}
+              summaryLoading={!summary.data && !summary.error}
+              state={state.data}
+              workflow={workflow.data}
+              workflowError={workflow.error}
+              workflowLoading={!workflow.data && !workflow.error}
+              tick={liveTick}
+            />
           )}
           {active === 'now' && summary.data && (
             <Activity summary={summary.data} workflow={workflow.data} tick={liveTick} />

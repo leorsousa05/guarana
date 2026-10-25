@@ -514,37 +514,51 @@ describe('GET/PUT /api/models', () => {
     }
   });
 
-  it('catalog API exposes connected model metadata only and uses the explicit project cwd', async () => {
+  it('catalog API exposes exact connected metadata from whitespace-aligned auth rows only', async () => {
     const require = createRequire(import.meta.url);
     const catalog = require(resolveSharedAdvisorModule('opencode-model-catalog.js'));
     const originalDiscover = catalog.discoverModels;
     const calls = [];
+    const commands = [];
     catalog.discoverModels = async (options) => {
       calls.push(options);
       const outputs = {
-        'auth list': '● OpenAI api\n│ ● Anthropic │ oauth │\n',
-        models: 'openai/gpt-5\nanthropic/claude-sonnet-4\nnot-connected/private-token\n',
+        'auth list': [
+          'Provider                Auth           Status',
+          'OpenAI                  OAuth          stored',
+          'OpenCode Console        API key        stored',
+          'OpenRouter              API key        stored',
+        ].join('\n'),
+        models: 'openai/gpt-4o\nopencode/gpt-5\nopenrouter/auto\nollama/llama3.2\n',
       };
       return originalDiscover({
         ...options,
         execFile: (executable, args, execOptions, callback) => {
           assert.equal(executable, process.env.OPENCODE_BIN || 'opencode');
           assert.equal(execOptions.cwd, root);
+          commands.push(args.join(' '));
           callback(null, args.join(' ') === 'auth list' ? outputs['auth list'] : outputs.models, '');
         },
       });
     };
     try {
-      const response = await fetch(`${base}/api/models/catalog?provider=openai`);
+      const response = await fetch(`${base}/api/models/catalog`);
       const body = await response.json();
       assert.equal(response.status, 200);
       assert.deepEqual(body, {
-        models: [{ provider: { id: 'openai', name: 'openai' }, model: { id: 'gpt-5', name: 'gpt-5' } }],
+        models: [
+          { provider: { id: 'openai', name: 'openai' }, model: { id: 'gpt-4o', name: 'gpt-4o' } },
+          { provider: { id: 'opencode', name: 'opencode' }, model: { id: 'gpt-5', name: 'gpt-5' } },
+          { provider: { id: 'openrouter', name: 'openrouter' }, model: { id: 'auto', name: 'auto' } },
+        ],
         error: null,
       });
+      assert.deepEqual(Object.keys(body).sort(), ['error', 'models']);
+      assert.deepEqual([...new Set(body.models.map(({ provider }) => provider.id))], ['openai', 'opencode', 'openrouter']);
+      assert.deepEqual(commands, ['auth list', 'models']);
       assert.equal(calls[0].cwd, root);
-      assert.equal(calls[0].provider, 'openai');
-      assert.doesNotMatch(JSON.stringify(body), /private-token|\bapi\b|\boauth\b/i);
+      assert.equal(calls[0].provider, undefined);
+      assert.doesNotMatch(JSON.stringify(body), /OAuth|API key|stored|status|auth|credential|secret|ollama|llama3\.2/i);
     } finally {
       catalog.discoverModels = originalDiscover;
     }

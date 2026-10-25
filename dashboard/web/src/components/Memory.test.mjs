@@ -179,7 +179,19 @@ test('Memory graph SSR selects the first scoped record and shows readable direct
   assert.match(html, /class="mem-index-intent">New project rule/);
   assert.match(html, /class="mem-index-summary">Use the new rule\.<\/span>/);
   assert.match(html, /class="memory-scope memory-scope--global">global/);
-  assert.match(html, /class="mem-focus-label">Focused memory/);
+  assert.match(html, /<div class="mem-graph-display-modes" role="group" aria-label="Memory display"><button type="button" aria-pressed="true">Memory map<\/button><button type="button" aria-pressed="false">Memory index<\/button><\/div>/);
+  assert.match(html, /class="mem-graph-explorer mem-graph-explorer--map"/);
+  assert.match(html, /<section class="mem-graph-index" aria-label="Memory index" hidden="">/,
+    'the hidden attribute removes the index and its descendants from the accessibility tree in Map mode');
+  assert.match(html, /class="mem-focus-label">Selected memory/);
+  assert.match(html, /aria-label="Selected memory inspector"/);
+  assert.match(html, /Scope: project/);
+  assert.match(html, /Type: decision/);
+  assert.match(html, /ID: project:shared/);
+  assert.match(html, /<h5 class="mem-detail-sub">Summary<\/h5>/);
+  assert.match(html, /class="mem-bubble-disclosure(?: mem-bubble-disclosure--[a-z]+)*" aria-hidden="true"><strong>New project rule/);
+  assert.match(html, /class="mem-bubble-disclosure(?: mem-bubble-disclosure--[a-z]+)*" aria-hidden="true"><strong>Old project rule/);
+  assert.match(html, /class="mem-bubble-disclosure-summary">Use the new rule\.<\/span>/);
   assert.match(html, /Outgoing/);
   assert.match(html, /This memory supersedes <button[^>]*>Old project rule<\/button>/);
   assert.match(html, /class="mem-relationship-kind">supersedes/);
@@ -192,9 +204,13 @@ test('Memory graph SSR selects the first scoped record and shows readable direct
   assert.match(html, /Old project rule/);
   assert.match(html, /Global language preference/, 'all scoped records remain readable in the index');
   assert.match(html, /aria-label="Memory bubble map"/);
+  assert.match(html, /class="mem-bubble-section" aria-label="Memory bubble map"/);
   assert.match(html, /aria-pressed="true">Network/);
   assert.match(html, /aria-pressed="false">Neighborhood/);
-  assert.match(html, /role="region" aria-label="Network bubble graph; scroll within this map to explore" tabindex="0"/);
+  assert.match(html, /role="region" aria-label="Network bubble graph" tabindex="0"/);
+  for (const control of ['Zoom in', 'Zoom out', 'Fit map', 'Focus selected']) assert.match(html, new RegExp(`>${control}<\/button>`));
+  assert.match(html, /Drag empty map to pan · wheel to zoom · use Focus selected to recenter/);
+  assert.match(html, /class="mem-bubble-canvas" style="width:520px;height:520px;transform:translate3d\(0px, 0px, 0\) scale\(1\)"/);
   assert.match(html, /data-memory-id="project:shared"[^>]*aria-pressed="true"/);
   assert.match(html, /data-memory-id="global:shared"[^>]*aria-pressed="false"/);
   assert.match(html, /class="mem-bubble-button mem-bubble-button--global/);
@@ -376,18 +392,66 @@ test('Graph uses native focused controls and contains the index without drag, re
   const end = css.indexOf('/* ---------- rendered markdown ----------', start);
   const memoryCss = css.slice(start, end);
   assert.match(memoryCss, /\.mem-graph button:focus-visible,[\s\S]*?outline:\s*2px solid var\(--guarana\)/);
-  assert.match(memoryCss, /\.mem-bubble-viewport\s*\{[^}]*max-width:\s*100%;[^}]*overflow:\s*auto;[^}]*overscroll-behavior:\s*contain/s);
+  assert.match(memoryCss, /\.mem-bubble-viewport\s*\{[^}]*max-width:\s*100%;[^}]*height:\s*clamp\(27rem, 74vh, 54rem\);[^}]*overflow:\s*clip;[^}]*overscroll-behavior:\s*contain/s);
+  assert.match(memoryCss, /\.mem-bubble-viewport\s*\{[^}]*touch-action:\s*none/s);
   assert.match(memoryCss, /\.mem-bubble-button--global\s*\{[^}]*border-style:\s*dashed/s);
   assert.match(memoryCss, /\.mem-bubble-button--selected\s*\{[^}]*box-shadow/s);
   assert.match(memoryCss, /@media \(max-width: 840px\)\s*\{\s*\.mem-graph-explorer\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\)/s);
   assert.match(memoryCss, /\.mem-index-scroll\s*\{[^}]*max-height:\s*40rem;[^}]*overflow-y:\s*auto;[^}]*overscroll-behavior:\s*contain/s);
   assert.match(memoryCss, /\.mem-graph-explorer\s*\{[^}]*grid-template-columns:\s*minmax\(14rem, 0\.85fr\) minmax\(0, 1\.5fr\)/s);
+  assert.match(memoryCss, /\.mem-graph-explorer--index\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\);\s*\}/);
+  assert.match(memoryCss, /\.mem-graph-explorer--map\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\);\s*\}/);
+  assert.match(memoryCss, /\.mem-graph-explorer--map \.mem-graph-side\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s);
+  assert.match(memoryCss, /\.mem-graph-explorer--map \.mem-map-inspector\s*\{[^}]*border-top:\s*1px solid var\(--ink\);[^}]*border-left:\s*0;[^}]*padding:\s*0\.65rem 0/s);
+  assert.match(memoryCss, /\.mem-graph-index\[hidden\]\s*\{\s*display:\s*none;\s*\}/);
+  assert.match(memoryCss, /\.mem-graph-explorer--index \.mem-graph-side\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s);
+  assert.match(memoryCss, /\.mem-graph-explorer--index \.mem-bubble-section\s*\{\s*display:\s*none;\s*\}/);
+  assert.doesNotMatch(memoryCss, /\.mem-graph-explorer--index \.mem-graph-side\s*\{[^}]*display:\s*none/s);
+  assert.match(memoryCss, /\.mem-detail\s*\{[^}]*min-width:\s*0/s);
+  assert.match(memoryCss, /\.mem-graph-display-modes button\[aria-pressed="true"\]\s*\{[^}]*border-bottom-color:\s*var\(--guarana\)/s);
   assert.match(memoryCss, /@media \(max-width: 840px\)\s*\{\s*\.mem-graph-explorer\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\)/s);
+  const narrowLayoutCss = memoryCss.slice(memoryCss.indexOf('@media (max-width: 840px)'), memoryCss.indexOf('@media (max-width: 520px)'));
+  assert.match(narrowLayoutCss, /\.mem-graph-explorer\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\)/s);
+  assert.match(narrowLayoutCss, /\.mem-index-scroll\s*\{\s*max-height:\s*16rem;\s*\}/s,
+    'the filtered index remains contained at responsive widths when Index mode is selected');
+  assert.match(memoryCss, /\.mem-graph-toolbar\s*\{[^}]*flex-wrap:\s*wrap/s);
+  assert.match(memoryCss, /\.mem-graph-display-modes button\s*\{[^}]*white-space:\s*nowrap/s);
   assert.match(memoryCss, /@media \(prefers-reduced-motion: reduce\)/);
   const mobileCss = memoryCss.slice(memoryCss.indexOf('@media (max-width: 520px)'));
   assert.match(mobileCss, /\.mem-graph-filters label,[\s\S]*?width:\s*100%/);
-  assert.doesNotMatch(componentSource, /sessionStorage|setPointerCapture|onPointer|resetLayout|reset layout/i);
-  assert.doesNotMatch(memoryCss, /mem-graph-svg|mem-graph-reset|touch-action:\s*none/);
+  assert.match(memoryCss, /\.mem-graph-explorer\s*\{[^}]*min-width:\s*0/s);
+  assert.match(memoryCss, /\.mem-graph-index,[\s\S]*?\.mem-index-list li\s*\{\s*min-width:\s*0;\s*\}/);
+  assert.doesNotMatch(componentSource, /sessionStorage|resetLayout|reset layout/i);
+  assert.doesNotMatch(componentSource, /scrollLeft|scrollTop/);
+  assert.doesNotMatch(componentSource, /\bonWheel\s*=/,
+    'wheel zoom is not also registered through React delegated events');
+  assert.match(componentSource, /viewport\.addEventListener\('wheel', listener, \{ passive: false \}\)/,
+    'the map viewport registers a cancelable native wheel listener');
+  assert.match(componentSource, /return \(\) => viewport\.removeEventListener\('wheel', listener\)/,
+    'the native wheel listener is removed on unmount');
+  assert.match(componentSource, /wheelHandlerRef\.current = handleMapWheel/,
+    'the single mounted listener delegates to the latest camera handler');
+  const wheelHandlerStart = componentSource.indexOf('const handleMapWheel =');
+  const wheelHandlerEnd = componentSource.indexOf('wheelHandlerRef.current =', wheelHandlerStart);
+  const wheelHandler = componentSource.slice(wheelHandlerStart, wheelHandlerEnd);
+  assert.match(wheelHandler, /if \(event\.cancelable\) event\.preventDefault\(\)/);
+  assert.equal([...wheelHandler.matchAll(/\bzoomMap\(/g)].length, 1,
+    'each native wheel event performs the existing anchored zoom exactly once');
+  assert.match(componentSource, /focusMemoryCamera\(\{ scale: 1, x: 0, y: 0 \}, selectedBubble/,
+    'initial map entry starts at natural scale centered on the selected node');
+  assert.match(componentSource, /if \(!viewportSize\.width \|\| !viewportSize\.height \|\| !bubbleView\.nodes\.length\) return;/,
+    'initial camera focus waits for both a measured viewport and loaded bubbles');
+  assert.doesNotMatch(componentSource, /selectionChanged\s*\?\s*focusMemoryCamera/,
+    'changing selection does not automatically move the map camera');
+  assert.match(componentSource, /const focusSelected = \(\) => \{\s*if \(selectedBubble\) applyCamera\(focusMemoryCamera\(/,
+    'Focus selected remains an explicit camera action');
+  assert.match(componentSource, /onPointerDown=\{handleMapPointerDown\}/);
+  const bubbleButtonStart = componentSource.indexOf('className={`mem-bubble-button');
+  const bubbleButtonEnd = componentSource.indexOf('</button>', bubbleButtonStart);
+  assert.ok(bubbleButtonStart >= 0 && bubbleButtonEnd > bubbleButtonStart);
+  assert.doesNotMatch(componentSource.slice(bubbleButtonStart, bubbleButtonEnd), /onPointer/,
+    'pointer handling remains on the empty map surface, never on bubbles');
+  assert.doesNotMatch(memoryCss, /mem-graph-svg|mem-graph-reset/);
 });
 
 test('Memory injection history remains session-filterable and responsive scrolling is contained', async (t) => {
@@ -407,7 +471,7 @@ test('Memory injection history remains session-filterable and responsive scrolli
   assert.match(memoryCss, /\.mem-result-list\s*\{[^}]*min-width:\s*0/s);
   assert.doesNotMatch(memoryCss, /\.mem-results-table\s*\{[^}]*min-width:\s*42rem/s);
   assert.match(memoryCss, /\.mem-index-scroll\s*\{[^}]*overflow-y:\s*auto;[^}]*overscroll-behavior:\s*contain/s);
-  assert.match(memoryCss, /\.mem-bubble-viewport\s*\{[^}]*overflow:\s*auto;[^}]*overscroll-behavior:\s*contain/s);
+  assert.match(memoryCss, /\.mem-bubble-viewport\s*\{[^}]*overflow:\s*clip;[^}]*overscroll-behavior:\s*contain/s);
   assert.doesNotMatch(memoryCss, /mem-graph-svg|mem-graph-viewport/);
   assert.match(memoryCss, /@media \(prefers-reduced-motion: reduce\)/);
   assert.doesNotMatch(memoryCss, /\.mem-summary\s*\{[^}]*grid-template-columns/s);

@@ -47,6 +47,53 @@ test('Models provides searchable role comboboxes, model variants, manual fallbac
   assert.deepEqual(filterCatalogProviders(catalog.models, 'OPEN'), [{ id: 'openrouter', name: 'OpenRouter' }, { id: 'openai', name: 'OpenAI' }]);
   assert.deepEqual(filterCatalogProviders(catalog.models, 'anthropic').map((p) => p.id), ['anthropic']);
   assert.deepEqual(filterCatalogModels(catalog.models.filter((m) => m.provider.id === 'openrouter'), 'Fable').map(({ model }) => model.id), ['~anthropic/claude-fable-latest']);
+  const connectedCatalog = catalogStateFromResponse({ ok: true }, {
+    models: [
+      { provider: { id: 'openai', name: 'openai' }, model: { id: 'gpt-4o', name: 'gpt-4o' } },
+      { provider: { id: 'opencode', name: 'opencode' }, model: { id: 'gpt-5', name: 'gpt-5' } },
+      { provider: { id: 'openrouter', name: 'openrouter' }, model: { id: 'auto', name: 'auto' } },
+    ],
+    error: null,
+  });
+  assert.deepEqual(connectedCatalog, {
+    status: 'ready',
+    models: [
+      { provider: { id: 'openai', name: 'openai' }, model: { id: 'gpt-4o', name: 'gpt-4o' } },
+      { provider: { id: 'opencode', name: 'opencode' }, model: { id: 'gpt-5', name: 'gpt-5' } },
+      { provider: { id: 'openrouter', name: 'openrouter' }, model: { id: 'auto', name: 'auto' } },
+    ],
+    error: null,
+  });
+  const expectedProviders = [
+    { id: 'openai', name: 'openai' },
+    { id: 'opencode', name: 'opencode' },
+    { id: 'openrouter', name: 'openrouter' },
+  ];
+  const modelOptions = {
+    openai: ['gpt-4o'],
+    opencode: ['gpt-5'],
+    openrouter: ['auto'],
+  };
+  for (const role of ['primary', 'advisor']) {
+    assert.deepEqual(filterCatalogProviders(connectedCatalog.models, ''), expectedProviders, `${role} provider selector options`);
+    for (const [provider, modelIds] of Object.entries(modelOptions)) {
+      assert.deepEqual(
+        filterCatalogModels(connectedCatalog.models.filter((entry) => entry.provider.id === provider), '').map(({ model }) => model.id),
+        modelIds,
+        `${role} ${provider} model selector options`,
+      );
+    }
+  }
+  const successCatalogHtml = renderToStaticMarkup(React.createElement(ModelsForm, {
+    ...props,
+    project: { primary: {}, advisor: {} },
+    catalog: connectedCatalog,
+  }));
+  assert.match(successCatalogHtml, /3 connected providers\. Select a model to use its exact IDs\./);
+  for (const role of ['primary', 'advisor']) {
+    assert.match(successCatalogHtml, new RegExp(`id="model-${role}-provider-search"`));
+    assert.match(successCatalogHtml, new RegExp(`id="model-${role}-search"`));
+  }
   assert.deepEqual(comboboxKeyAction('ArrowDown', -1, 3), { activeIndex: 0 });
   assert.deepEqual(comboboxKeyAction('ArrowUp', 0, 3), { activeIndex: 2 });
   assert.deepEqual(comboboxKeyAction('ArrowUp', -1, 3), { activeIndex: 2 });
@@ -124,6 +171,13 @@ test('Models provides searchable role comboboxes, model variants, manual fallbac
   assert.equal(manualDraft.primary.model, 'manual/custom-model', 'Use this ID commits only the explicitly accepted model ID');
   assert.equal(hasProviderModelMismatch(manualDraft, inheritedGlobal), false, 'explicit manual model acceptance clears the guard');
   assert.deepEqual(manualQueries, { primary: 'manual/custom-model' });
+  let advisorManual = { provider: 'opencode', model: '', variant: '' };
+  const advisorManualChanges = [];
+  commitManualModelId('advisor', 'manual/advisor-model', advisorManual.model,
+    (role, field, value) => { advisorManualChanges.push([role, field, value]); advisorManual = { ...advisorManual, [field]: value }; },
+    () => {});
+  assert.deepEqual(advisorManualChanges, [['advisor', 'model', 'manual/advisor-model'], ['advisor', 'variant', '']]);
+  assert.deepEqual(advisorManual, { provider: 'opencode', model: 'manual/advisor-model', variant: '' }, 'Advisor manual fallback preserves the selected provider and exact model ID');
 
   const updates = [];
   const variantsRequested = [];
@@ -256,6 +310,8 @@ test('Models provides searchable role comboboxes, model variants, manual fallbac
   assert.match(failedCatalogHtml, /OpenCode discovery timed out\. Try again or enter model IDs manually\. Manual provider and model IDs remain available\./);
   assert.match(failedCatalogHtml, /id="model-primary-provider-search"/);
   assert.match(failedCatalogHtml, /id="model-primary-search"/);
+  assert.match(failedCatalogHtml, /id="model-advisor-provider-search"/);
+  assert.match(failedCatalogHtml, /id="model-advisor-search"/);
 
   const emptyCatalog = catalogStateFromResponse({ ok: true }, { models: [], error: null });
   assert.deepEqual(emptyCatalog, { status: 'empty', models: [], error: null });

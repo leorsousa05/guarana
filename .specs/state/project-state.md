@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-10-23T21:20:54.856Z
+Last updated: 2026-10-25T04:59:33.052Z
 
 ## Per-skill status
 | Skill | Status |
@@ -24,7 +24,19 @@ Last updated: 2026-10-23T21:20:54.856Z
 | Guarana optional model advisor | **VALIDATED** — UI criteria 11–14 and ADR-027 runtime proof |
 
 ## Current step
-The bounded orchestrator intent/provenance follow-up is shipped to origin/main in Git only; no package release, npm publication, tag, or version change is claimed.
+Guarana 1.5.0 remains TASKED. Fresh independent pre-commit candidate verification of the corrected exact candidate is PASS; the prior verifier FAIL remains historical. This candidate PASS is not remote release completion. No commit, push, tag, remote CI, remote tag-date proof, npm publication, or GitHub Release has occurred.
+
+## Bounded feature validation — Dashboard Overview operational workbench — 2026-10-24
+
+**VALIDATED, not SHIPPED.** Fresh independent `worker-verify` returned overall PASS on all 8 criteria and reran the listed gates successfully. Primary focused Overview + Workflow tests passed 17/17; `npm test` passed 622/622; `npm run build` (including CLI sync), `npm run check-cli`, pre-record `npm run specs:validate` (227 Markdown files, 89 feature specs, 39 ADRs, 249 local links, 0 issues), and `git diff --check` passed. Synthetic browser proof used fixtures only at 1440x900 and 375x812; no real session or memory data. No API/data/schema/plugin change, deployment, or shipping occurred. Details: `.specs/changes/2026-10-24-dashboard-overview-operational-workbench.md`.
+
+## Bounded feature validation — Dashboard Overview roadmap bottom section — 2026-10-24
+
+**VALIDATED, not SHIPPED.** Fresh independent `worker-verify` returned overall PASS on all three criteria. Focused Overview tests passed 3/3; `npm test` passed 619/619; build and CLI sync, `npm run check-cli`, `npm run specs:validate`, and `git diff --check` passed. Browser evidence at 1440px and 375px passed using aggregate-only synthetic fixtures; tablet behavior is supported by responsive CSS, but no tablet screenshot was captured. No API/data/schema changes, Specs.jsx Roadmap changes, deployment, or shipping occurred. Details: `.specs/changes/2026-10-24-dashboard-overview-roadmap-bottom-section.md`.
+
+## Bounded feature validation — Dashboard Activity OpenCode running status — 2026-10-24
+
+**VALIDATED, not SHIPPED.** Fresh independent `worker-verify` overall PASS (5/5), focused tests 13/13, `npm test` 617/617, Dashboard build and CLI sync, `npm run check-cli`, `git diff --check`, sanitized runtime count 1, and 375×812 browser/accessibility proof passed. This closes the local source feature and its bounded runtime proof only; the separate Activity lifecycle telemetry/deployment work remains TASKED/BLOCKED. No plugin/profile/install/reload/restart action, raw telemetry capture, or shipping occurred. Details: `.specs/changes/2026-10-24-dashboard-activity-opencode-running-status.md`.
 
 ## Dashboard redesign final validation — 2026-10-11
 

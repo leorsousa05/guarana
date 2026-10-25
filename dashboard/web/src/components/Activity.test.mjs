@@ -10,7 +10,7 @@ import test from 'node:test';
 const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const render = (element) => renderToStaticMarkup(element);
 
-test('Activity presents an active-first parent/child agent inspector with compact supporting signals', async (t) => {
+test('Activity presents a live execution workbench with compact supporting signals', async (t) => {
   const vite = await createServer({ root: webRoot, server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
   t.after(() => vite.close());
   const { Activity, activitySessionIDs, buildSessionTree, latestAdvisorForRoot, rootSessionFrom } = await vite.ssrLoadModule('/src/components/Activity.jsx');
@@ -65,8 +65,9 @@ test('Activity presents an active-first parent/child agent inspector with compac
   assert.match(html, /Aggregates · observed/);
   assert.match(html, /activity-agent-list/);
   assert.match(html, /advisor-child/);
-  assert.match(html, /Recently completed subagents \(1\)/);
-  assert.match(html, /old-child/);
+  assert.match(html, /Completed history · 1/);
+  assert.match(html, /aria-haspopup="dialog"[^>]*aria-expanded="false"/);
+  assert.doesNotMatch(html, /old-child|activity-completed-subagents/);
   assert.match(html, /activity-status--running/);
   assert.match(html, /root-1/);
   assert.match(html, /Last observed/);
@@ -89,27 +90,32 @@ test('Activity presents an active-first parent/child agent inspector with compac
   assert.ok(html.slice(html.indexOf('<code>root-1</code>'), html.indexOf('<code>advisor-child</code>')).includes('</button><ul><li'));
   assert.ok(html.indexOf('Agent sessions') < html.indexOf('Selected session'));
   assert.ok(html.indexOf('Selected session') < html.indexOf('Workflow status'));
+  assert.match(html, /activity-live-workbench/);
+  assert.match(html, /activity-description/);
 
   const busyHtml = render(React.createElement(Activity, {
     summary: { runs: [{ sessionID: 'running-root', start: 100, end: 125, status: 'busy', toolCalls: 1, tokens: 2, errors: 0 }] },
     workflow: { state: 'building', activeTask: 'Run check' },
   }));
   assert.match(busyHtml, /No active subagents/);
-  assert.doesNotMatch(busyHtml, /Agent sessions|Selected session|running-root/);
+  assert.match(busyHtml, /Agent sessions/);
+  assert.doesNotMatch(busyHtml, /Selected session|running-root/);
 
   const noRoot = render(React.createElement(Activity, { summary: { runs: [] }, workflow: { engine: 'not-found' } }));
   assert.match(noRoot, /No active subagents/);
-  assert.doesNotMatch(noRoot, /Agent sessions|Selected session/);
+  assert.match(noRoot, /Agent sessions/);
+  assert.doesNotMatch(noRoot, /Selected session/);
+  assert.doesNotMatch(noRoot, /Completed history/);
   assert.doesNotMatch(noRoot, /memory-injection-layout/);
 
   const css = fs.readFileSync(path.join(webRoot, 'src/style.css'), 'utf8');
-  assert.match(css, /\.activity-inspector\s*\{[^}]*grid-template-columns: minmax\(0, \.8fr\) minmax\(0, 1\.2fr\)/s);
-  assert.match(css, /@media \(max-width: 700px\)\s*\{\s*\.activity-inspector,\s*\.activity-supporting\s*\{\s*grid-template-columns: minmax\(0, 1fr\)/s);
+  assert.match(css, /\.activity-live-workbench\s*\{[^}]*grid-template-columns: minmax\(0, \.85fr\) minmax\(0, 1\.15fr\)/s);
+  assert.match(css, /@media \(max-width: 700px\)\s*\{\s*\.activity-live-workbench,\s*\.activity-supporting\s*\{\s*grid-template-columns: minmax\(0, 1fr\)/s);
   assert.match(css, /@media \(max-width: 375px\)\s*\{[\s\S]{0,500}\.activity-event-list li/);
   assert.doesNotMatch(css, /\.activity-area\s*\{[^}]*border: 1px solid/s);
 });
 
-test('Activity bounds collapsed completed-child history and omits the active panel when only the root is running', async (t) => {
+test('Activity keeps completed children out of the default page and exposes a count-labelled history trigger', async (t) => {
   const vite = await createServer({ root: webRoot, server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
   t.after(() => vite.close());
   const { Activity } = await vite.ssrLoadModule('/src/components/Activity.jsx');
@@ -126,17 +132,212 @@ test('Activity bounds collapsed completed-child history and omits the active pan
   ];
   const html = render(React.createElement(Activity, { summary: { runs }, workflow: {} }));
   assert.match(html, /No active subagents/);
-  assert.doesNotMatch(html, /Agent sessions|Selected session|running-root/);
-  assert.match(html, /<details class="activity-completed-subagents">/);
-  assert.match(html, /Recently completed subagents \(22\)/);
-  assert.doesNotMatch(html, /<details[^>]*open=/);
-  assert.match(html, /Showing the 20 most recently observed/);
-  assert.match(html, /completed-21/);
-  assert.match(html, /completed-2/);
-  assert.doesNotMatch(html, /<code>completed-(?:1|0)<\/code>/);
-  assert.match(html, /Completed ·/);
-  assert.match(html, /Last observed ·/);
-  assert.match(html, /<button[^>]*aria-pressed="false"[^>]*>[\s\S]*completed-21/);
+  assert.match(html, /Agent sessions/);
+  assert.doesNotMatch(html, /Selected session|running-root/);
+  assert.match(html, /<button[^>]*aria-haspopup="dialog"[^>]*aria-expanded="false"[^>]*>Completed history · 22<\/button>/);
+  assert.doesNotMatch(html, /completed-21|completed-2|completed-0|Completed ·|Last observed ·|activity-completed-subagents/);
+  assert.doesNotMatch(html, /role="dialog"|completed-subagents-list/);
+});
+
+test('completed-subagent history is an accessible, bounded modal with selection and focus handling', async (t) => {
+  const vite = await createServer({ root: webRoot, server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
+  t.after(() => vite.close());
+  const { CompletedSubagentsModal } = await vite.ssrLoadModule('/src/components/CompletedSubagentsModal.jsx');
+  const modalSource = fs.readFileSync(path.join(webRoot, 'src/components/CompletedSubagentsModal.jsx'), 'utf8');
+  const activitySource = fs.readFileSync(path.join(webRoot, 'src/components/Activity.jsx'), 'utf8');
+  const rows = Array.from({ length: 22 }, (_, index) => ({
+    sessionID: `completed-sub-${index}`,
+    agent: 'verify_worker',
+    status: 'completed',
+    activity: 'Tool · read_file',
+    started: 'observed start',
+    elapsed: 'observed duration',
+    terminalTime: 'Completed · observed terminal time',
+    selected: false,
+  }));
+  const html = render(React.createElement(CompletedSubagentsModal, {
+    rows,
+    totalCount: 22,
+    triggerRef: { current: null },
+    onSelectSession() {},
+    onClose() {},
+  }));
+
+  assert.match(html, /id="completed-subagents-dialog"[^>]*role="dialog"[^>]*aria-modal="true"/);
+  assert.match(html, /aria-labelledby="completed-subagents-title"/);
+  assert.match(html, /aria-describedby="completed-subagents-description"/);
+  assert.match(html, /Completed subagent history/);
+  assert.match(html, /aria-label="Completed subagents"/);
+  assert.match(html, /Showing the 20 most recently observed\./);
+  assert.equal((html.match(/class="activity-agent-node"/g) || []).length, 20);
+  assert.match(html, /completed-sub-19/);
+  assert.doesNotMatch(html, /completed-sub-20|completed-sub-21/);
+  assert.match(html, /aria-pressed="false"/);
+  assert.match(html, /modal-close/);
+
+  assert.match(activitySource, /aria-haspopup="dialog"[\s\S]*?aria-expanded=\{showCompletedHistory\}/);
+  assert.match(activitySource, /onSelectSession=\{setSelectedSessionID\}/);
+  assert.match(modalSource, /onSelectSession\(row\.sessionID\);\s*close\(\);/);
+  assert.match(modalSource, /\.slice\(0, 20\)/);
+  assert.match(modalSource, /useFocusLayoutEffect\(\(\) => \{\s*\(boxRef\.current\?\.querySelector\('\.modal-close'\) \|\| boxRef\.current\)\?\.focus\(\);/);
+  assert.match(modalSource, /event\.key === 'Escape'/);
+  assert.match(modalSource, /event\.key !== 'Tab'/);
+  assert.match(modalSource, /event\.shiftKey/);
+  assert.match(modalSource, /requestAnimationFrame\(\(\) => \{[\s\S]*trigger\.isConnected[\s\S]*trigger\.focus\(\)/);
+  assert.match(modalSource, /event\.target === event\.currentTarget/);
+});
+
+test('OpenCode count is authoritative while Activity preserves telemetry details and completed history', async (t) => {
+  const vite = await createServer({ root: webRoot, server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
+  t.after(() => vite.close());
+  const { ActivityContent } = await vite.ssrLoadModule('/src/components/Activity.jsx');
+  const activitySource = fs.readFileSync(path.join(webRoot, 'src/components/Activity.jsx'), 'utf8');
+  assert.match(activitySource, /usePoll\('\/api\/opencode\/active-subagents', 5000, tick\)/);
+  const summary = { runs: [
+    { sessionID: 'root-session', status: 'running', start: 1 },
+    { sessionID: 'active-child', parentSessionID: 'root-session', agent: 'worker', status: 'busy', start: 2 },
+    { sessionID: 'completed-child', parentSessionID: 'root-session', agent: 'verify', status: 'completed', start: 3, end: 4, statusTs: 4 },
+  ] };
+
+  const positiveWithoutDetails = render(React.createElement(ActivityContent, {
+    summary: { runs: [{ sessionID: 'root-session', status: 'running', start: 1 }] },
+    workflow: {},
+    openCodeState: { data: { available: true, runningCount: 2 }, error: null },
+  }));
+  assert.match(positiveWithoutDetails, /<strong>2<\/strong> running subagents/);
+  assert.match(positiveWithoutDetails, /role="status">\s*OpenCode reports 2 active subagents; telemetry details are not available\./);
+  assert.doesNotMatch(positiveWithoutDetails, /No active subagents|Selected session/);
+  assert.doesNotMatch(positiveWithoutDetails, /root-session/);
+
+  const authoritativeZero = render(React.createElement(ActivityContent, {
+    summary,
+    workflow: {},
+    openCodeState: { data: { available: true, runningCount: 0 }, error: null },
+  }));
+  assert.match(authoritativeZero, /<strong>0<\/strong> running subagents/);
+  assert.match(authoritativeZero, /No active subagents/);
+  assert.match(authoritativeZero, /Agent sessions/);
+  assert.doesNotMatch(authoritativeZero, /Selected session|active-child/);
+  assert.match(authoritativeZero, /Completed history · 1/);
+  assert.doesNotMatch(authoritativeZero, /completed-child|Completed ·/);
+
+  for (const openCodeState of [
+    { data: { available: false, runningCount: 0 }, error: null },
+    { data: { available: true, runningCount: '1' }, error: null },
+    { data: { available: true, runningCount: 5 }, error: 'PRIVATE_NETWORK_ERROR' },
+  ]) {
+    const fallback = render(React.createElement(ActivityContent, { summary, workflow: {}, openCodeState }));
+    assert.match(fallback, /<strong>1<\/strong> running subagents/);
+    assert.match(fallback, /Agent sessions/);
+    assert.match(fallback, /active-child/);
+    assert.match(fallback, /Selected session/);
+    assert.match(fallback, /Completed history · 1/);
+    assert.doesNotMatch(fallback, /completed-child|Completed ·/);
+  }
+
+  const detail = render(React.createElement(ActivityContent, {
+    summary,
+    workflow: {},
+    openCodeState: { data: { available: true, runningCount: 1 }, error: null },
+  }));
+  assert.match(detail, /Agent sessions/);
+  assert.match(detail, /Selected session/);
+  assert.match(detail, /active-child/);
+  assert.match(detail, /Loading session activity/);
+  assert.match(detail, /Completed history · 1/);
+  assert.doesNotMatch(detail, /completed-child|Completed ·/);
+});
+
+test('selected terminal session detail remains renderable while stale active detail stays suppressed', async (t) => {
+  const vite = await createServer({ root: webRoot, server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
+  t.after(() => vite.close());
+  const { selectedRunDetailIsRenderable } = await vite.ssrLoadModule('/src/components/Activity.jsx');
+
+  const terminalOnlyRuns = [
+    { sessionID: 'root', status: 'running' },
+    { sessionID: 'completed-without-active-child', parentSessionID: 'root', status: 'completed' },
+  ];
+  const runningChildren = terminalOnlyRuns.filter((run) => run.parentSessionID && ['busy', 'running'].includes(run.status));
+  const selectedTerminal = terminalOnlyRuns.find((run) => run.sessionID === 'completed-without-active-child');
+  assert.equal(runningChildren.length, 0);
+  assert.equal(selectedRunDetailIsRenderable(selectedTerminal, false), true);
+
+  const zeroCountRuns = [
+    { sessionID: 'stale-active', parentSessionID: 'root', status: 'busy' },
+    { sessionID: 'completed-at-zero', parentSessionID: 'root', status: 'completed' },
+  ];
+  const selectedStaleActive = zeroCountRuns.find((run) => run.sessionID === 'stale-active');
+  const selectedTerminalAtZero = zeroCountRuns.find((run) => run.sessionID === 'completed-at-zero');
+  // A valid OpenCode runningCount: 0 makes showActiveDetails false even if telemetry is stale.
+  assert.equal(selectedRunDetailIsRenderable(selectedStaleActive, false), false);
+  assert.equal(selectedRunDetailIsRenderable(selectedTerminalAtZero, false), true);
+});
+
+test('OpenCode active workers are selectable, privacy-safe, and distinct from telemetry sessions', async (t) => {
+  const vite = await createServer({ root: webRoot, server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
+  t.after(() => vite.close());
+  const { ActivityContent } = await vite.ssrLoadModule('/src/components/Activity.jsx');
+  const activitySource = fs.readFileSync(path.join(webRoot, 'src/components/Activity.jsx'), 'utf8');
+  const css = fs.readFileSync(path.join(webRoot, 'src/style.css'), 'utf8');
+  const workers = [
+    {
+      key: 'fa10d3df-df3e-42a5-a457-31aca3cb9621', agent: 'worker_alpha', status: 'busy',
+      createdAt: 1000, updatedAt: 2000, sessionID: 'PRIVATE_RAW_SESSION_ID', parentID: 'PRIVATE_PARENT_ID',
+      activity: [
+        { ts: 1100, type: 'workflow', status: 'observed', note: 'PRIVATE_NOTE', task: 'PRIVATE_TASK' },
+        { ts: 1200, type: 'tool', status: 'ok', tool: 'read_file', ok: true, output: 'PRIVATE_OUTPUT', args: 'PRIVATE_ARGS' },
+        { ts: 1300, type: 'session', status: 'running', prompt: 'PRIVATE_PROMPT', credential: 'PRIVATE_CREDENTIAL' },
+      ],
+    },
+    {
+      key: '3e0db751-84f6-44ba-bc14-7d167ea8a480', agent: 'verify_worker', status: 'running',
+      createdAt: null, updatedAt: 3000, activity: [],
+    },
+  ];
+  const summary = { runs: [
+    { sessionID: 'root-session', status: 'running', start: 1 },
+    { sessionID: 'telemetry-active-child', parentSessionID: 'root-session', agent: 'telemetry-agent', status: 'busy', start: 2 },
+    { sessionID: 'telemetry-completed-child', parentSessionID: 'root-session', agent: 'verify', status: 'completed', start: 3, end: 4, statusTs: 4 },
+  ] };
+  const html = render(React.createElement(ActivityContent, {
+    summary,
+    workflow: {},
+    openCodeState: { data: { available: true, runningCount: 2, workers }, error: null },
+  }));
+
+  assert.match(html, /OpenCode active workers/);
+  assert.match(html, /worker_alpha/);
+  assert.match(html, /verify_worker/);
+  assert.match(html, /activity-status--busy/);
+  assert.match(html, /activity-status--running/);
+  assert.match(html, /Created ·/);
+  assert.match(html, /Updated ·/);
+  assert.match(html, /Selected OpenCode worker/);
+  assert.match(html, /Observed timeline/);
+  assert.ok(html.indexOf('Tool call') < html.indexOf('Workflow'));
+  assert.match(html, /<button[^>]*type="button"[^>]*aria-label="Select OpenCode worker worker_alpha, busy"[^>]*aria-pressed="true"/);
+  assert.match(html, /aria-controls="activity-opencode-worker-detail"/);
+  assert.match(html, /<button[^>]*aria-label="Select OpenCode worker verify_worker, running"[^>]*aria-pressed="false"/);
+  assert.match(activitySource, /onClick=\{\(\) => setSelectedOpenCodeKey\(worker\.key\)\}/);
+  assert.match(activitySource, /const \[selectedOpenCodeKey, setSelectedOpenCodeKey\] = useState\(null\)/);
+  assert.match(activitySource, /openCodeWorkers\.find\(\(worker\) => worker\.key === selectedOpenCodeKey\)/);
+  assert.match(css, /\.activity-opencode-worker-button:focus-visible\s*\{\s*outline: 2px solid var\(--guarana\)/);
+  assert.match(css, /@media \(max-width: 700px\)\s*\{\s*\.activity-live-workbench,/s);
+  assert.doesNotMatch(html, /PRIVATE_RAW_SESSION_ID|PRIVATE_PARENT_ID|PRIVATE_NOTE|PRIVATE_TASK|PRIVATE_OUTPUT|PRIVATE_ARGS|PRIVATE_PROMPT|PRIVATE_CREDENTIAL/);
+  assert.match(html, /Agent sessions/);
+  assert.match(html, /telemetry-active-child/);
+  assert.match(html, /Selected session/);
+  assert.match(html, /Completed history · 1/);
+  assert.doesNotMatch(html, /telemetry-completed-child|activity-completed-subagents/);
+
+  const emptyTimeline = render(React.createElement(ActivityContent, {
+    summary: { runs: [] },
+    workflow: {},
+    openCodeState: { data: { available: true, runningCount: 1, workers: [workers[1]] }, error: null },
+  }));
+  assert.match(emptyTimeline, /No matching telemetry activity observed for this worker\./);
+  assert.doesNotMatch(emptyTimeline, /PRIVATE_RAW_SESSION_ID|PRIVATE_PARENT_ID/);
+  assert.doesNotMatch(emptyTimeline, /<ol class="activity-event-list"/);
 });
 
 test('terminal timestamps use statusTs only for terminal states; nonterminal states stay last-observed', async (t) => {

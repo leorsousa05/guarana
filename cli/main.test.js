@@ -518,7 +518,7 @@ describe('shared command help metadata', () => {
   it('documents the fixed memory vault and the post-search project hash filter', () => {
     const global = runBin(['--help']);
     assert.equal(global.status, 0, global.stderr);
-    assert.ok(global.stdout.includes('Memory commands always use .guarana/memory/ under the current working directory.'));
+    assert.ok(global.stdout.includes('Memory commands use .guarana/memory/ unless a command requires an explicit scope.'));
     assert.ok(global.stdout.includes('A global --project before memory does not switch the memory vault.'));
     assert.ok(global.stdout.includes('After memory search, --project <hash> filters results by project hash.'));
     assert.ok(global.stdout.includes('Example: guarana memory search "term" --project HASH'));

@@ -9,8 +9,9 @@ import { createWorkflowRouter } from './routes/workflow.js';
 import { createSkillsRouter } from './routes/skills.js';
 import { createModelsRouter } from './routes/models.js';
 import { createWebSettingsRouter } from './routes/web-settings.js';
+import { createOpenCodeRouter } from './routes/opencode.js';
 
-export function createApp({ root, distDir }) {
+export function createApp({ root, distDir, execFileImpl }) {
   const app = express();
   app.use(express.json());
 
@@ -21,6 +22,7 @@ export function createApp({ root, distDir }) {
   app.use('/api/workflow', createWorkflowRouter({ root }));
   app.use('/api/skills', createSkillsRouter({ root }));
   app.use('/api/models', createModelsRouter({ root }));
+  app.use('/api/opencode', createOpenCodeRouter({ root, execFileImpl }));
   app.use('/api/web', createWebSettingsRouter({ root }));
 
   app.use((error, req, res, next) => {

@@ -83,7 +83,7 @@ test('Workflow SSR preserves phase semantics, selected transition evidence, task
   const activityTriggerRule = css.match(/\.activity-more\s*>\s*summary\s*,\s*\.activity-secondary\s*>\s*summary\s*\{[^}]*\}/s)?.[0];
   assert.ok(activityTriggerRule, 'Activity disclosure trigger styles exist');
   assert.doesNotMatch(css, /\.activity-(?:more|secondary)\s+summary\s*\{/);
-  const workflowCss = css.slice(css.indexOf('/* ---------- workflow state machine ----------'), css.indexOf('/* ---------- overview / home ----------'));
+  const workflowCss = css.slice(css.indexOf('/* ---------- workflow state machine ----------'), css.indexOf('/* ---------- overview / operational workbench ----------'));
   assert.match(workflowCss, /\.wf-strip\s*\{[^}]*grid-template-columns:\s*repeat\(7,\s*minmax\(0,\s*1fr\)\)/s);
   assert.match(workflowCss, /\.wf-evidence\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1\.45fr\)\s+minmax\(0,\s*0\.85fr\)/s);
   assert.match(mediaBlock(workflowCss, 'max-width: 700px'), /\.wf-evidence\s*\{\s*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);
@@ -107,7 +107,7 @@ test('Workflow is a state monitor and does not expose preference editing control
   assert.doesNotMatch(html, /Specs \+ worker-specs|Independent verification|workflow\/settings|wf-pref-/);
 
   const css = fs.readFileSync(path.join(webRoot, 'src/style.css'), 'utf8');
-  const workflowCss = css.slice(css.indexOf('/* ---------- workflow state machine ----------'), css.indexOf('/* ---------- overview / home ----------'));
+  const workflowCss = css.slice(css.indexOf('/* ---------- workflow state machine ----------'), css.indexOf('/* ---------- overview / operational workbench ----------'));
   assert.doesNotMatch(workflowCss, /wf-preferences|wf-setting|wf-inherit/);
   assert.match(workflowCss, /\.workflow\s*\{\s*min-width:\s*0/s);
   assert.match(workflowCss, /\.workflow \*\s*\{\s*min-width:\s*0/s);

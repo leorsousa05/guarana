@@ -10,6 +10,7 @@ const PROVIDER_ID = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$/;
 const MODEL_ID = /^[A-Za-z0-9~][A-Za-z0-9._:/+~-]{0,255}$/;
 const SECRET_LIKE = /(?:\bsk-[A-Za-z0-9_-]{8,}|\bgh[pousr]_[A-Za-z0-9]{12,}|\bBearer\s+\S+|\b(?:api[_-]?key|token|secret|password)\s*[:=]\s*\S+)/i;
 const PROVIDER_LABEL = /^[A-Za-z0-9][A-Za-z0-9 ._+&()'/-]{0,127}$/;
+const AUTH_METHOD = /^(?:api(?:\s+key)?|oauth2?)$/i;
 const ANSI_CSI = /\u001B\[[0-?]*[ -/]*[@-~]/g;
 const TABLE_DELIMITER = /[|│┃║]/u;
 const TABLE_BORDER_ONLY = /^[\s│┃║┌┐└┘├┤┬┴┼─━═╔╗╚╝╠╣╦╩╬╭╮╰╯+|=\-]+$/u;
@@ -72,9 +73,14 @@ function parseProviders(output) {
     if (/^connected\b/i.test(line)) return null;
     if (/^(?:no|none)\b/i.test(line)) continue;
 
+    const plainLine = line.replace(/^(?:[-*•])\s+/, '');
+    const alignedColumns = plainLine.split(/\s{2,}/).map((cell) => cell.trim()).filter(Boolean);
+    const isAlignedAuthRow = !TABLE_DELIMITER.test(line)
+      && alignedColumns.length >= 3
+      && AUTH_METHOD.test(alignedColumns[1]);
     const cells = TABLE_DELIMITER.test(line)
       ? line.split(TABLE_DELIMITER).map((cell) => cell.trim()).filter(Boolean)
-      : [line.replace(/^(?:[-*•])\s+/, '')];
+      : isAlignedAuthRow ? [alignedColumns[0]] : [plainLine];
     if (cells.some(isCredentialsWrapper)) continue;
     if (cells.some((cell) => PROVIDER_HEADER.test(cell))
       || cells.length === 1 && /^(?:(?:provider|providers|type|auth|method|status|authentication)\s*)+$/i.test(cells[0])) continue;
@@ -97,20 +103,17 @@ function normalizedProviderName(value) {
 }
 
 function providerLabelMatches(label, providerId) {
+  const normalizedLabel = normalizedProviderName(label);
+  const normalizedId = normalizedProviderName(providerId);
   return label.toLowerCase() === providerId.toLowerCase()
-    || normalizedProviderName(label) === normalizedProviderName(providerId);
+    || normalizedLabel === normalizedId
+    || normalizedLabel === 'opencodeconsole' && normalizedId === 'opencode';
 }
 
 function connectedCatalogProviders(labels, catalogProviders) {
   const connected = new Set();
   for (const label of labels) {
-    const exact = [...catalogProviders].filter((id) => label.toLowerCase() === id.toLowerCase());
-    if (exact.length === 1) {
-      connected.add(exact[0]);
-      continue;
-    }
-    const normalized = normalizedProviderName(label);
-    const matches = [...catalogProviders].filter((id) => normalizedProviderName(id) === normalized);
+    const matches = [...catalogProviders].filter((id) => providerLabelMatches(label, id));
     if (matches.length === 1) connected.add(matches[0]);
   }
   return connected;
@@ -224,29 +227,34 @@ async function discoverVariants(options = {}) {
   if (auth.error) return empty(auth.error);
   const labels = parseProviders(auth.stdout);
   if (!labels || !labels.some((label) => providerLabelMatches(label, provider))) return empty();
-  const result = await invoke(executable, ['models', provider, '--verbose'], {
+  const result = await invoke(executable, ['api', 'model.list', '--param', `location[directory]=${cwd}`], {
     cwd, execFile, timeout: VARIANT_COMMAND_TIMEOUT_MS, maxOutputBytes: MAX_VARIANT_OUTPUT_BYTES,
   });
   if (result.error) return empty(result.error);
   const text = safeText(result.stdout, MAX_VARIANT_OUTPUT_BYTES);
   if (text === null) return empty('OpenCode returned unsafe model metadata.');
   try {
-    const lines = text.split(/\r?\n/);
-    const wanted = `${provider}/${model}`;
-    const start = lines.findIndex((line) => line.trim() === wanted);
-    if (start < 0) return empty('OpenCode did not return metadata for the requested model.');
-    let end = lines.length;
-    for (let index = start + 1; index < lines.length; index += 1) {
-      if (/^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}\/[A-Za-z0-9~][A-Za-z0-9._:/+~-]{0,255}$/.test(lines[index].trim())) {
-        end = index;
-        break;
-      }
+    const catalog = JSON.parse(text);
+    if (!catalog || typeof catalog !== 'object' || Array.isArray(catalog) || !Array.isArray(catalog.data)) {
+      return empty('OpenCode returned malformed variant metadata.');
     }
-    const definition = JSON.parse(lines.slice(start + 1, end).join('\n').trim());
-    if (!definition || typeof definition !== 'object' || !definition.variants || typeof definition.variants !== 'object' || Array.isArray(definition.variants)) return empty();
-    const variants = Object.entries(definition.variants)
-      .filter(([key, value]) => /^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$/.test(key) && !(value && typeof value === 'object' && value.disabled === true))
-      .map(([key]) => key);
+    const matches = catalog.data.filter((entry) => entry && typeof entry === 'object' && !Array.isArray(entry)
+      && entry.providerID === provider && entry.id === model);
+    if (matches.length === 0) return empty('OpenCode did not return metadata for the requested model.');
+    if (matches.length !== 1 || !Array.isArray(matches[0].variants)) {
+      return empty('OpenCode returned malformed variant metadata.');
+    }
+    const variants = [];
+    const seen = new Set();
+    for (const entry of matches[0].variants) {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)
+        || typeof entry.id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$/.test(entry.id)
+        || !Object.hasOwn(entry, 'settings') || !entry.settings || typeof entry.settings !== 'object' || Array.isArray(entry.settings)
+        || Object.hasOwn(entry, 'disabled') && typeof entry.disabled !== 'boolean') continue;
+      if (entry.disabled === true || seen.has(entry.id)) continue;
+      seen.add(entry.id);
+      variants.push(entry.id);
+    }
     return { variants, error: null };
   } catch {
     return empty('OpenCode returned malformed variant metadata.');

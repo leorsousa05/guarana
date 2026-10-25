@@ -6,6 +6,31 @@ Entry format: date · feature · what validated / failed / re-opened · proof pa
 
 ## Records
 
+### 2026-10-25 — dashboard Settings
+- [Advisor model variant discovery via model.list](2026-10-25-advisor-variant-discovery-model-list.md) — fresh independent worker-verify PASS (5/5); bounded project-scoped model.list and six sanitized live IDs verified on installed OpenCode v2.1.3 only; VALIDATED, not shipped
+
+### 2026-10-24 — dashboard Settings
+- [Dashboard Settings connected provider/model catalog loading](2026-10-24-settings-provider-model-catalog.md) — fresh independent worker-verify overall PASS (6/6); source-validated with sanitized live discovery of 473 models; browser interaction unavailable and no browser proof claimed; VALIDATED, not shipped
+
+### 2026-10-24 — dashboard Memory
+- [Dashboard Memory Map stacking and selection stability follow-up](2026-10-24-dashboard-memory-map-selection-stability.md) — fresh independent worker-verify overall PASS; synthetic browser proof at 1440x900 and 375x812; stable selection positions and stacked inspector; VALIDATED, not shipped; no API/data/privacy change or deployment
+- [Dashboard Memory Map pan-zoom and inspector redesign](2026-10-24-dashboard-memory-map-pan-zoom-inspector.md) — fresh independent worker-verify overall PASS (5/5); synthetic-fixture browser proof at 1440px and 375px; VALIDATED, not shipped; native viewport-only non-passive wheel listener preserves outside-map scrolling; no API/data changes or deployment
+- [Dashboard Memory Index/Map switch](2026-10-24-dashboard-memory-index-map-switch.md) — fresh independent worker-verify overall PASS (3/3); synthetic-fixture browser proof at 1440px and 375px; VALIDATED, not shipped; tablet not specifically browser-tested; no API changes or deployment
+- [Dashboard Memory Map hide index sidebar](2026-10-24-dashboard-memory-map-hide-index-sidebar.md) — fresh independent worker-verify overall PASS; synthetic-fixture browser proof at 1440px and 375px; VALIDATED, not shipped; no API changes or deployment
+
+### 2026-10-24 — dashboard Overview
+- [Dashboard Overview roadmap bottom section](2026-10-24-dashboard-overview-roadmap-bottom-section.md) — fresh independent worker-verify PASS (3/3); synthetic-fixture browser proof at 1440px and 375px; VALIDATED, not shipped; tablet behavior inferred from responsive CSS without a tablet screenshot; no API changes or deployment
+- [Dashboard Overview operational workbench](2026-10-24-dashboard-overview-operational-workbench.md) — fresh independent worker-verify PASS (8/8); synthetic-fixture browser proof at 1440x900 and 375x812; VALIDATED, not shipped; no real session/memory data, API/data change, or deployment
+
+### 2026-10-24 — dashboard Activity
+- [Dashboard Activity live-execution redesign](2026-10-24-dashboard-activity-live-execution-redesign.md) — fresh independent worker-verify PASS (5/5); synthetic-fixture browser proof; VALIDATED, not shipped; no deployment or service-restart claim
+- [Dashboard Activity OpenCode active worker details](2026-10-24-dashboard-activity-opencode-active-details.md) — fresh independent worker-verify PASS (5/5), including completed-history selection regressions; VALIDATED, not shipped; no live Task integration or deployment claim
+- [Dashboard Activity OpenCode running status](2026-10-24-dashboard-activity-opencode-running-status.md) — source and bounded aggregate runtime/browser proof independently verified PASS (5/5); VALIDATED, not shipped; separate lifecycle deployment status unchanged
+
+### 2026-10-23 — dashboard Activity
+- [Dashboard Activity late lifecycle metadata](2026-10-23-dashboard-activity-late-metadata.md) — source/fixture slice independently verified PASS (13/13); live runtime envelope and global Activity proof remain unresolved, installation/reload pending authorization; not shipped
+- [Dashboard Activity V2 setup-boundary regression](2026-10-23-dashboard-activity-setup-boundary.md) — public V2 event-subscription fixture regression independently verified PASS (4/4); local tests and summaries pass; no live runtime proof or shipping claim
+
 ### 2026-10-23 — orchestrator
 - [Intent and provenance safety follow-up](2026-10-23-orchestrator-intent-provenance-safety.md) — VALIDATED; offline adoption proof and completed live gate confirm global deployment and byte-identical project workflow across one native worker-verify Task; GitHub push pending, not shipped
 

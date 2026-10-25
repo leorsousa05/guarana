@@ -113,6 +113,26 @@ describe('summarize', () => {
     assert.equal(run.agent, 'worker-code');
     assert.equal(run.status, 'busy');
   });
+
+  it('merges late metadata into an observed running session without replacing status or status timestamp', () => {
+    const [run] = summarize([
+      { type: 'session', status: 'running', sessionID: 'late-child', ts: 200 },
+      { type: 'session', sessionID: 'late-child', parentSessionID: 'parent', agent: 'worker-code', ts: 300 },
+    ]);
+    assert.equal(run.parentSessionID, 'parent');
+    assert.equal(run.agent, 'worker-code');
+    assert.equal(run.status, 'running');
+    assert.equal(run.statusTs, 200);
+  });
+
+  it('does not let a later-listed stale lifecycle status replace newer running status', () => {
+    const [run] = summarize([
+      { type: 'session', status: 'running', sessionID: 'child', ts: 200 },
+      { type: 'session', status: 'idle', sessionID: 'child', ts: 100 },
+    ]);
+    assert.equal(run.status, 'running');
+    assert.equal(run.statusTs, 200);
+  });
 });
 
 describe('advisorHistory', () => {

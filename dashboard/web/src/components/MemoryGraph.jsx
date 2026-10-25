@@ -1,7 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { fmtTs } from '../lib/format.js';
 import { buildLineage } from '../lib/lineage.js';
-import { handleMemoryBubbleKeyDown, layoutMemoryBubbles, qualifyMemoryGraph } from '../lib/memoryBubbleLayout.js';
+import {
+  clampMemoryCamera,
+  fitMemoryCamera,
+  focusMemoryCamera,
+  handleMemoryBubbleKeyDown,
+  layoutMemoryBubbles,
+  panMemoryCamera,
+  qualifyMemoryGraph,
+  zoomMemoryCamera,
+} from '../lib/memoryBubbleLayout.js';
 
 const TYPE_CLASS = (t) => `mem-type mem-type--${t}`;
 const NODE_TYPES = ['decision', 'bug', 'solution', 'refactor', 'preference', 'supernode', 'atom'];
@@ -140,10 +149,18 @@ export function MemoryGraph({ nodes, edges, selected, onSelect = noop, onChange 
   const projectNodes = useMemo(() => graphNodes.filter((node) => node.scope === 'project'), [graphNodes]);
   const bubbleRefs = useRef(new Map());
   const bubbleViewportRef = useRef(null);
+  const wheelHandlerRef = useRef(null);
+  const panStartRef = useRef(null);
+  const cameraRef = useRef({ scale: 1, x: 0, y: 0 });
+  const cameraStateRef = useRef({ initialized: false });
+  const [camera, setCamera] = useState(cameraRef.current);
+  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
+  const [panning, setPanning] = useState(false);
   const [query, setQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [scopeFilter, setScopeFilter] = useState('');
   const [relFilter, setRelFilter] = useState('');
+  const [displayMode, setDisplayMode] = useState('map');
   const [viewMode, setViewMode] = useState('network');
   const [focusedBubble, setFocusedBubble] = useState(null);
   const [targetId, setTargetId] = useState('');
@@ -177,6 +194,8 @@ export function MemoryGraph({ nodes, edges, selected, onSelect = noop, onChange 
     [visible.nodes, visible.edges, effectiveSelected, viewMode],
   );
   const bubblesById = useMemo(() => new Map(bubbleView.nodes.map((node) => [node.id, node])), [bubbleView.nodes]);
+  const selectedBubble = bubblesById.get(effectiveSelected);
+  const layoutSignature = `${bubbleView.width}x${bubbleView.height}:${bubbleView.nodes.map((node) => node.id).join('\u0000')}`;
   const bubbleFocusId = bubbleView.nodes.some((node) => node.id === focusedBubble) ? focusedBubble : bubbleView.selected;
   const focusedEdges = bubbleView.edges.filter((edge) => edge.from === bubbleView.selected || edge.to === bubbleView.selected);
   useEffect(() => {
@@ -187,21 +206,47 @@ export function MemoryGraph({ nodes, edges, selected, onSelect = noop, onChange 
   }, [focusedBubble, bubbleView.nodes, bubbleView.selected]);
   useEffect(() => {
     const viewport = bubbleViewportRef.current;
-    if (!viewport || !bubbleView.nodes.length) return undefined;
-    const centerSelected = () => {
-      if (!viewport.clientWidth || !viewport.clientHeight) return;
-      viewport.scrollLeft = Math.max(0, bubbleView.width / 2 - viewport.clientWidth / 2);
-      viewport.scrollTop = Math.max(0, bubbleView.height / 2 - viewport.clientHeight / 2);
+    if (!viewport) return undefined;
+    const measure = () => {
+      const rect = viewport.getBoundingClientRect();
+      const next = { width: Math.round(rect.width), height: Math.round(rect.height) };
+      setViewportSize((current) => current.width === next.width && current.height === next.height ? current : next);
     };
+    measure();
     if (typeof ResizeObserver === 'undefined') {
-      centerSelected();
-      return undefined;
+      window.addEventListener('resize', measure);
+      return () => window.removeEventListener('resize', measure);
     }
-    const observer = new ResizeObserver(centerSelected);
+    const observer = new ResizeObserver(measure);
     observer.observe(viewport);
-    centerSelected();
     return () => observer.disconnect();
-  }, [bubbleView.width, bubbleView.height, bubbleView.nodes.length, viewMode]);
+  }, []);
+  useEffect(() => {
+    if (!viewportSize.width || !viewportSize.height || !bubbleView.nodes.length) return;
+    const previous = cameraStateRef.current;
+    const selectionChanged = previous.initialized && previous.selected !== effectiveSelected;
+    const viewportChanged = previous.initialized && (
+      previous.width !== viewportSize.width || previous.height !== viewportSize.height
+    );
+    const layoutChanged = previous.initialized && previous.signature !== layoutSignature;
+    const initial = !previous.initialized;
+    const shouldFit = previous.viewMode !== viewMode || viewportChanged || (layoutChanged && !selectionChanged);
+    const next = initial
+      ? focusMemoryCamera({ scale: 1, x: 0, y: 0 }, selectedBubble, bubbleView, viewportSize)
+      : shouldFit
+        ? fitMemoryCamera(bubbleView, viewportSize)
+        : clampMemoryCamera(cameraRef.current, bubbleView, viewportSize);
+    cameraRef.current = next;
+    setCamera(next);
+    cameraStateRef.current = {
+      initialized: true,
+      selected: effectiveSelected,
+      viewMode,
+      signature: layoutSignature,
+      width: viewportSize.width,
+      height: viewportSize.height,
+    };
+  }, [viewportSize.width, viewportSize.height, layoutSignature, effectiveSelected, viewMode, bubbleView, selectedBubble]);
   const focusMemory = (id) => {
     if (!visible.nodes.some((node) => node.id === id)) {
       setQuery('');
@@ -284,6 +329,55 @@ export function MemoryGraph({ nodes, edges, selected, onSelect = noop, onChange 
     }
   };
 
+  const applyCamera = (next) => {
+    const clamped = clampMemoryCamera(next, bubbleView, viewportSize);
+    cameraRef.current = clamped;
+    setCamera(clamped);
+  };
+
+  const fitMap = () => applyCamera(fitMemoryCamera(bubbleView, viewportSize));
+  const focusSelected = () => {
+    if (selectedBubble) applyCamera(focusMemoryCamera(cameraRef.current, selectedBubble, bubbleView, viewportSize));
+  };
+  const zoomMap = (factor, anchor) => applyCamera(zoomMemoryCamera(cameraRef.current, factor, bubbleView, viewportSize, anchor));
+  const handleMapWheel = (event) => {
+    if (event.cancelable) event.preventDefault();
+    event.stopPropagation();
+    const rect = event.currentTarget.getBoundingClientRect();
+    zoomMap(Math.exp(-event.deltaY * 0.001), { x: event.clientX - rect.left, y: event.clientY - rect.top });
+  };
+  wheelHandlerRef.current = handleMapWheel;
+  useEffect(() => {
+    const viewport = bubbleViewportRef.current;
+    if (!viewport) return undefined;
+    const listener = (event) => wheelHandlerRef.current?.(event);
+    viewport.addEventListener('wheel', listener, { passive: false });
+    return () => viewport.removeEventListener('wheel', listener);
+  }, []);
+  const handleMapPointerDown = (event) => {
+    if (event.button !== 0 || event.target.closest?.('.mem-bubble-button')) return;
+    event.preventDefault();
+    panStartRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    setPanning(true);
+  };
+  const handleMapPointerMove = (event) => {
+    const start = panStartRef.current;
+    if (!start || start.pointerId !== event.pointerId) return;
+    applyCamera(panMemoryCamera(cameraRef.current, event.clientX - start.x, event.clientY - start.y, bubbleView, viewportSize));
+    panStartRef.current = { ...start, x: event.clientX, y: event.clientY };
+  };
+  const stopMapPan = (event) => {
+    if (!panStartRef.current || panStartRef.current.pointerId !== event.pointerId) return;
+    panStartRef.current = null;
+    setPanning(false);
+  };
+  const handleViewportKeyDown = (event) => {
+    if (event.target === event.currentTarget && ['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', ' '].includes(event.key)) {
+      event.preventDefault();
+    }
+  };
+
   return (
     <div className="mem-graph">
       <fieldset className="mem-graph-filters">
@@ -302,11 +396,15 @@ export function MemoryGraph({ nodes, edges, selected, onSelect = noop, onChange 
         </select></label>
       </fieldset>
       <div className="mem-graph-toolbar">
-        <p className="mem-graph-help">Choose a memory in the index to inspect its connected neighborhood and details.</p>
+        <p className="mem-graph-help">Select a memory in the map or index to inspect its connected neighborhood and details.</p>
         <span className="mem-graph-count" role="status">Showing {visible.nodes.length} of {graphNodes.length} memories · {visible.edges.length} matching links</span>
+        <div className="mem-graph-display-modes" role="group" aria-label="Memory display">
+          <button type="button" aria-pressed={displayMode === 'map'} onClick={() => setDisplayMode('map')}>Memory map</button>
+          <button type="button" aria-pressed={displayMode === 'index'} onClick={() => setDisplayMode('index')}>Memory index</button>
+        </div>
       </div>
-      <div className="mem-graph-explorer">
-        <section className="mem-graph-index" aria-label="Memory index">
+      <div className={`mem-graph-explorer mem-graph-explorer--${displayMode}`}>
+        <section className="mem-graph-index" aria-label="Memory index" hidden={displayMode === 'map'}>
           <div className="mem-graph-index-heading">
             <h4>Memory index</h4>
             <span>{visible.nodes.length} {visible.nodes.length === 1 ? 'record' : 'records'}</span>
@@ -351,12 +449,37 @@ export function MemoryGraph({ nodes, edges, selected, onSelect = noop, onChange 
                 <button type="button" aria-pressed={viewMode === 'neighborhood'} onClick={() => setViewMode('neighborhood')}>Neighborhood</button>
               </div>
             </header>
+            <div className="mem-map-toolbar" role="group" aria-label="Map navigation">
+              <button type="button" className="mem-graph-action" disabled={!bubbleView.nodes.length} onClick={() => zoomMap(1.25)}>Zoom in</button>
+              <button type="button" className="mem-graph-action" disabled={!bubbleView.nodes.length} onClick={() => zoomMap(0.8)}>Zoom out</button>
+              <button type="button" className="mem-graph-action" disabled={!bubbleView.nodes.length} onClick={fitMap}>Fit map</button>
+              <button type="button" className="mem-graph-action" disabled={!selectedBubble} onClick={focusSelected}>Focus selected</button>
+              <span className="mem-map-gestures">Drag empty map to pan · wheel to zoom · use Focus selected to recenter</span>
+            </div>
             <div className="mem-bubble-legend" aria-label="Memory types">
               {NODE_TYPES.map((type) => <span key={type}><i className={`mem-bubble-key-dot mem-type--${type}`} aria-hidden="true" />{type}</span>)}
             </div>
-            <div ref={bubbleViewportRef} className="mem-bubble-viewport" role="region" aria-label={`${viewMode === 'network' ? 'Network' : 'Neighborhood'} bubble graph; scroll within this map to explore`} tabIndex={0}>
+            <div
+              ref={bubbleViewportRef}
+              className={`mem-bubble-viewport${panning ? ' mem-bubble-viewport--panning' : ''}`}
+              role="region"
+              aria-label={`${viewMode === 'network' ? 'Network' : 'Neighborhood'} bubble graph`}
+              tabIndex={0}
+              onPointerDown={handleMapPointerDown}
+              onPointerMove={handleMapPointerMove}
+              onPointerUp={stopMapPan}
+              onPointerCancel={stopMapPan}
+              onKeyDown={handleViewportKeyDown}
+            >
               {bubbleView.nodes.length ? (
-                <div className="mem-bubble-canvas" style={{ width: bubbleView.width, height: bubbleView.height }}>
+                <div
+                  className="mem-bubble-canvas"
+                  style={{
+                    width: bubbleView.width,
+                    height: bubbleView.height,
+                    transform: `translate3d(${camera.x}px, ${camera.y}px, 0) scale(${camera.scale})`,
+                  }}
+                >
                   <svg className="mem-bubble-edges" width={bubbleView.width} height={bubbleView.height} viewBox={`0 0 ${bubbleView.width} ${bubbleView.height}`} aria-hidden="true" focusable="false">
                     <defs>
                       <marker id="memory-arrow-project" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L8,4 L0,8 z" fill="#315c35" /></marker>
@@ -415,6 +538,11 @@ export function MemoryGraph({ nodes, edges, selected, onSelect = noop, onChange 
                       )}
                     >
                       <span className={`mem-bubble-core mem-type--${node.type}`} aria-hidden="true" />
+                      <span className={`mem-bubble-disclosure${node.x > bubbleView.width / 2 ? ' mem-bubble-disclosure--right' : ''}${node.y > bubbleView.height / 2 ? ' mem-bubble-disclosure--above' : ''}`} aria-hidden="true">
+                        <strong>{node.intent || node.memoryId}</strong>
+                        <span>{node.scope} · {node.type}</span>
+                        {node.summary && <span className="mem-bubble-disclosure-summary">{node.summary}</span>}
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -442,20 +570,21 @@ export function MemoryGraph({ nodes, edges, selected, onSelect = noop, onChange 
           </section>
 
         {selectedNode ? (
-        <section className="mem-detail" aria-label="Selected memory details">
+        <section className="mem-detail mem-map-inspector" aria-label="Selected memory inspector">
           <div className="mem-detail-heading">
             <div>
-              <p className="mem-focus-label">Focused memory</p>
+              <p className="mem-focus-label">Selected memory</p>
               <h4 className="sub-title"><span className={TYPE_CLASS(selectedNode.type)}>{selectedNode.type}</span> {selectedNode.intent || selectedNode.memoryId}</h4>
               <div className="mem-detail-meta">
-                <span className={`memory-scope memory-scope--${selectedNode.scope}`}>{selectedNode.scope}</span>{' '}
-                {selectedNode.memoryId} · {fmtTs(selectedNode.ts)}
+                <span className={`memory-scope memory-scope--${selectedNode.scope}`}>Scope: {selectedNode.scope}</span>{' · '}
+                <span>Type: {selectedNode.type}</span> · <span>ID: {selectedNode.id}</span> · {fmtTs(selectedNode.ts)}
                 {selectedNode.tags?.length > 0 && <> · {selectedNode.tags.join(', ')}</>}
               </div>
             </div>
           </div>
+          <h5 className="mem-detail-sub">Summary</h5>
           <p className="mem-detail-text">{selectedNode.summary || 'No summary recorded.'}</p>
-          {selectedNode.decision && <p className="mem-detail-text">{selectedNode.decision}</p>}
+          {selectedNode.decision && <><h5 className="mem-detail-sub">Decision</h5><p className="mem-detail-text">{selectedNode.decision}</p></>}
           {selectedNode.rejectedAlternatives?.length > 0 && <p className="mem-detail-text"><strong>rejected:</strong> {selectedNode.rejectedAlternatives.join(' · ')}</p>}
 
           <h5 className="mem-detail-sub">Connected neighborhood</h5>
@@ -545,7 +674,7 @@ export function MemoryGraph({ nodes, edges, selected, onSelect = noop, onChange 
           {notice && <p className={notice.kind === 'error' ? 'mem-operation-message mem-operation-message--error' : 'mem-operation-message'} role={notice.kind === 'error' ? 'alert' : 'status'}>{notice.text}</p>}
         </section>
         ) : (
-          <section className="mem-detail mem-graph-empty" aria-label="Selected memory details" role="status">
+          <section className="mem-detail mem-map-inspector mem-graph-empty" aria-label="Selected memory inspector" role="status">
             No memories match these filters. Adjust the filters to select a memory and explore its neighborhood.
           </section>
         )}

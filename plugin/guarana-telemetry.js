@@ -208,6 +208,17 @@ export const GuaranaTelemetry = async ({ directory }) => {
         const agent = safeID(info.agent || props.agent);
         if (agent) session.agent = agent;
         append(session);
+      } else if (type === 'session.updated') {
+        const { data, props, info } = lifecycleSource(event);
+        const id = safeSessionID(data.sessionID) || safeSessionID(props.sessionID) || safeSessionID(info.id) || safeSessionID(event.sessionID);
+        if (!id) return;
+        const parentID = safeSessionID(info.parentID) || safeSessionID(data.parentID) || safeSessionID(props.parentID);
+        const agent = safeID(info.agent) || safeID(data.agent) || safeID(props.agent);
+        if (!parentID && !agent) return;
+        const session = { ts: Date.now(), type: 'session', sessionID: id };
+        if (parentID) session.parentSessionID = parentID;
+        if (agent) session.agent = agent;
+        append(session);
       } else if (type === "todo.updated") {
         const props = event.properties || {};
         const todos = Array.isArray(props.todos) ? props.todos : [];
@@ -292,6 +303,29 @@ export const GuaranaTelemetry = async ({ directory }) => {
   };
 };
 
+const EVENT_STREAM_RETRY_BASE_DELAY_MS = 100;
+const EVENT_STREAM_RETRY_MAX_DELAY_MS = 30_000;
+
+function waitForEventStreamRetry(delay, signal) {
+  return new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve(false);
+      return;
+    }
+
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
+      resolve(false);
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve(!signal.aborted);
+    }, delay);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 async function setupGuaranaTelemetry(ctx) {
   const hooks = await GuaranaTelemetry({ directory: ctx.location.directory });
   const toolInput = (event) => ({
@@ -310,12 +344,23 @@ async function setupGuaranaTelemetry(ctx) {
 
   const controller = new AbortController();
   void (async () => {
-    try {
-      for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
-        await hooks.event({ event });
+    let retryAttempt = 0;
+    while (!controller.signal.aborted) {
+      try {
+        for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
+          retryAttempt = 0;
+          await hooks.event({ event });
+        }
+        return;
+      } catch {
+        if (controller.signal.aborted) return;
+        const delay = Math.min(
+          EVENT_STREAM_RETRY_BASE_DELAY_MS * 2 ** retryAttempt,
+          EVENT_STREAM_RETRY_MAX_DELAY_MS,
+        );
+        retryAttempt += 1;
+        if (!(await waitForEventStreamRetry(delay, controller.signal))) return;
       }
-    } catch {
-      // Telemetry is best-effort and must not affect the host runtime.
     }
   })();
   return () => controller.abort();

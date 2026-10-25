@@ -68,6 +68,31 @@ test('auth status glyphs and bordered multiword provider labels match catalog ID
   assert.equal(fake.calls.length, 2);
 });
 
+test('whitespace-aligned auth rows parse provider columns and map OpenCode Console safely', async () => {
+  const fake = fakeCli({
+    auth: [
+      'Provider                Auth           Status',
+      'OpenAI                  OAuth          stored',
+      'OpenCode Console        API key        stored',
+      'OpenRouter              API key        stored',
+    ].join('\n'),
+    models: 'openai/gpt-4o\nopencode/gpt-5\nopenrouter/auto\nollama/llama3.2\n',
+  });
+  const result = await discoverModels({ cwd: '/project/root', execFile: fake.execFile });
+
+  assert.deepEqual(result, {
+    models: [
+      { provider: { id: 'openai', name: 'openai' }, model: { id: 'gpt-4o', name: 'gpt-4o' } },
+      { provider: { id: 'opencode', name: 'opencode' }, model: { id: 'gpt-5', name: 'gpt-5' } },
+      { provider: { id: 'openrouter', name: 'openrouter' }, model: { id: 'auto', name: 'auto' } },
+    ],
+    error: null,
+  });
+  assert.deepEqual(Object.keys(result).sort(), ['error', 'models']);
+  assert.doesNotMatch(JSON.stringify(result), /OAuth|API key|stored|OpenCode Console|ollama|llama3\.2/);
+  assert.deepEqual(fake.calls.map(({ args }) => args), [['auth', 'list'], ['models']]);
+});
+
 test('ANSI-colored OpenCode auth table rows expose only connected catalog models', async () => {
   const auth = [
     '┌  Credentials \x1b[90m<path>',
@@ -205,29 +230,57 @@ test('model command failures and invalid provider filters fail closed', async ()
   assert.equal(failedModels.calls.length, 2);
 });
 
-test('variant discovery returns exact model variant keys only, including OpenRouter subpaths', async () => {
+test('variant discovery uses bounded project model.list and returns six validated exact-match variants', async () => {
   const fake = fakeCli({
-    auth: 'openrouter\n',
-    models: [
-      'openrouter/other', '{', '  "variants": { "unrelated": {} }', '}',
-      'openrouter/~anthropic/claude-fable-latest', '{',
-      '  "variants": { "high": { "temperature": 0.2, "headers": { "Authorization": "secret" } }, "disabled": { "disabled": true } },',
-      '  "options": { "apiKey": "not returned" }', '}',
-      'openrouter/third/nested', '{ "variants": { "other": {} } }',
-    ].join('\n'),
+    auth: 'openai\nopenrouter\n',
+    models: JSON.stringify({
+      data: [
+        { providerID: 'openrouter', id: 'gpt-6-luna', variants: { wrongProvider: {} } },
+        { providerID: 'openai', id: 'another-model', variants: { wrongModel: {} } },
+        {
+          providerID: 'openai',
+          id: 'gpt-6-luna',
+          variants: [
+            { id: 'none', settings: {} },
+            { id: 'low', settings: {} },
+            { id: 'medium', settings: {} },
+            { id: 'high', settings: {} },
+            { id: 'xhigh', settings: {} },
+            { id: 'max', settings: {} },
+            { id: 'disabled', settings: {}, disabled: true },
+            { id: 'invalid variant', settings: {} },
+            { id: 'invalid-settings', settings: 'not an object' },
+            { id: 'missing-settings' },
+            { id: 'invalid-disabled', settings: {}, disabled: 'true' },
+            null,
+            'malformed entry',
+          ],
+        },
+      ],
+    }),
   });
-  const result = await discoverVariants({ provider: 'openrouter', model: '~anthropic/claude-fable-latest', execFile: fake.execFile });
-  assert.deepEqual(result, { variants: ['high'], error: null });
-  assert.deepEqual(fake.calls.map(({ args }) => args), [['auth', 'list'], ['models', 'openrouter', '--verbose']]);
-  assert.doesNotMatch(JSON.stringify(result), /secret|Authorization|temperature|apiKey/);
+  const result = await discoverVariants({ provider: 'openai', model: 'gpt-6-luna', cwd: '/project/root', execFile: fake.execFile });
+  const apiCall = fake.calls[1];
+
+  assert.deepEqual(result, { variants: ['none', 'low', 'medium', 'high', 'xhigh', 'max'], error: null });
+  assert.deepEqual(fake.calls.map(({ args }) => args), [
+    ['auth', 'list'], ['api', 'model.list', '--param', 'location[directory]=/project/root'],
+  ]);
+  assert.equal(apiCall.options.cwd, '/project/root');
+  assert.equal(apiCall.options.timeout, 10000);
+  assert.equal(apiCall.options.maxBuffer, 2 * 1024 * 1024);
+  assert.equal(apiCall.options.shell, false);
+  assert.doesNotMatch(JSON.stringify(result), /settings/);
 });
 
-test('variant discovery rejects missing, malformed, oversized and credential-like verbose blocks safely', async () => {
+test('variant discovery rejects missing, malformed, oversized and unsafe model.list responses safely', async () => {
   const outputs = [
-    { value: 'openai/other\n{ "variants": { "wrong": {} } }', expected: /requested model/ },
-    { value: 'openai/gpt-5\n{ malformed', expected: /malformed variant metadata/ },
-    { value: `openai/gpt-5\n{ "variants": {} }\n${' '.repeat(2 * 1024 * 1024)}`, expected: /safe limit/ },
-    { value: 'openai/gpt-5\n{ "token": "Bearer secretvalue" }', expected: /unsafe model metadata/ },
+    { value: JSON.stringify({ data: [{ providerID: 'openai', id: 'other', variants: { wrong: {} } }] }), expected: /requested model/ },
+    { value: '{ malformed', expected: /malformed variant metadata/ },
+    { value: JSON.stringify({ data: { providerID: 'openai', id: 'gpt-5' } }), expected: /malformed variant metadata/ },
+    { value: JSON.stringify({ data: [{ providerID: 'openai', id: 'gpt-5', variants: {} }] }), expected: /malformed variant metadata/ },
+    { value: `${JSON.stringify({ data: [] })}${' '.repeat(2 * 1024 * 1024)}`, expected: /safe limit/ },
+    { value: '{"data":[{"providerID":"openai","id":"gpt-5","variants":{}}],"authorization":"Bearer secretvalue"}', expected: /unsafe model metadata/ },
   ];
   for (const { value, expected } of outputs) {
     const fake = fakeCli({ auth: 'openai\n', models: value });
@@ -238,17 +291,19 @@ test('variant discovery rejects missing, malformed, oversized and credential-lik
   }
 });
 
-test('variant discovery preserves connected-provider auth filtering', async () => {
-  const fake = fakeCli({ auth: 'anthropic\n', models: 'openai/gpt-5\n{ "variants": { "high": {} } }' });
+test('variant discovery requires a connected provider before querying model.list', async () => {
+  const fake = fakeCli({ auth: 'anthropic\n', models: JSON.stringify({ data: [{ providerID: 'openai', id: 'gpt-5', variants: [{ id: 'high', settings: {} }] }] }) });
   assert.deepEqual(await discoverVariants({ provider: 'openai', model: 'gpt-5', execFile: fake.execFile }), { variants: [], error: null });
   assert.deepEqual(fake.calls.map(({ args }) => args), [['auth', 'list']]);
 });
 
-test('variant discovery fails softly for disconnected models and command errors', async () => {
+test('variant discovery fails softly for disconnected providers and command errors', async () => {
   const disconnected = fakeCli({ auth: 'openai\n' });
   assert.deepEqual(await discoverVariants({ provider: 'openrouter', model: 'model', execFile: disconnected.execFile }), { variants: [], error: null });
-  const failed = fakeCli({ auth: 'openrouter\n', errors: { 'models openrouter --verbose': { code: 1, message: 'private secret' } } });
-  const result = await discoverVariants({ provider: 'openrouter', model: 'model', execFile: failed.execFile });
+  const command = 'api model.list --param location[directory]=/project/root';
+  const failed = fakeCli({ auth: 'openrouter\n', errors: { [command]: { code: 1, message: 'private secret' } } });
+  const result = await discoverVariants({ provider: 'openrouter', model: 'model', cwd: '/project/root', execFile: failed.execFile });
   assert.deepEqual(result.variants, []);
+  assert.match(result.error, /command failed/);
   assert.doesNotMatch(JSON.stringify(result), /private secret/);
 });

@@ -1,215 +1,387 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { usePoll } from '../hooks/usePoll.js';
-import { Stamp, EmptyState } from './common.jsx';
 import { parseGoal } from './NowPanel.jsx';
-import { fmtDur } from '../lib/format.js';
-import { Markdown } from '../lib/markdown.jsx';
+import { handleMemoryBubbleKeyDown, layoutMemoryBubbles, qualifyMemoryGraph } from '../lib/memoryBubbleLayout.js';
 
-const STATE_ORDER = ['idle', 'planning', 'building', 'coding', 'verifying', 'debugging', 'completed'];
-const STATE_LABEL = {
-  idle: 'Idle', planning: 'Planning', building: 'Building', coding: 'Coding',
-  verifying: 'Verifying', debugging: 'Debugging', completed: 'Completed',
+const ACTIVE_STATUSES = new Set(['busy', 'running']);
+const WORKFLOW_PHASES = new Set(['idle', 'planning', 'building', 'coding', 'verifying', 'debugging', 'completed']);
+const SAFE_WORKER_KEY = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SAFE_AGENT = /^[A-Za-z0-9_-]{1,48}$/;
+const SECRET_LIKE = /sk-[A-Za-z0-9]|gh[pousr]_[A-Za-z0-9]+|api[_-]?key|token|password|secret|bearer/i;
+const MEMORY_TYPES = new Set(['decision', 'bug', 'solution', 'refactor', 'preference', 'supernode', 'atom']);
+const EMPTY_MEMORIES = [];
+const INJECTION_REASON_LABELS = {
+  'session-start': 'session start',
+  compacted: 'after context compacted',
+  'new-memories': 'new memories became relevant',
 };
 
-function HealthLine({ runs }) {
-  const toolCalls = runs.reduce((s, r) => s + r.toolCalls, 0);
-  const errors = runs.reduce((s, r) => s + r.errors, 0);
-  const tokens = runs.reduce((s, r) => s + (r.tokens || 0), 0);
-  const rate = toolCalls ? ((errors / toolCalls) * 100).toFixed(1) : '0.0';
-  return (
-    <span className={`ov-health ${errors > 0 ? 'ov-health--bad' : ''}`}>
-      {runs.length} runs · {toolCalls} tool calls · {tokens.toLocaleString()} tokens · <span className="ov-err">{rate}% errors</span>
-    </span>
-  );
+function latestActivity(run) {
+  return run?.end ?? run?.start ?? 0;
 }
 
-function WorkflowSection({ workflow }) {
-  const state = workflow?.state || 'idle';
-  const idx = STATE_ORDER.indexOf(state);
-  return (
-    <section className="ov-section ov-section--workflow" aria-label="Workflow">
-      <header className="ov-section-head">
-        <h3>Workflow</h3>
-      </header>
-      <div className="ov-wf">
-        {STATE_ORDER.map((s, i) => (
-          <span
-            key={s}
-            className={`ov-wf-node${i === idx ? ' ov-wf-node--active' : ''}${i < idx ? ' ov-wf-node--passed' : ''}`}
-            title={STATE_LABEL[s]}
-          >
-            {STATE_LABEL[s]}
-          </span>
-        ))}
-      </div>
-      <dl className="ov-grid">
-        <div><dt>skill</dt><dd>{workflow?.skill ? `guarana:${workflow.skill}` : '—'}</dd></div>
-        <div><dt>active task</dt><dd className="ov-truncate">{workflow?.activeTask || '—'}</dd></div>
-        <div><dt>goal</dt><dd className="ov-truncate">{parseGoal2(workflow) || '—'}</dd></div>
-      </dl>
-    </section>
-  );
+export function activeRootFromTelemetry(summary) {
+  return (summary?.runs || [])
+    .filter((run) => !run.parentSessionID && ACTIVE_STATUSES.has(run.status))
+    .reduce((latest, run) => !latest || latestActivity(latest) < latestActivity(run) ? run : latest, null);
 }
 
-function parseGoal2(workflow) {
-  if (!workflow) return null;
-  return workflow.goal || workflow.activeTask || null;
+function mostRecentRootFromTelemetry(summary) {
+  return (summary?.runs || [])
+    .filter((run) => !run.parentSessionID)
+    .reduce((latest, run) => !latest || latestActivity(latest) < latestActivity(run) ? run : latest, null);
 }
 
-function RunsSection({ summary }) {
-  const runs = summary?.runs || [];
-  const hasData = runs.length > 0;
+export function latestInjectionForRoot(injections, root) {
+  if (!root?.sessionID) return null;
+  return (Array.isArray(injections) ? injections : [])
+    .filter((entry) => entry?.sessionID === root.sessionID)
+    .reduce((latest, entry) => !latest || (entry.ts ?? 0) > (latest.ts ?? 0) ? entry : latest, null);
+}
+
+export function latestAdvisorForRoot(history, root) {
+  return root && Array.isArray(history)
+    ? history.find((entry) => entry?.parentSessionID === root.sessionID) || null
+    : null;
+}
+
+export function projectOverviewWorkers(state) {
+  const data = state?.data;
+  if (state?.error || data?.available !== true || !Array.isArray(data.workers)) return [];
+  return data.workers.flatMap((worker) => {
+    if (typeof worker?.key !== 'string' || !SAFE_WORKER_KEY.test(worker.key) || !ACTIVE_STATUSES.has(worker.status)
+      || typeof worker.agent !== 'string' || !SAFE_AGENT.test(worker.agent) || SECRET_LIKE.test(worker.agent)) return [];
+    return [{ key: worker.key, agent: worker.agent, status: worker.status }];
+  });
+}
+
+export function overviewGraphModel(graphData, injectedMemories = []) {
+  const safeNodes = (Array.isArray(graphData?.nodes) ? graphData.nodes : [])
+    .filter((node) => node?.status === 'confirmed'
+      && ['project', 'global'].includes(node.scope)
+      && typeof node.id === 'string'
+      && MEMORY_TYPES.has(node.type));
+  const safeEdges = (Array.isArray(graphData?.edges) ? graphData.edges : [])
+    .filter((edge) => ['project', 'global'].includes(edge?.scope)
+      && typeof edge.from === 'string' && typeof edge.to === 'string'
+      && typeof edge.rel === 'string');
+  const qualified = qualifyMemoryGraph(safeNodes, safeEdges);
+  const injected = new Set((Array.isArray(injectedMemories) ? injectedMemories : [])
+    .filter((node) => ['project', 'global'].includes(node?.scope) && typeof node.id === 'string')
+    .map((node) => `${node.scope}:${node.id}`));
+  return {
+    nodes: qualified.nodes,
+    edges: qualified.edges.filter((edge) => qualified.nodes.some((node) => node.id === edge.from)
+      && qualified.nodes.some((node) => node.id === edge.to)),
+    injected,
+  };
+}
+
+export function overviewSelectionEpoch(root, injection) {
+  const references = (Array.isArray(injection?.memories) ? injection.memories : [])
+    .map((memory) => ['project', 'global'].includes(memory?.scope) && typeof memory.id === 'string'
+      ? `${memory.scope}:${memory.id}`
+      : null);
+  // Keep the root identity internal to selection state; it is never rendered into the DOM.
+  return JSON.stringify([root?.sessionID || null, injection?.ts ?? null, references]);
+}
+
+export function defaultOverviewSelection(model) {
+  const available = new Set(model.nodes.map((node) => node.id));
+  return [...model.injected].find((id) => available.has(id)) || model.nodes[0]?.id || null;
+}
+
+export function resolveOverviewSelection(model, selection, epoch) {
+  return selection?.epoch === epoch && model.nodes.some((node) => node.id === selection.id)
+    ? selection.id
+    : defaultOverviewSelection(model);
+}
+
+export function selectOverviewMemory(epoch, id) {
+  return { epoch, id };
+}
+
+function ContextStrip({ workflow, workflowLoading, workflowError, state }) {
+  const phase = WORKFLOW_PHASES.has(workflow?.state) ? workflow.state : null;
+  const task = workflow?.activeTask || null;
+  const goal = workflow?.goal || parseGoal(state?.projectState);
+  const unavailable = Boolean(workflowError);
   return (
-    <section className="ov-section" aria-label="Runs">
-      <header className="ov-section-head">
-        <h3>Runs</h3>
-        {hasData && <span className="ov-count">{runs.length}</span>}
-      </header>
-      {!hasData ? (
-        <EmptyState copy="No telemetry yet. Install the plugin:" hint="guarana plugin install --project" />
+    <header className="ov-context" aria-label="Current workflow context">
+      <span className="ov-context-label">Current workflow</span>
+      {unavailable ? (
+        <span className="ov-context-status" role="status">Workflow context unavailable.</span>
+      ) : workflowLoading || !workflow ? (
+        <span className="ov-context-status" role="status">Loading workflow context…</span>
       ) : (
-        <>
-          <HealthLine runs={runs} />
-          {runs.slice(0, 3).map((r) => (
-            <div key={r.sessionID} className="ov-run">
-              <span className="ov-run-id ov-truncate">{r.sessionID}</span>
-              <span className="ov-run-meta">
-                {fmtDur(r.durationMs)} · {r.toolCalls} tools · {r.errors} errors
-              </span>
-            </div>
-          ))}
-        </>
-      )}
-    </section>
-  );
-}
-
-function DecisionsSection({ decisions }) {
-  const list = decisions?.data?.decisions || [];
-  return (
-    <section className="ov-section" aria-label="Decisions">
-      <header className="ov-section-head">
-        <h3>Decisions</h3>
-        {list.length > 0 && <span className="ov-count">{list.length}</span>}
-      </header>
-      {list.length === 0 ? (
-        <p className="ov-empty">All decisions resolved.</p>
-      ) : (
-        <ul className="ov-list">
-          {list.map((d, i) => (
-            <li key={i}>
-              <span className="ov-truncate">{d.statement}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-function MemorySection({ memory }) {
-  const d = memory?.data;
-  return (
-    <section className="ov-section ov-section--memory" aria-label="Memory">
-      <header className="ov-section-head">
-        <h3>Memory</h3>
-      </header>
-      {!d ? (
-        <p className="loading" role="status">loading…</p>
-      ) : (
-        <dl className="ov-grid ov-memory-grid">
-          <div><dt>nodes</dt><dd>{d.nodes?.total ?? 0}</dd></div>
-          <div><dt>confirmed</dt><dd>{d.nodes?.confirmed ?? 0}</dd></div>
-          <div><dt>supernodes</dt><dd>{d.supernodes ?? 0}</dd></div>
-          <div><dt>edges</dt><dd>{d.edges ?? 0}</dd></div>
+        <dl className="ov-context-fields">
+          <div><dt>phase</dt><dd>{phase || 'not recorded'}</dd></div>
+          <div><dt>task</dt><dd title={task || undefined}>{task || 'No active task recorded.'}</dd></div>
+          <div><dt>goal</dt><dd title={goal || undefined}>{goal || 'No goal recorded.'}</dd></div>
         </dl>
       )}
+    </header>
+  );
+}
+
+function WorkersPanel({ state }) {
+  const workers = projectOverviewWorkers(state);
+  const count = state?.data?.runningCount;
+  const available = !state?.error && state?.data?.available === true
+    && Number.isSafeInteger(count) && count >= 0 && Array.isArray(state?.data?.workers);
+  return (
+    <section className="ov-panel ov-workers" aria-labelledby="ov-workers-title">
+      <header className="ov-panel-head">
+        <h2 id="ov-workers-title">Active workers</h2>
+        {available && Number.isSafeInteger(count) && <span>{count} observed</span>}
+      </header>
+      {state?.error || (state?.data && !available) ? (
+        <p className="ov-state" role="status">Active worker status unavailable.</p>
+      ) : !state?.data ? (
+        <p className="ov-state" role="status">Loading active workers…</p>
+      ) : workers.length ? (
+        <ul className="ov-worker-list" aria-label="Observed active workers">
+          {workers.map((worker) => <li key={worker.key}>
+            <span className="ov-worker-agent">{worker.agent}</span>
+            <span className={`ov-worker-status ov-worker-status--${worker.status}`}>{worker.status}</span>
+            <code className="ov-worker-ref" aria-label="Opaque worker reference">ref {worker.key.slice(0, 8)}…{worker.key.slice(-4)}</code>
+          </li>)}
+        </ul>
+      ) : Number.isSafeInteger(count) && count > 0 ? (
+        <p className="ov-state" role="status">{count} active {count === 1 ? 'worker' : 'workers'} reported; worker details unavailable.</p>
+      ) : (
+        <p className="ov-state" role="status">No active workers observed.</p>
+      )}
     </section>
   );
 }
 
-function roadmapItems(tracker, key, workflow) {
-  const items = tracker?.[key] || [];
-  if (key !== 'NEXT' || items.length !== 1 || !workflow?.goal) return items;
-  const compact = (text) => String(text).replace(/\s+/g, ' ').trim();
-  const next = compact(items[0]);
-  const goal = compact(workflow.goal);
-  return next && goal.startsWith(next) ? [workflow.goal] : items;
+function AdvisorPanel({ summary, summaryError, summaryLoading, history }) {
+  const root = activeRootFromTelemetry(summary) || mostRecentRootFromTelemetry(summary);
+  const latest = latestAdvisorForRoot(history?.data?.history, root);
+  const unavailable = Boolean(summaryError || history?.error || history?.data?.error);
+  let status = 'Loading Advisor runtime…';
+  if (unavailable) status = 'Advisor runtime unavailable.';
+  else if (!history?.data) status = 'Loading Advisor runtime…';
+  else if (summaryLoading && !summary) status = 'Loading telemetry root for Advisor runtime…';
+  else if (!root) status = 'No root session observed for Advisor runtime.';
+  else if (!latest) status = 'Advisor not observed in the latest root session.';
+  else if (latest.status === 'running' && ACTIVE_STATUSES.has(root.status)) status = 'Running · observed in the active root.';
+  else if (latest.status === 'running') status = 'Last observed running; no active root is observed.';
+  else if (latest.status === 'dispatched') status = 'Dispatched · completion not observed.';
+  else {
+    const observedStatus = ['completed', 'error', 'failed', 'idle', 'cancelled', 'busy'].includes(latest.status)
+      ? latest.status
+      : 'status not reported';
+    status = `Most recently observed · ${observedStatus}.`;
+  }
+  return (
+    <section className="ov-panel ov-advisor" aria-labelledby="ov-advisor-title">
+      <header className="ov-panel-head"><h2 id="ov-advisor-title">Advisor runtime</h2></header>
+      <p className="ov-state" role="status">{status}</p>
+    </section>
+  );
 }
 
-function RoadmapSection({ tracker, workflow }) {
+function InjectionPanel({ state, summary, summaryError, injection, graphState, model, selectedId, onSelect }) {
+  const root = activeRootFromTelemetry(summary);
+  const memories = Array.isArray(injection?.memories) ? injection.memories : [];
+  const nodesById = new Map(model.nodes.map((node) => [node.id, node]));
+
+  let message;
+  if (summaryError) message = 'Active root unavailable because telemetry could not be loaded.';
+  else if (!summary) message = 'Loading telemetry root…';
+  else if (!root) message = 'No active root session observed.';
+  else if (state?.error || state?.data?.error) message = 'Memory injection history unavailable.';
+  else if (!state?.data) message = 'Loading active-root injection…';
+  else if (!injection) message = 'No injection observed for the active root.';
   return (
-    <section className="ov-section ov-section--roadmap" aria-label="Roadmap">
-      <header className="ov-section-head">
-        <h3>Roadmap</h3>
-      </header>
-      {!tracker ? (
-        <p className="loading" role="status">loading…</p>
-      ) : (
+    <section className="ov-panel ov-injection" aria-labelledby="ov-injection-title">
+      <header className="ov-panel-head"><h2 id="ov-injection-title">Active-root injection</h2></header>
+      {message ? <p className="ov-state" role="status">{message}</p> : (
         <>
-          {['BLOCKED', 'NEXT', 'DONE'].map((k) => {
-            const items = roadmapItems(tracker, k, workflow);
-            return items.length ? (
-              items.map((item, i) => (
-                <div key={`${k}-${i}`} className="flag-line">
-                  <Stamp word={k} />
-                  <Markdown text={item} />
-                </div>
-              ))
-            ) : null;
+          <p className="ov-state" role="status">
+            {memories.length} {memories.length === 1 ? 'memory' : 'memories'} observed
+            {injection.reason ? ` · ${INJECTION_REASON_LABELS[injection.reason] || 'memory context'}` : ''}
+            {Number.isFinite(injection.ts) ? ` · ${new Date(injection.ts).toLocaleString()}` : ''}
+          </p>
+          {memories.length ? <ul className="ov-injection-list" aria-label="Memories in the active-root injection">
+            {memories.map((memory, index) => {
+              const scope = ['project', 'global'].includes(memory?.scope) ? memory.scope : null;
+              const type = MEMORY_TYPES.has(memory?.type) || memory?.type === 'unknown' ? memory.type : null;
+              const intent = typeof memory?.intent === 'string' && memory.intent.trim() ? memory.intent : null;
+              const graphId = scope && typeof memory?.id === 'string' ? `${scope}:${memory.id}` : null;
+              const graphError = Boolean(graphState?.error || graphState?.data?.error);
+              const graphNode = !graphError && graphState?.data && graphId ? nodesById.get(graphId) : null;
+              const graphUnavailable = graphError
+                ? 'Graph unavailable.'
+                  : !graphState?.data ? 'Waiting for graph data.'
+                    : !graphNode ? 'Not available in graph.' : null;
+              const recordName = intent || 'Intent unavailable';
+              const recordScope = scope || 'Scope unavailable';
+              const recordType = type || 'Type unavailable';
+              const accessibleName = `${recordScope} ${recordType}: ${recordName}`;
+              return <li key={`${graphId || 'unqualified'}:${index}`}>
+                <button type="button" className="ov-injection-record" disabled={!graphNode}
+                  aria-label={`Select injected ${accessibleName}${graphUnavailable ? `; ${graphUnavailable}` : ''}`}
+                  aria-pressed={Boolean(graphNode && selectedId === graphNode.id)}
+                  onClick={() => graphNode && onSelect(graphNode.id)}>
+                  <span className={`ov-injection-record-scope${scope ? ` memory-scope memory-scope--${scope}` : ''}`}>{recordScope}</span>
+                  <span className="ov-injection-record-type">{recordType}</span>
+                  <strong className="ov-injection-record-intent">{recordName}</strong>
+                  {graphUnavailable && <span className="ov-injection-record-unavailable">{graphUnavailable}</span>}
+                </button>
+              </li>;
           })}
-          {!['BLOCKED', 'NEXT', 'DONE'].some((k) => roadmapItems(tracker, k, workflow).length) && (
-            <p className="ov-empty">No roadmap flags recorded.</p>
-          )}
+          </ul> : <p className="ov-state" role="status">No memories recorded in this injection.</p>}
         </>
       )}
     </section>
   );
 }
 
-export function OverviewContent({ summary, state, tracker, workflow, memory, decisions }) {
-  const goal = workflow?.goal || workflow?.activeTask || parseGoal(state?.projectState);
+function SelectedMemory({ node, edges, nodesById, onSelect }) {
+  if (!node) return <p className="ov-state" role="status">No confirmed memories available in this graph.</p>;
+  const relations = edges.flatMap((edge) => {
+    if (edge.from === node.id) return [{ edge, other: nodesById.get(edge.to), direction: 'Outgoing' }];
+    if (edge.to === node.id) return [{ edge, other: nodesById.get(edge.from), direction: 'Incoming' }];
+    return [];
+  }).filter(({ other }) => Boolean(other));
+  return (
+    <section className="ov-memory-detail" aria-label="Selected memory details">
+      <div className="ov-memory-title">
+        <span className={`memory-scope memory-scope--${node.scope}`}>{node.scope}</span>
+        <strong>{node.intent || node.memoryId}</strong>
+        {node.injected && <span className="ov-injected-tag">injected</span>}
+      </div>
+      <p className="ov-memory-summary">{node.summary || 'No summary recorded.'}</p>
+      <h3>Direct relationships</h3>
+      {relations.length ? <ul className="ov-neighbor-list">
+        {relations.map(({ edge, other, direction }, index) => <li key={`${edge.scope}:${edge.from}:${edge.to}:${edge.rel}:${index}`}>
+          <span>{direction} · {edge.rel} · {edge.scope}</span>
+          <button type="button" onClick={() => onSelect(other.id)} aria-label={`Select ${other.scope} neighbor ${other.intent || other.memoryId}`}>
+            {other.intent || other.memoryId}
+          </button>
+        </li>)}
+      </ul> : <p className="ov-state">No direct relationships observed.</p>}
+    </section>
+  );
+}
+
+function ReadOnlyMemoryGraph({ graphState, model, selectedId, onSelect }) {
+  const [focusedId, setFocusedId] = useState(null);
+  const viewportRef = useRef(null);
+  const canvasRef = useRef(null);
+  const initialCenterApplied = useRef(false);
+  const layout = useMemo(() => layoutMemoryBubbles(model.nodes, model.edges, selectedId, 'network'), [model, selectedId]);
+  const nodesById = useMemo(() => new Map(model.nodes.map((node) => [node.id, node])), [model.nodes]);
+  const selectedNode = nodesById.get(selectedId);
+  const positioned = new Map(layout.nodes.map((node) => [node.id, { ...node, injected: model.injected.has(node.id) }]));
+  const graphError = Boolean(graphState?.error || graphState?.data?.error);
+  const focusId = layout.nodes.some((node) => node.id === focusedId) ? focusedId : selectedId;
+
+  useEffect(() => {
+    if (initialCenterApplied.current || graphError || !graphState?.data || !layout.nodes.length) return;
+    const viewport = viewportRef.current;
+    const canvas = canvasRef.current;
+    if (!viewport || !canvas || !viewport.clientWidth || !viewport.clientHeight) return;
+
+    viewport.scrollLeft = Math.max(0, (canvas.clientWidth - viewport.clientWidth) / 2);
+    viewport.scrollTop = Math.max(0, (canvas.clientHeight - viewport.clientHeight) / 2);
+    initialCenterApplied.current = true;
+  }, [graphError, graphState?.data, layout.nodes.length, layout.width, layout.height]);
+
+  return (
+    <section className="ov-panel ov-graph" aria-labelledby="ov-graph-title">
+      <header className="ov-panel-head">
+        <h2 id="ov-graph-title">Memory graph <span className="ov-read-only">read-only</span></h2>
+        {model.nodes.length > 0 && <span>{model.nodes.length} nodes · {model.edges.length} links</span>}
+      </header>
+      {graphError ? <p className="ov-state" role="status">Memory graph unavailable.</p>
+        : !graphState?.data ? <p className="ov-state" role="status">Loading memory graph…</p>
+          : !layout.nodes.length ? <p className="ov-state" role="status">No confirmed memories available.</p> : (
+            <>
+              <p className="ov-map-help">Select a node to inspect its summary and direct relationships. Injected nodes are marked in amber.</p>
+              <div ref={viewportRef} className="ov-map-viewport" role="region" aria-label="Read-only memory graph; scroll within this region to navigate" tabIndex={0}>
+                <div ref={canvasRef} className="ov-map-canvas" style={{ width: layout.width, height: layout.height }}>
+                  <svg className="ov-map-edges" width={layout.width} height={layout.height} aria-hidden="true" focusable="false">
+                    {layout.edges.map((edge, index) => {
+                      const from = positioned.get(edge.from);
+                      const to = positioned.get(edge.to);
+                      if (!from || !to) return null;
+                      return <line key={`${edge.scope}:${edge.from}:${edge.to}:${edge.rel}:${index}`}
+                        className={`ov-map-edge ov-map-edge--${edge.scope}`}
+                        x1={from.x} y1={from.y} x2={to.x} y2={to.y} />;
+                    })}
+                  </svg>
+                  {layout.nodes.map((node) => {
+                    const isInjected = model.injected.has(node.id);
+                    return <button key={node.id} type="button"
+                      className={`ov-map-node ov-map-node--${node.scope}${node.focus ? ' ov-map-node--selected' : ''}${node.neighbor ? ' ov-map-node--neighbor' : ''}${isInjected ? ' ov-map-node--injected' : ''}`}
+                      style={{ left: node.x - node.diameter / 2, top: node.y - node.diameter / 2, width: node.diameter, height: node.diameter }}
+                       data-memory-id={node.id} data-scope={node.scope}
+                       tabIndex={node.id === focusId ? 0 : -1} aria-pressed={node.id === selectedId}
+                      aria-label={`${node.scope} ${node.type}: ${node.intent || node.memoryId}${isInjected ? ', injected into active root' : ''}`}
+                      title={`${node.scope} ${node.type}: ${node.intent || node.memoryId}`}
+                       onFocus={() => setFocusedId(node.id)} onClick={() => onSelect(node.id)}
+                       onKeyDown={(event) => handleMemoryBubbleKeyDown(event, layout.nodes, node.id, onSelect, (id) => {
+                        setFocusedId(id);
+                        [...(event.currentTarget.parentElement?.querySelectorAll('.ov-map-node') || [])]
+                          .find((candidate) => candidate.dataset.memoryId === id)?.focus();
+                      })}>
+                      <span className={`ov-map-node-core mem-type--${node.type}`} aria-hidden="true" />
+                      <span className="ov-map-node-label">{node.intent || node.memoryId}</span>
+                      {isInjected && <span className="ov-map-injected-mark" aria-hidden="true">●</span>}
+                    </button>;
+                  })}
+                </div>
+              </div>
+             <SelectedMemory node={selectedNode ? { ...selectedNode, injected: model.injected.has(selectedNode.id) } : null}
+                 edges={model.edges} nodesById={nodesById} onSelect={onSelect} />
+            </>
+          )}
+    </section>
+  );
+}
+
+export function OverviewContent({ summary, summaryError, summaryLoading, workflow, workflowLoading, workflowError, state, workers, advisorHistory, injections, graph }) {
+  const root = activeRootFromTelemetry(summary);
+  const injection = !injections?.error && !injections?.data?.error
+    ? latestInjectionForRoot(injections?.data?.injections, root)
+    : null;
+  const injectedMemories = injection?.memories || EMPTY_MEMORIES;
+  const model = useMemo(() => overviewGraphModel(graph?.data || {}, injectedMemories), [graph?.data, injectedMemories]);
+  const epoch = overviewSelectionEpoch(root, injection);
+  const [selection, setSelection] = useState(null);
+  const selectedId = resolveOverviewSelection(model, selection, epoch);
+  const onSelect = (id) => setSelection(selectOverviewMemory(epoch, id));
+
+  useEffect(() => {
+    if (selection?.epoch !== epoch || selection.id !== selectedId) {
+      setSelection(selectOverviewMemory(epoch, selectedId));
+    }
+  }, [epoch, selectedId, selection]);
 
   return (
     <div className="ov" aria-label="Overview">
-      <div className="ov-lede">
-        <div className="ov-lede-head">
-          <span>Current workflow</span>
-          <Stamp word={workflow?.state || 'idle'} />
+      <ContextStrip workflow={workflow} workflowLoading={workflowLoading} workflowError={workflowError} state={state} />
+      <div className="ov-workbench">
+        <div className="ov-operations">
+          <WorkersPanel state={workers} />
+          <AdvisorPanel summary={summary} summaryError={summaryError} summaryLoading={summaryLoading} history={advisorHistory} />
+          <InjectionPanel state={injections} summary={summary} summaryError={summaryError} injection={injection}
+            graphState={graph} model={model} selectedId={selectedId} onSelect={onSelect} />
         </div>
-        {goal ? (
-          <div className="ov-current-goal">
-            <strong>Open goal:</strong>
-            <Markdown text={goal} />
-          </div>
-        ) : (
-          <div className="ov-current-goal">System of record — no active goal recorded.</div>
-        )}
-      </div>
-      <div className="ov-ledger">
-        <WorkflowSection workflow={workflow} />
-        <RunsSection summary={summary} />
-        <div className="ov-supporting">
-          <MemorySection memory={memory} />
-          <DecisionsSection decisions={decisions} />
-          <RoadmapSection tracker={tracker} workflow={workflow} />
-        </div>
+        <ReadOnlyMemoryGraph graphState={graph} model={model} selectedId={selectedId} onSelect={onSelect} />
       </div>
     </div>
   );
 }
 
-export function Overview({ summary, state, tracker, workflow }) {
-  const memory = usePoll('/api/memory/summary', 5000);
-  const decisions = usePoll('/api/decisions/pending', 5000);
-
-  return (
-    <OverviewContent
-      summary={summary}
-      state={state}
-      tracker={tracker}
-      workflow={workflow}
-      memory={memory}
-      decisions={decisions}
-    />
-  );
+export function Overview({ summary, summaryError, summaryLoading, state, workflow, workflowError, workflowLoading, tick = 0 }) {
+  const workers = usePoll('/api/opencode/active-subagents', 5000, tick);
+  const advisorHistory = usePoll('/api/telemetry/advisor-history?limit=40', 5000, tick);
+  const injections = usePoll('/api/memory/injections?limit=40', 5000, tick);
+  const graph = usePoll('/api/memory/graph', 15000, tick);
+  return <OverviewContent {...{ summary, summaryError, summaryLoading, state, workflow, workflowError, workflowLoading, workers, advisorHistory, injections, graph }} />;
 }

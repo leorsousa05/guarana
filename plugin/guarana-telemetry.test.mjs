@@ -1,6 +1,7 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { GuaranaTelemetry } from './guarana-telemetry.js';
+import { summarize } from '../dashboard/server/lib/telemetry.js';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
@@ -194,6 +195,131 @@ describe('GuaranaTelemetry', () => {
     assert.equal(sessions[0].parentSessionID, 'legacy-parent');
     assert.equal(sessions[0].agent, 'worker-verify');
     assert.doesNotMatch(JSON.stringify(sessions), /evt_legacy/);
+  });
+
+  it('records only late V2 session metadata without status or private lifecycle content', async () => {
+    await api.event({ event: {
+      id: 'evt_late_v2_metadata', type: 'session.updated',
+      data: { sessionID: 'late-v2-child', info: {
+        id: 'info-id-decoy', parentID: 'late-v2-parent', agent: 'worker-code',
+        status: { type: 'error' }, title: 'PRIVATE TASK TITLE SENTINEL',
+        prompt: 'PRIVATE PROMPT SENTINEL', output: 'PRIVATE OUTPUT SENTINEL',
+        reasoning: 'PRIVATE REASONING SENTINEL',
+      } },
+    } });
+
+    const sessions = readEvents().filter((event) => event.type === 'session');
+    assert.equal(sessions.length, 1);
+    assert.deepEqual(sessions[0], {
+      project: projectName(), ts: sessions[0].ts, type: 'session', sessionID: 'late-v2-child',
+      parentSessionID: 'late-v2-parent', agent: 'worker-code',
+    });
+    assert.doesNotMatch(JSON.stringify(readEvents()), /evt_late_v2_metadata|info-id-decoy|PRIVATE (?:TASK TITLE|PROMPT|OUTPUT|REASONING) SENTINEL|error/);
+  });
+
+  it('records late legacy properties metadata using the actual session ID only', async () => {
+    await api.event({ event: {
+      id: 'evt_late_legacy_metadata', type: 'session.updated',
+      properties: { sessionID: 'late-legacy-child', info: {
+        id: 'legacy-info-id-decoy', parentID: 'late-legacy-parent', agent: 'worker-verify',
+        status: { type: 'error' }, title: 'PRIVATE TASK TITLE SENTINEL',
+        prompt: 'PRIVATE PROMPT SENTINEL', output: 'PRIVATE OUTPUT SENTINEL',
+        reasoning: 'PRIVATE REASONING SENTINEL',
+      } },
+    } });
+
+    const sessions = readEvents().filter((event) => event.type === 'session');
+    assert.equal(sessions.length, 1);
+    assert.deepEqual(sessions[0], {
+      project: projectName(), ts: sessions[0].ts, type: 'session', sessionID: 'late-legacy-child',
+      parentSessionID: 'late-legacy-parent', agent: 'worker-verify',
+    });
+    assert.doesNotMatch(JSON.stringify(readEvents()), /evt_late_legacy_metadata|legacy-info-id-decoy|PRIVATE (?:TASK TITLE|PROMPT|OUTPUT|REASONING) SENTINEL|error/);
+  });
+
+  it('summarizes V2 busy status with following metadata without applying its contrary status', async () => {
+    const privateSentinels = {
+      title: 'V2 PRIVATE TASK TITLE SENTINEL',
+      prompt: 'V2 PRIVATE PROMPT SENTINEL',
+      output: 'V2 PRIVATE OUTPUT SENTINEL',
+      reasoning: 'V2 PRIVATE REASONING SENTINEL',
+    };
+    await api.event({ event: {
+      id: 'evt_v2_busy_regression', type: 'session.status',
+      data: {
+        sessionID: 'v2-child-regression',
+        info: { parentID: 'v2-parent-regression', agent: 'worker-code' },
+        status: { type: 'busy' },
+      },
+    } });
+    await api.event({ event: {
+      id: 'evt_v2_updated_regression', type: 'session.updated',
+      data: { sessionID: 'v2-child-regression', info: {
+        id: 'v2-info-id-decoy', parentID: 'v2-parent-regression', agent: 'worker-code',
+        status: { type: 'error' }, ...privateSentinels,
+      } },
+    } });
+
+    const events = readEvents();
+    const sessions = events.filter((event) => event.type === 'session');
+    const observedStatus = sessions.find((event) => event.status === 'busy');
+    assert.ok(observedStatus);
+    assert.equal(sessions.length, 2);
+    assert.equal(sessions[1].status, undefined, 'session.updated must not emit its stale status');
+    const runs = summarize(events);
+    assert.equal(runs.length, 1);
+    const [run] = runs;
+    assert.equal(run.sessionID, 'v2-child-regression');
+    assert.equal(run.parentSessionID, 'v2-parent-regression');
+    assert.equal(run.agent, 'worker-code');
+    assert.equal(run.status, 'busy');
+    assert.equal(run.statusTs, observedStatus.ts);
+    assert.doesNotMatch(JSON.stringify({ events, run }), /evt_v2_busy_regression|evt_v2_updated_regression|v2-info-id-decoy|V2 PRIVATE (?:TASK TITLE|PROMPT|OUTPUT|REASONING) SENTINEL/);
+  });
+
+  it('summarizes legacy running status with following metadata without applying its contrary status', async () => {
+    const privateSentinels = {
+      title: 'LEGACY PRIVATE TASK TITLE SENTINEL',
+      prompt: 'LEGACY PRIVATE PROMPT SENTINEL',
+      output: 'LEGACY PRIVATE OUTPUT SENTINEL',
+      reasoning: 'LEGACY PRIVATE REASONING SENTINEL',
+    };
+    await api.event({ event: {
+      id: 'evt_legacy_running_regression', type: 'session.status',
+      properties: { info: {
+        id: 'legacy-child-regression', parentID: 'legacy-parent-regression', agent: 'worker-verify',
+        status: { type: 'running' },
+      } },
+    } });
+    await api.event({ event: {
+      id: 'evt_legacy_updated_regression', type: 'session.updated',
+      properties: { sessionID: 'legacy-child-regression', info: {
+        id: 'legacy-info-id-decoy', parentID: 'legacy-parent-regression', agent: 'worker-verify',
+        status: { type: 'error' }, ...privateSentinels,
+      } },
+    } });
+
+    const events = readEvents();
+    const sessions = events.filter((event) => event.type === 'session');
+    const observedStatus = sessions.find((event) => event.status === 'running');
+    assert.ok(observedStatus);
+    assert.equal(sessions.length, 2);
+    assert.equal(sessions[1].status, undefined, 'session.updated must not emit its stale status');
+    const runs = summarize(events);
+    assert.equal(runs.length, 1);
+    const [run] = runs;
+    assert.equal(run.sessionID, 'legacy-child-regression');
+    assert.equal(run.parentSessionID, 'legacy-parent-regression');
+    assert.equal(run.agent, 'worker-verify');
+    assert.equal(run.status, 'running');
+    assert.equal(run.statusTs, observedStatus.ts);
+    assert.doesNotMatch(JSON.stringify({ events, run }), /evt_legacy_running_regression|evt_legacy_updated_regression|legacy-info-id-decoy|LEGACY PRIVATE (?:TASK TITLE|PROMPT|OUTPUT|REASONING) SENTINEL/);
+  });
+
+  it('does not create session records from updated events without a session ID or identity metadata', async () => {
+    await api.event({ event: { id: 'evt_only', type: 'session.updated', data: { info: { parentID: 'parent-only', agent: 'worker-code' } } } });
+    await api.event({ event: { id: 'evt_no_metadata', type: 'session.updated', data: { sessionID: 'child-no-metadata' } } });
+    assert.deepEqual(readEvents(), []);
   });
 
   it('does not use an assistant message parentID as a parent session ID', async () => {

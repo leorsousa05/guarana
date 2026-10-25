@@ -1,8 +1,8 @@
 # Changelog
 
-Notable user-facing changes to Guarana are recorded here. A version heading may
-describe a locally validated, unpublished candidate; publication is a separate
-maintainer action.
+Notable user-facing changes to Guarana are recorded here. Release status and
+source-control delivery are identified per version; registry publication is a
+separate maintainer action.
 
 ## [1.0.0] - 2026-10-07 (unpublished candidate)
 
@@ -91,15 +91,34 @@ maintainer action.
 - Automatic `.specs` bootstrap creates a generic `.specs/conventions.md` for
   new projects while preserving any existing customized conventions file.
 
-## [1.5.0] - 2026-10-22 (unpublished candidate)
+## [1.5.0] - 2026-10-25 (Stable)
+
+### Added
+- Dashboard Activity presents a live-execution workbench with observed
+  OpenCode active-worker counts, privacy-bounded worker details, and accessible
+  completed-subagent history.
+- Dashboard Overview is an operational workbench for workflow context, active
+  workers, observed Advisor runtime, the active root's latest memory injection,
+  and a read-only graph of confirmed memories.
+- Dashboard Settings loads connected OpenCode providers and models for Primary
+  and Advisor configuration, retaining exact IDs and manual-entry fallbacks.
+- Model-specific variant suggestions use project-scoped model metadata,
+  verified against OpenCode 2.1.3, and expose validated enabled identifiers for
+  Primary and Advisor.
+- Memory Graph adds an accessible Map/Index switch, a full-width map with
+  pan/zoom controls and selected-memory inspector, and selection-stable graph
+  positioning.
 
 ### Changed
 - Blocker recovery uses bounded evidence searches and verification proportional
-  to the changed criteria.
-- `workflow_tick(start_task)` starts work atomically while preserving normal
-  workflow history.
-- Primary workflow progress reports are mandatory after each meaningful phase
-  or subtask and distinguish phase completion from whole-task completion.
+  to changed criteria; `workflow_tick(start_task)` begins work atomically while
+  preserving normal workflow history. Progress reports are mandatory after each
+  meaningful phase/subtask and state completed work, changes, the next action,
+  and what remains or is blocked; they distinguish phase completion from
+  whole-task completion. The final update lists exact changed paths and check
+  results.
+- Activity telemetry merges late parent/agent metadata into the identified
+  session without replacing its newer observed lifecycle status.
 
 ## [1.4.0] - 2026-10-22
 

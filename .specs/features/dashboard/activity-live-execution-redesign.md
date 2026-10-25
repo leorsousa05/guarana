@@ -1,0 +1,35 @@
+# Feature spec: Dashboard Activity live-execution redesign
+
+**Status: VALIDATED**
+
+## Goal
+Rework Dashboard Activity into a clearer live-execution page and move completed subagent history out of the default page into an accessible modal.
+
+## Requirements
+- Organize Activity as a live-execution folio with a clearer left-aligned page heading and active-status anchor, a restrained rule-led summary rail, and one primary two-column live work area pairing the active worker/session roster with selected safe details and timeline; keep workflow, Advisor, and recent telemetry signals secondary.
+- Keep existing data sources, behavior, and safe allowlists. Preserve the authoritative OpenCode count including zero and existing fallback behavior; display counts and content only from observed data.
+- Move only the existing latest 20 observed terminal telemetry child sessions out of the default page into a Completed history (N) trigger and modal. Preserve current safe row fields and overflow notice; selecting a row selects that session and closes the modal so the existing selected terminal detail renders in the page.
+- Provide accessible modal behavior with initial focus, Tab and Shift+Tab containment, Escape, backdrop and close-button dismissal, focus restoration to the trigger, visible focus, semantic title and labels, and reduced-motion behavior. Preserve keyboard semantics and pressed state for history rows.
+- Preserve the existing light/dark paper-and-ink ledger palette, semantic colors, type, and restrained ledger geometry; do not introduce generic rounded-card styling or gradients.
+- Use ADR-005 default budgets: main thread at most 8k steady-state tokens; worker-code 8k, worker-verify 4k, and worker-debug 6k tokens per dispatch; per-run hard cap 32k tokens and 15 minutes.
+
+## Assumptions and scope
+- The live-execution folio hierarchy is the accepted low-risk design direction; this is a reversible screen-only redesign and does not require an ADR.
+- Completed telemetry child history means only observed terminal children already represented by existing data; do not infer session status, time, activity, or fabricate rows.
+- Dashboard Activity UI in dashboard/web/src/components/Activity.jsx and dashboard/web/src/style.css, with focused Vite SSR coverage in dashboard/web/src/components/Activity.test.mjs.
+- Reuse existing telemetry summary/events and the existing AdvisorHistoryModal dialog interaction pattern; no dashboard/server/routes/telemetry.js API or data-contract change.
+- Preserve existing active OpenCode worker list/detail, telemetry active session tree/details, aggregate metrics, Advisor panel/history, recent-event safe rendering, selected terminal detail, privacy allowlists, root-session behavior, and both themes.
+- Do not change backend/API/schema, privacy policy, root-session or Advisor behavior; do not add sensitive content, claim deployment or shipping, or create a dated Changes record before validation.
+
+## Acceptance criteria
+1. Activity presents a clearly live-execution-first hierarchy and coherent roster/detail timeline workbench; summary metrics and workflow/Advisor/recent activity are subordinate; existing light/dark ledger palette, typography, and restrained rule-led geometry are used without generic rounded-card styling or gradients; counts and content are actual observed data.
+2. Completed history is absent from the default page DOM and layout. If completed children exist, an accessible trigger reports their count and opens a named modal listing only the existing maximum 20 newest observed completed children with current safe row fields and the existing overflow notice when needed; buttons retain keyboard semantics and pressed state. Selecting a completed child closes the modal and opens that exact existing selected-session detail without fabricated data. With no completed children, no dead control is shown.
+3. The modal moves initial focus inside, keeps Tab and Shift+Tab within it, closes on Escape, backdrop, or close button, restores focus to its trigger, and provides visible focus, semantic title and labels, and reduced-motion behavior. Existing detail remains reachable after selection.
+4. Existing active OpenCode worker list/detail, telemetry active session tree/details, authoritative OpenCode count including zero and fallback, aggregate metrics, Advisor panel/history, recent-event safe rendering, selected terminal detail, and privacy allowlists remain intact. There are no backend/API/schema changes or new sensitive content.
+5. Focused UI tests and full root tests pass; production Dashboard build and CLI synchronization, npm run check-cli, specs validation, and git diff --check pass. Real browser proof at desktop and 375px covers modal open/select/close/keyboard/focus and confirms no horizontal overflow or private payload leakage. No deployment or shipping is claimed.
+
+<!-- guarana:record:start -->
+Status: VALIDATED
+Proof: Fresh independent worker-verify returned overall PASS for all five criteria: visual hierarchy/tokens; completed history absent from default DOM with bounded on-demand modal and exact selection; accessible focus/keyboard/dismissal/restoration and reduced-motion compatibility; existing activity/count/fallback/totals/Advisor/RecentActivity/privacy preservation; and gates/browser proof.; node --test dashboard/web/src/components/Activity.test.mjs — PASS 13/13.; npm test — PASS 619/619; nonfatal Vite WebSocket port-in-use and Node module-type warnings.; npm run build — PASS; dashboard bundle built and CLI sync.; npm run check-cli — PASS.; git diff --check — PASS.; Pre-record npm run specs:validate — PASS: 215 Markdown files, 83 feature specs, 39 ADRs, 242 links, 0 issues.; Independent verifier reran focused Activity tests (13/13), npm run check-cli, npm run specs:validate (215 Markdown, 83 features, 39 ADRs, 242 links, 0 issues), and git diff --check; PASS. It did not rerun full root npm test or build; those PASS results were supplied by the primary.; Browser report `guarana-activity-live-execution-redesign.json` (mode 0600, aggregate-only synthetic-fixture evidence) — PASS at 1440px and 375px. It verifies hidden default history, modal focus/trap/dismissal/restoration, 20-row bound, keyboard selection and exact selected detail, no overflow/private fixture payload/page errors. Screenshots: `guarana-activity-live-1440.png`, `guarana-activity-live-375.png`, `guarana-activity-history-modal-375.png`. The report and screenshots were temporary local synthetic-fixture evidence and are not included in the repository.; No live deployment, service restart, or shipping occurred. Pre-existing API/CLI edits from the prior active-worker task are not attributed to this redesign and remain untouched.; Final post-record checks after all requested record writes: npm run specs:validate — PASS: 216 Markdown files, 83 feature specs, 39 ADRs, 243 local links, 0 issues; git diff --check — PASS; npm run check-cli — PASS.
+Change: .specs/changes/2026-10-24-dashboard-activity-live-execution-redesign.md
+<!-- guarana:record:end -->
