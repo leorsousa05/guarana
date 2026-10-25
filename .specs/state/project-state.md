@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-10-25T05:24:01.930Z
+Last updated: 2026-10-25T05:46:53.455Z
 
 ## Per-skill status
 | Skill | Status |
@@ -24,7 +24,7 @@ Last updated: 2026-10-25T05:24:01.930Z
 | Guarana optional model advisor | **VALIDATED** — UI criteria 11–14 and ADR-027 runtime proof |
 
 ## Current step
-The exact corrected 79-path follow-up candidate has fresh independent readiness PASS and all supplied local gates pass. The original release commit remains pushed with its historical Node 22.x/24.x CI failure; the follow-up commit/push, successful rerun of both CI jobs, and v1.5.0 remote tag identity/date verification remain pending. Changelog date 2026-10-25 must match the actual tag date. Release remains TASKED; no shipping or publication is confirmed.
+SHIPPED: Fresh independent worker-verify overall PASS proves remote annotated v1.5.0 tag object 1a3b8b34d33a58131eadbe3c9406b16925751911, peeled target 0419c8fcb8de56f1c22a456d0d2368dd51676886, and tagger date 2026-10-25 02:39:44 -0300 matching CHANGELOG.md:94's 2026-10-25 date. At final verification local main and advertised remote main both equaled 0419c8fcb8de56f1c22a456d0d2368dd51676886; history is linear through release commit cfaa2880c0f196773115969ae6c066469dfd8a82 to parent f12863bd3d5733e0e20fa2111170d0c66b16885e with no rewrite. GitHub Actions run 40165918152 passed both Node 22.x and Node 24.x jobs and all steps at the target SHA. The original CI failure remains historical and the authorized narrow test-only HOME/XDG isolation follow-up made no product-code change. No npm publication or dist-tag, GitHub Release, or retired smoke test occurred, and README makes no formal LTS or maintenance promise. No release gate remains. The user authorized this post-tag records-only closeout; it does not change the tag target 0419c8fcb8de56f1c22a456d0d2368dd51676886.
 
 ## Bounded feature validation — Dashboard Overview operational workbench — 2026-10-24
 
@@ -83,7 +83,7 @@ Validated before this task: the post-bootstrap-fix release gate, final archive, 
 - Browser proof confirms 375px document/body width, 351px content scroll/client widths for the Models sections and discovery areas, stacked grids, no clipped Models descendants, visible keyboard focus, polite status announcement, and reduced-motion behavior. Global navigation's horizontal scrolling is intentional; page content does not overflow.
 - Detailed proof and check outcomes: `changes/2026-10-09-models-page-overhaul.md`. Shipping was not confirmed; status is VALIDATED, not SHIPPED.
 - Budget: ADR-005 defaults.
-- Pending writes: Create and ordinarily push the explicitly authorized narrow corrective Conventional Commit without rewriting the original remote commit.; Rerun remote CI and require both Node 22.x and Node 24.x jobs to pass before tagging.; Create and ordinarily push v1.5.0, verify its exact remote commit identity and tag date, and ensure the changelog date 2026-10-25 matches the actual tag date.
+- Pending writes: none.
 
 ## Proofs that exist
 Task-1 proofs for all 7 skills in `.specs/features/guarana/proofs/`; all acceptance criteria mapped; worker-verify PASS on every skill. CLI acceptance: 6/6 checks PASS (recorded in changes/2026-08-21-cli.md). Release readiness evidence is in `changes/2026-10-02-release-readiness.md`; 1.0.0 candidate evidence and revalidation follow-up are in `changes/2026-10-07-release-candidate-1.0.0.md` and `features/release/release-candidate-1.0.0-smoke.jsonl`. Spec lifecycle write proof: `changes/2026-10-03-spec-lifecycle-writes.md`. Automatic skill-creation proof: `changes/2026-10-05-automatic-skill-creation.md`, `changes/2026-10-05-skill-trigger-guidance.md`, and validated routing clarity in `changes/2026-10-07-skill-routing-clarity.md`. Native Task worker dispatch proof is in `changes/2026-10-07-native-task-worker-dispatch.md` and `features/orchestrator/subagent-dispatch-smoke.jsonl`. Dashboard skill-scope count proof: `changes/2026-10-05-dashboard-skill-scope-counts.md`.
