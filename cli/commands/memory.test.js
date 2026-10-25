@@ -14,7 +14,14 @@ const MEMORY_COMMAND = path.join(__dirname, 'memory.js');
 
 function runResult(args, cwd, env = {}) {
   return spawnSync(process.execPath, [BIN, 'memory', ...args], {
-    cwd, encoding: 'utf8', env: { ...process.env, ...env },
+    cwd,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      HOME: path.join(tmp, 'home'),
+      XDG_CONFIG_HOME: path.join(tmp, 'xdg-config'),
+      ...env,
+    },
   });
 }
 
@@ -162,6 +169,13 @@ describe('guarana memory delete', () => {
       assert.equal(result.stdout, '');
       assert.match(result.stderr, new RegExp(diagnostic.replace(/[|]/g, '\\|')));
     }
+
+    const isolatedHome = path.join(tmp, 'home');
+    const isolatedGlobalVault = path.join(isolatedHome, '.config', 'guarana', 'memory');
+    assert.ok(path.resolve(isolatedGlobalVault).startsWith(`${path.resolve(tmp)}${path.sep}`));
+    assert.notEqual(path.resolve(isolatedHome), path.resolve(os.homedir()));
+    fs.mkdirSync(isolatedGlobalVault, { recursive: true });
+    fs.writeFileSync(path.join(isolatedGlobalVault, 'nodes.jsonl'), '');
 
     for (const id of ['mem-confirmed-delete', 'mem-draft-delete', 'mem-unknown']) {
       const result = runResult(['delete', id, '--scope', 'global', '--confirm'], cwd());

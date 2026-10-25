@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-10-25T04:59:33.052Z
+Last updated: 2026-10-25T05:24:01.930Z
 
 ## Per-skill status
 | Skill | Status |
@@ -24,7 +24,7 @@ Last updated: 2026-10-25T04:59:33.052Z
 | Guarana optional model advisor | **VALIDATED** — UI criteria 11–14 and ADR-027 runtime proof |
 
 ## Current step
-Guarana 1.5.0 remains TASKED. Fresh independent pre-commit candidate verification of the corrected exact candidate is PASS; the prior verifier FAIL remains historical. This candidate PASS is not remote release completion. No commit, push, tag, remote CI, remote tag-date proof, npm publication, or GitHub Release has occurred.
+The exact corrected 79-path follow-up candidate has fresh independent readiness PASS and all supplied local gates pass. The original release commit remains pushed with its historical Node 22.x/24.x CI failure; the follow-up commit/push, successful rerun of both CI jobs, and v1.5.0 remote tag identity/date verification remain pending. Changelog date 2026-10-25 must match the actual tag date. Release remains TASKED; no shipping or publication is confirmed.
 
 ## Bounded feature validation — Dashboard Overview operational workbench — 2026-10-24
 
@@ -83,7 +83,7 @@ Validated before this task: the post-bootstrap-fix release gate, final archive, 
 - Browser proof confirms 375px document/body width, 351px content scroll/client widths for the Models sections and discovery areas, stacked grids, no clipped Models descendants, visible keyboard focus, polite status announcement, and reduced-motion behavior. Global navigation's horizontal scrolling is intentional; page content does not overflow.
 - Detailed proof and check outcomes: `changes/2026-10-09-models-page-overhaul.md`. Shipping was not confirmed; status is VALIDATED, not SHIPPED.
 - Budget: ADR-005 defaults.
-- Pending writes: none.
+- Pending writes: Create and ordinarily push the explicitly authorized narrow corrective Conventional Commit without rewriting the original remote commit.; Rerun remote CI and require both Node 22.x and Node 24.x jobs to pass before tagging.; Create and ordinarily push v1.5.0, verify its exact remote commit identity and tag date, and ensure the changelog date 2026-10-25 matches the actual tag date.
 
 ## Proofs that exist
 Task-1 proofs for all 7 skills in `.specs/features/guarana/proofs/`; all acceptance criteria mapped; worker-verify PASS on every skill. CLI acceptance: 6/6 checks PASS (recorded in changes/2026-08-21-cli.md). Release readiness evidence is in `changes/2026-10-02-release-readiness.md`; 1.0.0 candidate evidence and revalidation follow-up are in `changes/2026-10-07-release-candidate-1.0.0.md` and `features/release/release-candidate-1.0.0-smoke.jsonl`. Spec lifecycle write proof: `changes/2026-10-03-spec-lifecycle-writes.md`. Automatic skill-creation proof: `changes/2026-10-05-automatic-skill-creation.md`, `changes/2026-10-05-skill-trigger-guidance.md`, and validated routing clarity in `changes/2026-10-07-skill-routing-clarity.md`. Native Task worker dispatch proof is in `changes/2026-10-07-native-task-worker-dispatch.md` and `features/orchestrator/subagent-dispatch-smoke.jsonl`. Dashboard skill-scope count proof: `changes/2026-10-05-dashboard-skill-scope-counts.md`.
