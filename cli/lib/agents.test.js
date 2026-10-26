@@ -122,6 +122,8 @@ test('worker profiles include canonical skill procedures and distinct permission
   assert.doesNotMatch(specs, /claim no\s+paths committed/);
   assert.match(specs, /When `specs record` returns `ok: false` with a detailed `task\.\*` path and\s+expected form, report that exact blocker; do not rerun/);
   assert.match(specs, /Before selecting any record path, read `.specs\/conventions\.md`/);
+  assert.match(specs, /For repository context, rely on candidate worktree identity\/path and git status\s+and HEAD facts supplied by the primary\. If any are absent, or the target worktree\s+is ambiguous, ask the primary to inspect and supply the facts; do not inspect git\s+state yourself\. Git status\/rev-parse preflight belongs to the primary\./);
+  assert.match(specs, /This recorder invocation \(or the documented node equivalent\) is the only\s+permitted shell use\. Do not run git status\/rev-parse preflight, stdin,\s+heredocs, or any other shell command\./);
   assert.match(specs, /reuse the existing feature record[\s\S]*instead of creating a\s+duplicate/);
   assert.match(specs, /features\/<domain>\/<stable-concise-kebab-case-scope-slug>\.md/);
   assert.match(specs, /Use the closest existing domain when it fits; when none fits, create exactly\s+one new direct lowercase-kebab domain for the bounded subsystem\. Do not\s+create arbitrary nested feature directories\./);

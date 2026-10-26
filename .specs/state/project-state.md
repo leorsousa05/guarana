@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-10-26T19:18:40.217Z
+Last updated: 2026-10-26T21:43:02.490Z
 
 ## Per-skill status
 | Skill | Status |
@@ -24,7 +24,7 @@ Last updated: 2026-10-26T19:18:40.217Z
 | Guarana optional model advisor | **VALIDATED** — UI criteria 11–14 and ADR-027 runtime proof |
 
 ## Current step
-SHIPPED: Fresh independent worker-verify overall PASS proves remote annotated v1.5.0 tag object 1a3b8b34d33a58131eadbe3c9406b16925751911, peeled target 0419c8fcb8de56f1c22a456d0d2368dd51676886, and tagger date 2026-10-25 02:39:44 -0300 matching CHANGELOG.md:94's 2026-10-25 date. At final verification local main and advertised remote main both equaled 0419c8fcb8de56f1c22a456d0d2368dd51676886; history is linear through release commit cfaa2880c0f196773115969ae6c066469dfd8a82 to parent f12863bd3d5733e0e20fa2111170d0c66b16885e with no rewrite. GitHub Actions run 40165918152 passed both Node 22.x and Node 24.x jobs and all steps at the target SHA. The original CI failure remains historical and the authorized narrow test-only HOME/XDG isolation follow-up made no product-code change. No npm publication or dist-tag, GitHub Release, or retired smoke test occurred, and README makes no formal LTS or maintenance promise. No release gate remains. The user authorized this post-tag records-only closeout; it does not change the tag target 0419c8fcb8de56f1c22a456d0d2368dd51676886.
+VALIDATED: Dashboard Overview memory scope graphs passed independent worker-verify for all six acceptance criteria. Details are recorded in .specs/changes/2026-10-26-dashboard-overview-memory-scope-graphs.md. No shipping occurred.
 
 ## Bounded feature validation — Dashboard Overview operational workbench — 2026-10-24
 

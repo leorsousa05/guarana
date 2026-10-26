@@ -15,6 +15,7 @@ let activeRootFromTelemetry;
 let latestInjectionForRoot;
 let latestAdvisorForRoot;
 let overviewGraphModel;
+let overviewGraphEndpoints;
 let projectOverviewWorkers;
 let defaultOverviewSelection;
 let overviewSelectionEpoch;
@@ -23,8 +24,9 @@ let selectOverviewMemory;
 
 before(async () => {
   vite = await createServer({ root: webRoot, server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
-  ({ OverviewContent, activeRootFromTelemetry, latestInjectionForRoot, latestAdvisorForRoot, overviewGraphModel, projectOverviewWorkers,
-    defaultOverviewSelection, overviewSelectionEpoch, resolveOverviewSelection, selectOverviewMemory } = await vite.ssrLoadModule('/src/components/Overview.jsx'));
+({ OverviewContent, activeRootFromTelemetry, latestInjectionForRoot, latestAdvisorForRoot, overviewGraphModel, projectOverviewWorkers,
+    defaultOverviewSelection, overviewSelectionEpoch, resolveOverviewSelection, selectOverviewMemory,
+    OVERVIEW_GRAPH_ENDPOINTS: overviewGraphEndpoints } = await vite.ssrLoadModule('/src/components/Overview.jsx'));
 });
 after(async () => vite?.close());
 
@@ -33,16 +35,33 @@ const workerKey = '84000000-0000-4000-8000-000000000001';
 const summary = { runs: [run('root-private-id-101', 'running', 20), run('old-root-secret-id', 'idle', 100)] };
 const workflow = { state: 'coding', activeTask: 'Implement the workbench', goal: 'Keep the live operational context visible.' };
 const injection = (sessionID, ts, memories) => ({ sessionID, ts, reason: 'session-start', memories });
-const graphNode = (id, scope, intent, status = 'confirmed') => ({ id, scope, type: 'decision', intent, summary: `${intent} summary`, status });
+const graphNode = (id, scope, intent, status = 'confirmed') => ({
+  id, scope, type: scope === 'global' ? 'preference' : 'decision', intent, summary: `${intent} summary`, status,
+});
 
 function markup(overrides = {}) {
+  const combined = overrides.graph || { data: {
+    nodes: [graphNode('shared', 'project', 'Injected decision'), graphNode('neighbor', 'project', 'Direct neighbor')],
+    edges: [{ scope: 'project', from: 'shared', to: 'neighbor', rel: 'fixes' }],
+  } };
+  const graphForScope = (scope) => {
+    const state = overrides[`${scope}Graph`] || combined;
+    if (!state?.data || !Array.isArray(state.data.nodes)) return state;
+    return { ...state, data: {
+      ...state.data,
+      nodes: state.data.nodes.filter((node) => node.scope === scope),
+      edges: (state.data.edges || []).filter((edge) => edge.scope === scope),
+    } };
+  };
+  const { graph: ignoredGraph, projectGraph: ignoredProjectGraph, globalGraph: ignoredGlobalGraph, ...props } = overrides;
   return renderToStaticMarkup(React.createElement(OverviewContent, {
     summary, workflow, workflowLoading: false,
     workers: { data: { available: true, runningCount: 1, workers: [{ key: workerKey, agent: 'worker-code', status: 'busy' }] } },
     advisorHistory: { data: { history: [{ parentSessionID: 'root-private-id-101', status: 'running' }] } },
     injections: { data: { injections: [injection('root-private-id-101', 22, [graphNode('shared', 'project', 'Injected decision')])] } },
-    graph: { data: { nodes: [graphNode('shared', 'project', 'Injected decision'), graphNode('neighbor', 'project', 'Direct neighbor')], edges: [{ scope: 'project', from: 'shared', to: 'neighbor', rel: 'fixes' }] } },
-    ...overrides,
+    projectGraph: graphForScope('project'),
+    globalGraph: graphForScope('global'),
+    ...props,
   }));
 }
 
@@ -119,7 +138,8 @@ test('Overview state and workflow strip render truthful loading, unavailable, an
   const loading = markup({ summary: null, workflow: null, workflowLoading: true, workers: {}, advisorHistory: {}, injections: {}, graph: {} });
   assert.match(loading, /Loading workflow context…/);
   assert.match(loading, /Loading active workers…/);
-  assert.match(loading, /Loading memory graph…/);
+  assert.match(loading, /Loading project memory graph…/);
+  assert.match(loading, /Loading global memory graph…/);
   assert.match(loading, /Loading telemetry root…/);
   const unavailable = markup({ summaryError: 'raw telemetry error', workflowError: 'raw workflow error', workers: { error: 'raw worker error' }, graph: { error: 'raw graph error' } });
   assert.match(unavailable, /Workflow context unavailable\./);
@@ -130,20 +150,103 @@ test('Overview state and workflow strip render truthful loading, unavailable, an
   const empty = markup({ workers: { data: { available: true, runningCount: 0, workers: [] } }, graph: { data: { nodes: [], edges: [] } } });
   assert.match(empty, /No active workers observed\./);
   assert.match(empty, /No confirmed memories available\./);
+  assert.match(empty, /No confirmed preferences available\./);
 });
 
-test('scope qualification prevents ID collisions and injected highlighting follows scope-qualified references', () => {
-  const result = overviewGraphModel({
-    nodes: [graphNode('same', 'project', 'Project'), graphNode('same', 'global', 'Global'), graphNode('draft', 'project', 'Draft', 'draft')],
-    edges: [{ scope: 'project', from: 'same', to: 'same', rel: 'fixes' }, { scope: 'global', from: 'same', to: 'same', rel: 'depends-on' }],
-  }, [{ id: 'same', scope: 'global' }]);
-  assert.deepEqual(result.nodes.map((node) => node.id), ['project:same', 'global:same']);
-  assert.deepEqual(result.edges.map(({ from, to }) => [from, to]), [['project:same', 'project:same'], ['global:same', 'global:same']]);
-  assert.deepEqual([...result.injected], ['global:same']);
+test('each graph qualifies only its scope and injection highlighting follows scope-qualified references', () => {
+  const graph = {
+    nodes: [graphNode('same', 'project', 'Project'), graphNode('same', 'global', 'Global'),
+      { ...graphNode('global-decision', 'global', 'Not a global preference'), type: 'decision' }, graphNode('draft', 'project', 'Draft', 'draft')],
+    edges: [
+      { scope: 'project', from: 'same', to: 'same', rel: 'fixes' },
+      { scope: 'global', from: 'same', to: 'same', rel: 'depends-on' },
+      { scope: 'project', from: 'same', to: 'absent', rel: 'relates-to' },
+    ],
+  };
+  const records = [{ id: 'same', scope: 'global' }, { id: 'same', scope: 'project' }];
+  const project = overviewGraphModel(graph, 'project', records);
+  const global = overviewGraphModel(graph, 'global', records);
+  assert.deepEqual(project.nodes.map((node) => node.id), ['project:same']);
+  assert.deepEqual(global.nodes.map((node) => node.id), ['global:same']);
+  assert.deepEqual(project.edges.map(({ from, to }) => [from, to]), [['project:same', 'project:same']]);
+  assert.deepEqual(global.edges.map(({ from, to }) => [from, to]), [['global:same', 'global:same']]);
+  assert.deepEqual([...project.injected], ['project:same']);
+  assert.deepEqual([...global.injected], ['global:same']);
   const html = markup();
   assert.match(html, /ov-map-node--injected/);
   assert.match(html, /injected into active root/);
-  assert.match(html, /Read-only memory graph; scroll within this region/);
+  assert.match(html, /Read-only project knowledge map; scroll within this region/);
+  assert.match(html, /Project knowledge <span class="ov-read-only">read-only/);
+  assert.match(html, /User preferences <span class="ov-read-only">read-only/);
+});
+
+test('Overview uses exact scope-filtered graph endpoints and keeps graph states independent', () => {
+  assert.deepEqual(overviewGraphEndpoints, {
+    project: '/api/memory/graph?scope=project',
+    global: '/api/memory/graph?scope=global',
+  });
+  const independent = markup({
+    projectGraph: { error: 'project raw error' },
+    globalGraph: { data: { nodes: [graphNode('pref', 'global', 'Confirmed preference')], edges: [] } },
+  });
+  assert.match(independent, /Project knowledge/);
+  assert.match(independent, /Memory graph unavailable\./);
+  assert.match(independent, /Confirmed preference/);
+  assert.doesNotMatch(independent, /project raw error/);
+  assert.doesNotMatch(independent, /Loading global memory graph/);
+
+  const globalOnlyLoading = markup({
+    projectGraph: { data: { nodes: [], edges: [] } },
+    globalGraph: {},
+  });
+  assert.match(globalOnlyLoading, /No confirmed memories available\./);
+  assert.match(globalOnlyLoading, /Loading global memory graph…/);
+});
+
+test('scope modes expose independent Network defaults, Neighborhood controls, arrows, and typed relationships', () => {
+  const html = markup({
+    projectGraph: { data: {
+      nodes: [graphNode('a', 'project', 'Project A'), graphNode('b', 'project', 'Project B'),
+        graphNode('c', 'project', 'Project C'), graphNode('unrelated', 'project', 'Unrelated project node')],
+      edges: [
+        { scope: 'project', from: 'a', to: 'b', rel: 'fixes' },
+        { scope: 'project', from: 'c', to: 'a', rel: 'caused-by' },
+      ],
+    } },
+    globalGraph: { data: {
+      nodes: [graphNode('a', 'global', 'Global A'), graphNode('b', 'global', 'Global B')],
+      edges: [{ scope: 'global', from: 'a', to: 'b', rel: 'depends-on' }],
+    } },
+  });
+  assert.equal((html.match(/aria-pressed="true">Network/g) || []).length, 2, 'each scope starts independently in Network mode');
+  assert.equal((html.match(/aria-pressed="false">Neighborhood/g) || []).length, 2);
+  assert.match(html, /aria-label="Project knowledge graph view mode"/);
+  assert.match(html, /aria-label="User preferences graph view mode"/);
+  assert.match(html, /marker-end="url\(#ov-map-arrow-project\)"/);
+  assert.match(html, /marker-end="url\(#ov-map-arrow-global\)"/);
+  assert.match(html, /ov-map-edge-label--project[^>]*>fixes</);
+  assert.match(html, /ov-map-edge-label--global[^>]*>depends-on</);
+  assert.match(html, /Incoming · caused-by · project/);
+  assert.match(html, /Outgoing · fixes · project/);
+  assert.match(html, /data-memory-id="project:a"/);
+  assert.match(html, /data-memory-id="global:a"/);
+  assert.match(html, /Neighborhood/);
+  assert.doesNotMatch(html, /Manage project links|Confirm and save|Confirm removal/);
+
+  const projectModel = overviewGraphModel({
+    nodes: [graphNode('a', 'project', 'Project A'), graphNode('b', 'project', 'Project B'),
+      graphNode('c', 'project', 'Project C'), graphNode('unrelated', 'project', 'Unrelated project node')],
+    edges: [
+      { scope: 'project', from: 'a', to: 'b', rel: 'fixes' },
+      { scope: 'project', from: 'c', to: 'a', rel: 'caused-by' },
+    ],
+  }, 'project');
+  const network = layoutMemoryBubbles(projectModel.nodes, projectModel.edges, 'project:a', 'network');
+  const neighborhood = layoutMemoryBubbles(projectModel.nodes, projectModel.edges, 'project:a', 'neighborhood');
+  assert.deepEqual(network.nodes.map((node) => node.id).sort(), ['project:a', 'project:b', 'project:c', 'project:unrelated']);
+  assert.equal(network.edges.length, 2);
+  assert.deepEqual(neighborhood.nodes.map((node) => node.id).sort(), ['project:a', 'project:b', 'project:c']);
+  assert.deepEqual(neighborhood.edges.map(({ from, to }) => [from, to]), [['project:a', 'project:b'], ['project:c', 'project:a']]);
 });
 
 test('graph marks every memory in the active root latest injection and ignores other-root history', () => {
@@ -208,35 +311,48 @@ test('selection defaults to first available injected qualified node and injected
     ],
   };
   const records = [injectedGlobal, injectedProject];
-  const model = overviewGraphModel(graph, records);
+  const projectModel = overviewGraphModel(graph, 'project', records);
+  const globalModel = overviewGraphModel(graph, 'global', records);
   const firstRoot = run('active-root-private-a', 'running', 20);
   const firstInjection = injection(firstRoot.sessionID, 22, records);
-  const firstEpoch = overviewSelectionEpoch(firstRoot, firstInjection);
+  const projectEpoch = overviewSelectionEpoch(firstRoot, firstInjection, 'project');
+  const globalEpoch = overviewSelectionEpoch(firstRoot, firstInjection, 'global');
   const html = markup({
     summary: { runs: [firstRoot] },
     injections: { data: { injections: [firstInjection] } },
     graph: { data: graph },
   });
 
-  assert.equal(defaultOverviewSelection(model), 'global:shared', 'first available injected reference wins over graph node order');
-  assert.equal(resolveOverviewSelection(model, null, firstEpoch), 'global:shared');
+  assert.equal(defaultOverviewSelection(projectModel), 'project:target', 'injected project reference wins before the first graph node');
+  assert.equal(defaultOverviewSelection(globalModel), 'global:shared', 'injected global reference wins before the first graph node');
+  assert.equal(resolveOverviewSelection(projectModel, null, projectEpoch), 'project:target');
+  assert.equal(resolveOverviewSelection(globalModel, null, globalEpoch), 'global:shared');
   assert.match(html, /data-memory-id="global:shared" data-scope="global"[^>]*aria-pressed="true"/);
+  assert.match(html, /data-memory-id="project:target" data-scope="project"[^>]*aria-pressed="true"/);
   assert.match(html, /Selected memory details/);
   assert.match(html, /Injected global preference summary/);
   assert.match(html, /Outgoing · relates-to · global/);
+  assert.match(html, /aria-label="Select injected global preference: Injected global preference" aria-pressed="true"/);
+  assert.match(html, /aria-label="Select injected project decision: Injected project decision" aria-pressed="true"/);
 
-  const fromList = selectOverviewMemory(firstEpoch, 'project:target');
-  assert.equal(resolveOverviewSelection(model, fromList, firstEpoch), 'project:target', 'selecting an injected list entry selects its qualified graph node');
-  const fromGraph = selectOverviewMemory(firstEpoch, 'project:other');
-  assert.equal(resolveOverviewSelection(model, fromGraph, firstEpoch), 'project:other', 'a later graph-node selection replaces the selected record');
-  assert.deepEqual([...model.injected], ['global:shared', 'project:target'], 'selection does not alter the complete injected highlight set');
+  const fromList = selectOverviewMemory(projectEpoch, 'project:target');
+  assert.equal(resolveOverviewSelection(projectModel, fromList, projectEpoch), 'project:target', 'selecting a project injection selects only its qualified project node');
+  const fromGraph = selectOverviewMemory(projectEpoch, 'project:other');
+  assert.equal(resolveOverviewSelection(projectModel, fromGraph, projectEpoch), 'project:other', 'a later project graph selection replaces the selected record');
+  assert.equal(resolveOverviewSelection(globalModel, selectOverviewMemory(globalEpoch, 'global:shared'), globalEpoch), 'global:shared', 'project selection does not alter global selection');
+  assert.deepEqual([...projectModel.injected], ['project:target'], 'project injection highlights stay in the project graph');
+  assert.deepEqual([...globalModel.injected], ['global:shared'], 'global injection highlights stay in the global graph');
+  const changedProjectInjection = injection(firstRoot.sessionID, 25, [injectedGlobal, graphNode('replacement', 'project', 'Replacement project injection')]);
+  assert.notEqual(overviewSelectionEpoch(firstRoot, changedProjectInjection, 'project'), projectEpoch);
+  assert.equal(overviewSelectionEpoch(firstRoot, changedProjectInjection, 'global'), globalEpoch,
+    'a project-only injection change does not reset global selection');
 
   const nextRoot = run('active-root-private-b', 'running', 30);
   const nextInjection = injection(nextRoot.sessionID, 32, [graphNode('next', 'project', 'New injected memory')]);
-  const nextModel = overviewGraphModel({ nodes: [graphNode('other', 'project', 'Other memory'), ...nextInjection.memories], edges: [] }, nextInjection.memories);
-  const nextEpoch = overviewSelectionEpoch(nextRoot, nextInjection);
-  assert.notEqual(nextEpoch, firstEpoch);
-  assert.equal(resolveOverviewSelection(nextModel, fromGraph, nextEpoch), 'project:next', 'a changed active-root injection resets selection to its injected memory');
+  const nextModel = overviewGraphModel({ nodes: [graphNode('other', 'project', 'Other memory'), ...nextInjection.memories], edges: [] }, 'project', nextInjection.memories);
+  const nextEpoch = overviewSelectionEpoch(nextRoot, nextInjection, 'project');
+  assert.notEqual(nextEpoch, projectEpoch);
+  assert.equal(resolveOverviewSelection(nextModel, fromGraph, nextEpoch), 'project:next', 'a changed active-root injection resets the relevant scope selection');
   assert.doesNotMatch(html, /active-root-private-a|active-root-private-b/);
 });
 
@@ -299,10 +415,14 @@ test('Overview CSS bounds the page, worker overflow, and graph navigation at des
   const css = fs.readFileSync(path.join(webRoot, 'src/style.css'), 'utf8');
   assert.match(css, /\.ov\s*\{[^}]*height:\s*calc\(100dvh\s*-\s*210px\)[^}]*overflow:\s*hidden/);
   assert.match(css, /@media \(max-width:\s*840px\)[\s\S]*?\.ov\s*\{[^}]*height:\s*calc\(100dvh\s*-\s*280px\)/);
+  assert.match(css, /@media \(max-width:\s*840px\)[\s\S]*?main\.app-main:has\(\.ov\)\s*\{\s*padding-bottom:\s*0;\s*\}/);
+  assert.match(css, /main\.app-main\s*\{\s*padding:\s*1rem 0\.75rem 4\.5rem;/);
   assert.match(css, /\.ov-worker-list\s*\{[^}]*max-height:\s*100%[^}]*overflow-y:\s*auto/);
   assert.match(css, /\.ov-injection-list\s*\{[^}]*max-height:\s*100%[^}]*overflow-y:\s*auto/);
   assert.match(css, /\.ov-injection\s*\{[^}]*overflow:\s*hidden/);
   assert.match(css, /\.ov-map-viewport\s*\{[^}]*overflow:\s*auto[^}]*overscroll-behavior:\s*contain/);
+  assert.match(css, /\.ov-graphs\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
+  assert.match(css, /\.ov-map-modes button:focus-visible/);
   assert.match(css, /\.ov-map-viewport:focus-visible/);
   assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.ov \*/);
 });

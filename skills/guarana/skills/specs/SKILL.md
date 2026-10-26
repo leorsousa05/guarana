@@ -46,6 +46,10 @@ Use only the supplied facts. A handoff may contain:
 Do not invent requirements, acceptance decisions, status, verification results,
 or shipping claims. If a required fact is absent or conflicting, preserve the
 existing record and return a concise blocker/question instead of guessing.
+For repository context, rely on candidate worktree identity/path and git status
+and HEAD facts supplied by the primary. If any are absent, or the target worktree
+is ambiguous, ask the primary to inspect and supply the facts; do not inspect git
+state yourself. Git status/rev-parse preflight belongs to the primary.
 
 ## Procedure
 
@@ -79,12 +83,14 @@ existing record and return a concise blocker/question instead of guessing.
    rename, migrate, or normalize ANY existing record or path, whether a single
    file or many. Preserve all existing and legacy names, as well as material not
    superseded by supplied facts.
-2. Formulate a schema v1 JSON handoff with all required task fields from the
-   command contract. Use edit to write it to
-   `.specs/state/worker-specs-handoff.json`, then invoke exactly
-   `guarana specs record --file .specs/state/worker-specs-handoff.json` (or
-   `node bin/guarana.js specs record --file .specs/state/worker-specs-handoff.json`).
-   Do not use stdin, heredocs, or arbitrary shell. The command deletes the
+ 2. Formulate a schema v1 JSON handoff with all required task fields from the
+    command contract. Use edit to write it to
+    `.specs/state/worker-specs-handoff.json`, then invoke exactly
+    `guarana specs record --file .specs/state/worker-specs-handoff.json` (or
+    `node bin/guarana.js specs record --file .specs/state/worker-specs-handoff.json`).
+    This recorder invocation (or the documented node equivalent) is the only
+    permitted shell use. Do not run git status/rev-parse preflight, stdin,
+    heredocs, or any other shell command. The command deletes the
    temporary handoff on completion. It owns mechanical tracker, checkpoint,
    status, and receipt formatting; do not manually edit those fields. Retain
    responsibility for semantic requirements, acceptance criteria, factual

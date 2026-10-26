@@ -3984,6 +3984,9 @@ table.ledger.runs-table {
   main.app-main {
     padding: 1rem 0.75rem 4.5rem;
   }
+  main.app-main:has(.ov) {
+    padding-bottom: 0;
+  }
   .ov-ledger {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -4698,14 +4701,34 @@ table.ledger.runs-table {
 .ov-injection-record-intent { min-width: 0; overflow-wrap: anywhere; font-size: 0.62rem; line-height: 1.25; }
 .ov-injection-record-unavailable { grid-column: 1 / -1; font-size: 0.55rem; line-height: 1.2; opacity: 0.68; }
 
+.ov-graphs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(0.4rem, 1vw, 0.8rem);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .ov-graph { overflow: hidden; }
+.ov-graph .ov-panel-head { align-items: start; }
+.ov-graph .ov-panel-head h2 { min-width: 0; overflow-wrap: anywhere; }
+.ov-graph .ov-panel-head > span { white-space: normal; text-align: right; }
+.ov-graph--project { --ov-scope-accent: var(--leaf); }
+.ov-graph--global { --ov-scope-accent: var(--global-accent); }
 .ov-map-help { flex: 0 0 auto; margin: 0 0 0.35rem; font-size: 0.65rem; line-height: 1.35; opacity: 0.72; }
+.ov-map-modes { display: flex; flex: 0 0 auto; gap: 0; margin: 0 0 0.35rem; border-bottom: 1px solid var(--hairline); }
+.ov-map-modes button { border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--ink); padding: 0.18rem 0.38rem; font: 0.57rem var(--mono); cursor: pointer; }
+.ov-map-modes button[aria-pressed="true"] { border-bottom-color: var(--ov-scope-accent); color: var(--ov-scope-accent); }
+.ov-map-modes button:hover { color: var(--guarana); }
+.ov-map-modes button:focus-visible { outline: 2px solid var(--guarana); outline-offset: -2px; }
 
 .ov-map-viewport {
-  flex: 0 1 auto;
+  flex: 0 0 clamp(7rem, 21vh, 12rem);
   min-width: 0;
-  min-height: 8rem;
-  max-height: min(40vh, 350px);
+  min-height: 0;
+  height: clamp(7rem, 21vh, 12rem);
+  max-height: none;
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
@@ -4716,8 +4739,11 @@ table.ledger.runs-table {
 .ov-map-viewport:focus-visible { outline: 2px solid var(--guarana); outline-offset: 2px; }
 .ov-map-canvas { position: relative; flex: none; }
 .ov-map-edges { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
-.ov-map-edge { stroke: var(--rule); stroke-width: 1.5; }
+.ov-map-edge { fill: none; stroke: var(--ov-scope-accent, var(--rule)); stroke-width: 1.5; }
 .ov-map-edge--global { stroke: var(--global-accent); stroke-dasharray: 4 3; }
+.ov-map-arrow--project { fill: var(--leaf); }
+.ov-map-arrow--global { fill: var(--global-accent); }
+.ov-map-edge-label { fill: var(--ink); font: 7px var(--mono); paint-order: stroke; stroke: var(--paper); stroke-width: 3px; stroke-linejoin: round; }
 
 .ov-map-node {
   position: absolute;
@@ -4746,6 +4772,7 @@ table.ledger.runs-table {
 .ov-map-injected-mark { position: absolute; top: -0.25rem; right: -0.2rem; color: var(--amber); font-size: 0.75rem; text-shadow: 0 0 2px var(--paper); }
 
 .ov-memory-detail {
+  flex: 1 1 0;
   min-height: 0;
   margin-top: 0.4rem;
   padding-top: 0.35rem;
@@ -4773,8 +4800,7 @@ table.ledger.runs-table {
   .ov-workbench { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 0.35rem; }
   .ov-operations { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1.2fr) minmax(0, 0.8fr); gap: 0.2rem 0.75rem; }
   .ov-injection { grid-column: 1 / -1; }
-  .ov-map-viewport { max-height: 20vh; min-height: 6.5rem; }
-  .ov-memory-detail { flex: 1 1 auto; }
+  .ov-map-viewport { flex-basis: clamp(6rem, 13vh, 7.5rem); height: clamp(6rem, 13vh, 7.5rem); }
 }
 
 @media (max-width: 420px) {
@@ -4787,7 +4813,10 @@ table.ledger.runs-table {
   .ov-state { font-size: 0.63rem; }
   .ov-injection-record { gap: 0.06rem 0.3rem; padding: 0.14rem 0.1rem; }
   .ov-worker-list li { padding: 0.2rem 0.1rem; }
-  .ov-map-viewport { max-height: 18vh; min-height: 6rem; }
+  .ov-map-modes button { padding: 0.16rem 0.28rem; font-size: 0.52rem; }
+  .ov-map-help { font-size: 0.58rem; }
+  .ov-map-viewport { flex-basis: clamp(5.8rem, 12vh, 6.5rem); height: clamp(5.8rem, 12vh, 6.5rem); }
+  .ov-graph .ov-panel-head h2 { font-size: 0.61rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {

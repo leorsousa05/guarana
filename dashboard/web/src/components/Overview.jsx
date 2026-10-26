@@ -10,6 +10,11 @@ const SAFE_AGENT = /^[A-Za-z0-9_-]{1,48}$/;
 const SECRET_LIKE = /sk-[A-Za-z0-9]|gh[pousr]_[A-Za-z0-9]+|api[_-]?key|token|password|secret|bearer/i;
 const MEMORY_TYPES = new Set(['decision', 'bug', 'solution', 'refactor', 'preference', 'supernode', 'atom']);
 const EMPTY_MEMORIES = [];
+export const OVERVIEW_GRAPH_ENDPOINTS = {
+  project: '/api/memory/graph?scope=project',
+  global: '/api/memory/graph?scope=global',
+};
+const MEMORY_SCOPES = ['project', 'global'];
 const INJECTION_REASON_LABELS = {
   'session-start': 'session start',
   compacted: 'after context compacted',
@@ -55,35 +60,38 @@ export function projectOverviewWorkers(state) {
   });
 }
 
-export function overviewGraphModel(graphData, injectedMemories = []) {
+export function overviewGraphModel(graphData, scope, injectedMemories = []) {
   const safeNodes = (Array.isArray(graphData?.nodes) ? graphData.nodes : [])
     .filter((node) => node?.status === 'confirmed'
-      && ['project', 'global'].includes(node.scope)
+      && node.scope === scope
+      && (scope !== 'global' || node.type === 'preference')
       && typeof node.id === 'string'
       && MEMORY_TYPES.has(node.type));
   const safeEdges = (Array.isArray(graphData?.edges) ? graphData.edges : [])
-    .filter((edge) => ['project', 'global'].includes(edge?.scope)
+    .filter((edge) => edge?.scope === scope
       && typeof edge.from === 'string' && typeof edge.to === 'string'
       && typeof edge.rel === 'string');
   const qualified = qualifyMemoryGraph(safeNodes, safeEdges);
   const injected = new Set((Array.isArray(injectedMemories) ? injectedMemories : [])
-    .filter((node) => ['project', 'global'].includes(node?.scope) && typeof node.id === 'string')
+    .filter((node) => node?.scope === scope && typeof node.id === 'string')
     .map((node) => `${node.scope}:${node.id}`));
+  const nodeIds = new Set(qualified.nodes.map((node) => node.id));
   return {
     nodes: qualified.nodes,
     edges: qualified.edges.filter((edge) => qualified.nodes.some((node) => node.id === edge.from)
       && qualified.nodes.some((node) => node.id === edge.to)),
-    injected,
+    injected: new Set([...injected].filter((id) => nodeIds.has(id))),
   };
 }
 
-export function overviewSelectionEpoch(root, injection) {
+export function overviewSelectionEpoch(root, injection, scope) {
   const references = (Array.isArray(injection?.memories) ? injection.memories : [])
-    .map((memory) => ['project', 'global'].includes(memory?.scope) && typeof memory.id === 'string'
+    .map((memory) => memory?.scope === scope && typeof memory.id === 'string'
       ? `${memory.scope}:${memory.id}`
       : null);
+  const scopedReferences = references.filter(Boolean);
   // Keep the root identity internal to selection state; it is never rendered into the DOM.
-  return JSON.stringify([root?.sessionID || null, injection?.ts ?? null, references]);
+  return JSON.stringify([root?.sessionID || null, scopedReferences]);
 }
 
 export function defaultOverviewSelection(model) {
@@ -183,10 +191,9 @@ function AdvisorPanel({ summary, summaryError, summaryLoading, history }) {
   );
 }
 
-function InjectionPanel({ state, summary, summaryError, injection, graphState, model, selectedId, onSelect }) {
+function InjectionPanel({ state, summary, summaryError, injection, graphStates, models, selectedIds, onSelect }) {
   const root = activeRootFromTelemetry(summary);
   const memories = Array.isArray(injection?.memories) ? injection.memories : [];
-  const nodesById = new Map(model.nodes.map((node) => [node.id, node]));
 
   let message;
   if (summaryError) message = 'Active root unavailable because telemetry could not be loaded.';
@@ -211,9 +218,15 @@ function InjectionPanel({ state, summary, summaryError, injection, graphState, m
               const type = MEMORY_TYPES.has(memory?.type) || memory?.type === 'unknown' ? memory.type : null;
               const intent = typeof memory?.intent === 'string' && memory.intent.trim() ? memory.intent : null;
               const graphId = scope && typeof memory?.id === 'string' ? `${scope}:${memory.id}` : null;
+              const graphState = scope ? graphStates[scope] : null;
+              const model = scope ? models[scope] : null;
+              const selectedId = scope ? selectedIds[scope] : null;
+              const nodesById = new Map((model?.nodes || []).map((node) => [node.id, node]));
               const graphError = Boolean(graphState?.error || graphState?.data?.error);
               const graphNode = !graphError && graphState?.data && graphId ? nodesById.get(graphId) : null;
-              const graphUnavailable = graphError
+              const graphUnavailable = !scope || !graphState
+                ? 'Not available in graph.'
+                : graphError
                 ? 'Graph unavailable.'
                   : !graphState?.data ? 'Waiting for graph data.'
                     : !graphNode ? 'Not available in graph.' : null;
@@ -225,7 +238,7 @@ function InjectionPanel({ state, summary, summaryError, injection, graphState, m
                 <button type="button" className="ov-injection-record" disabled={!graphNode}
                   aria-label={`Select injected ${accessibleName}${graphUnavailable ? `; ${graphUnavailable}` : ''}`}
                   aria-pressed={Boolean(graphNode && selectedId === graphNode.id)}
-                  onClick={() => graphNode && onSelect(graphNode.id)}>
+                  onClick={() => graphNode && onSelect(scope, graphNode.id)}>
                   <span className={`ov-injection-record-scope${scope ? ` memory-scope memory-scope--${scope}` : ''}`}>{recordScope}</span>
                   <span className="ov-injection-record-type">{recordType}</span>
                   <strong className="ov-injection-record-intent">{recordName}</strong>
@@ -268,17 +281,18 @@ function SelectedMemory({ node, edges, nodesById, onSelect }) {
   );
 }
 
-function ReadOnlyMemoryGraph({ graphState, model, selectedId, onSelect }) {
+function ReadOnlyMemoryGraph({ scope, title, graphState, model, selectedId, onSelect }) {
   const [focusedId, setFocusedId] = useState(null);
+  const [viewMode, setViewMode] = useState('network');
   const viewportRef = useRef(null);
   const canvasRef = useRef(null);
   const initialCenterApplied = useRef(false);
-  const layout = useMemo(() => layoutMemoryBubbles(model.nodes, model.edges, selectedId, 'network'), [model, selectedId]);
+  const layout = useMemo(() => layoutMemoryBubbles(model.nodes, model.edges, selectedId, viewMode), [model, selectedId, viewMode]);
   const nodesById = useMemo(() => new Map(model.nodes.map((node) => [node.id, node])), [model.nodes]);
   const selectedNode = nodesById.get(selectedId);
   const positioned = new Map(layout.nodes.map((node) => [node.id, { ...node, injected: model.injected.has(node.id) }]));
   const graphError = Boolean(graphState?.error || graphState?.data?.error);
-  const focusId = layout.nodes.some((node) => node.id === focusedId) ? focusedId : selectedId;
+  const focusId = layout.nodes.some((node) => node.id === focusedId) ? focusedId : layout.selected;
 
   useEffect(() => {
     if (initialCenterApplied.current || graphError || !graphState?.data || !layout.nodes.length) return;
@@ -291,27 +305,70 @@ function ReadOnlyMemoryGraph({ graphState, model, selectedId, onSelect }) {
     initialCenterApplied.current = true;
   }, [graphError, graphState?.data, layout.nodes.length, layout.width, layout.height]);
 
+  useEffect(() => {
+    if (!focusedId || layout.nodes.some((node) => node.id === focusedId)) return;
+    const activeElement = typeof document === 'undefined' ? null : document.activeElement;
+    const focusWasInMap = activeElement?.closest?.('.ov-map-viewport') === viewportRef.current;
+    setFocusedId(layout.selected);
+    if (focusWasInMap && layout.selected) {
+      [...(viewportRef.current?.querySelectorAll('.ov-map-node') || [])]
+        .find((candidate) => candidate.dataset.memoryId === layout.selected)?.focus();
+    }
+  }, [focusedId, layout.nodes, layout.selected]);
+
   return (
-    <section className="ov-panel ov-graph" aria-labelledby="ov-graph-title">
+    <section className={`ov-panel ov-graph ov-graph--${scope}`} aria-labelledby={`ov-graph-title-${scope}`}>
       <header className="ov-panel-head">
-        <h2 id="ov-graph-title">Memory graph <span className="ov-read-only">read-only</span></h2>
+        <h2 id={`ov-graph-title-${scope}`}>{title} <span className="ov-read-only">read-only</span></h2>
         {model.nodes.length > 0 && <span>{model.nodes.length} nodes · {model.edges.length} links</span>}
       </header>
       {graphError ? <p className="ov-state" role="status">Memory graph unavailable.</p>
-        : !graphState?.data ? <p className="ov-state" role="status">Loading memory graph…</p>
-          : !layout.nodes.length ? <p className="ov-state" role="status">No confirmed memories available.</p> : (
+        : !graphState?.data ? <p className="ov-state" role="status">Loading {scope} memory graph…</p>
+          : !model.nodes.length ? <p className="ov-state" role="status">No confirmed {scope === 'global' ? 'preferences' : 'memories'} available.</p> : (
             <>
               <p className="ov-map-help">Select a node to inspect its summary and direct relationships. Injected nodes are marked in amber.</p>
-              <div ref={viewportRef} className="ov-map-viewport" role="region" aria-label="Read-only memory graph; scroll within this region to navigate" tabIndex={0}>
+              <div className="ov-map-modes" role="group" aria-label={`${title} graph view mode`}>
+                {['network', 'neighborhood'].map((mode) => <button key={mode} type="button"
+                  aria-pressed={viewMode === mode} onClick={() => setViewMode(mode)}>
+                  {mode === 'network' ? 'Network' : 'Neighborhood'}
+                </button>)}
+              </div>
+              <div ref={viewportRef} className="ov-map-viewport" role="region" aria-label={`Read-only ${title.toLowerCase()} map; scroll within this region to navigate`} tabIndex={0}>
                 <div ref={canvasRef} className="ov-map-canvas" style={{ width: layout.width, height: layout.height }}>
                   <svg className="ov-map-edges" width={layout.width} height={layout.height} aria-hidden="true" focusable="false">
+                    <defs>
+                      <marker id={`ov-map-arrow-${scope}`} markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" markerUnits="strokeWidth">
+                        <path d="M0,0 L7,3.5 L0,7 z" className={`ov-map-arrow--${scope}`} />
+                      </marker>
+                    </defs>
                     {layout.edges.map((edge, index) => {
                       const from = positioned.get(edge.from);
                       const to = positioned.get(edge.to);
                       if (!from || !to) return null;
-                      return <line key={`${edge.scope}:${edge.from}:${edge.to}:${edge.rel}:${index}`}
-                        className={`ov-map-edge ov-map-edge--${edge.scope}`}
-                        x1={from.x} y1={from.y} x2={to.x} y2={to.y} />;
+                      if (edge.from === edge.to) {
+                        return <g key={`${edge.scope}:${edge.from}:${edge.to}:${edge.rel}:${index}`}>
+                          <path className={`ov-map-edge ov-map-edge--${edge.scope}`}
+                            d={`M ${from.x + 8} ${from.y - from.diameter / 2} C ${from.x + 52} ${from.y - from.diameter / 2 - 48}, ${from.x + 62} ${from.y - from.diameter / 2 + 12}, ${from.x + 16} ${from.y - from.diameter / 2 + 4}`}
+                            markerEnd={`url(#ov-map-arrow-${scope})`} />
+                          <text className={`ov-map-edge-label ov-map-edge-label--${scope}`}
+                            x={from.x + 34} y={from.y - from.diameter / 2 - 34} textAnchor="middle">{edge.rel}</text>
+                        </g>;
+                      }
+                      const dx = to.x - from.x;
+                      const dy = to.y - from.y;
+                      const distance = Math.hypot(dx, dy) || 1;
+                      const start = from.diameter / 2;
+                      const end = to.diameter / 2 + 3;
+                      const x1 = from.x + dx / distance * start;
+                      const y1 = from.y + dy / distance * start;
+                      const x2 = to.x - dx / distance * end;
+                      const y2 = to.y - dy / distance * end;
+                      return <g key={`${edge.scope}:${edge.from}:${edge.to}:${edge.rel}:${index}`}>
+                        <line className={`ov-map-edge ov-map-edge--${edge.scope}`}
+                          x1={x1} y1={y1} x2={x2} y2={y2} markerEnd={`url(#ov-map-arrow-${scope})`} />
+                        <text className={`ov-map-edge-label ov-map-edge-label--${scope}`}
+                          x={(x1 + x2) / 2} y={(y1 + y2) / 2 - 3} textAnchor="middle">{edge.rel}</text>
+                      </g>;
                     })}
                   </svg>
                   {layout.nodes.map((node) => {
@@ -336,31 +393,50 @@ function ReadOnlyMemoryGraph({ graphState, model, selectedId, onSelect }) {
                   })}
                 </div>
               </div>
-             <SelectedMemory node={selectedNode ? { ...selectedNode, injected: model.injected.has(selectedNode.id) } : null}
-                 edges={model.edges} nodesById={nodesById} onSelect={onSelect} />
+              <SelectedMemory node={selectedNode ? { ...selectedNode, injected: model.injected.has(selectedNode.id) } : null}
+                  edges={model.edges} nodesById={nodesById} onSelect={onSelect} />
             </>
           )}
     </section>
   );
 }
 
-export function OverviewContent({ summary, summaryError, summaryLoading, workflow, workflowLoading, workflowError, state, workers, advisorHistory, injections, graph }) {
+export function OverviewContent({ summary, summaryError, summaryLoading, workflow, workflowLoading, workflowError, state, workers, advisorHistory, injections, projectGraph, globalGraph }) {
   const root = activeRootFromTelemetry(summary);
   const injection = !injections?.error && !injections?.data?.error
     ? latestInjectionForRoot(injections?.data?.injections, root)
     : null;
   const injectedMemories = injection?.memories || EMPTY_MEMORIES;
-  const model = useMemo(() => overviewGraphModel(graph?.data || {}, injectedMemories), [graph?.data, injectedMemories]);
-  const epoch = overviewSelectionEpoch(root, injection);
-  const [selection, setSelection] = useState(null);
-  const selectedId = resolveOverviewSelection(model, selection, epoch);
-  const onSelect = (id) => setSelection(selectOverviewMemory(epoch, id));
+  const graphStates = { project: projectGraph, global: globalGraph };
+  const models = {
+    project: useMemo(() => overviewGraphModel(projectGraph?.data || {}, 'project', injectedMemories), [projectGraph?.data, injectedMemories]),
+    global: useMemo(() => overviewGraphModel(globalGraph?.data || {}, 'global', injectedMemories), [globalGraph?.data, injectedMemories]),
+  };
+  const epochs = {
+    project: overviewSelectionEpoch(root, injection, 'project'),
+    global: overviewSelectionEpoch(root, injection, 'global'),
+  };
+  const [selections, setSelections] = useState({ project: null, global: null });
+  const selectedIds = Object.fromEntries(MEMORY_SCOPES.map((scope) => [scope,
+    resolveOverviewSelection(models[scope], selections[scope], epochs[scope])]));
+  const onSelect = (scope, id) => {
+    if (!MEMORY_SCOPES.includes(scope) || !models[scope].nodes.some((node) => node.id === id)) return;
+    setSelections((current) => ({ ...current, [scope]: selectOverviewMemory(epochs[scope], id) }));
+  };
 
   useEffect(() => {
-    if (selection?.epoch !== epoch || selection.id !== selectedId) {
-      setSelection(selectOverviewMemory(epoch, selectedId));
-    }
-  }, [epoch, selectedId, selection]);
+    setSelections((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const scope of MEMORY_SCOPES) {
+        if (current[scope]?.epoch !== epochs[scope] || current[scope]?.id !== selectedIds[scope]) {
+          next[scope] = selectOverviewMemory(epochs[scope], selectedIds[scope]);
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [epochs.project, epochs.global, selectedIds.project, selectedIds.global]);
 
   return (
     <div className="ov" aria-label="Overview">
@@ -370,9 +446,14 @@ export function OverviewContent({ summary, summaryError, summaryLoading, workflo
           <WorkersPanel state={workers} />
           <AdvisorPanel summary={summary} summaryError={summaryError} summaryLoading={summaryLoading} history={advisorHistory} />
           <InjectionPanel state={injections} summary={summary} summaryError={summaryError} injection={injection}
-            graphState={graph} model={model} selectedId={selectedId} onSelect={onSelect} />
+            graphStates={graphStates} models={models} selectedIds={selectedIds} onSelect={onSelect} />
         </div>
-        <ReadOnlyMemoryGraph graphState={graph} model={model} selectedId={selectedId} onSelect={onSelect} />
+        <div className="ov-graphs" role="group" aria-label="Scoped memory knowledge maps">
+          <ReadOnlyMemoryGraph scope="project" title="Project knowledge" graphState={projectGraph} model={models.project}
+            selectedId={selectedIds.project} onSelect={(id) => onSelect('project', id)} />
+          <ReadOnlyMemoryGraph scope="global" title="User preferences" graphState={globalGraph} model={models.global}
+            selectedId={selectedIds.global} onSelect={(id) => onSelect('global', id)} />
+        </div>
       </div>
     </div>
   );
@@ -382,6 +463,7 @@ export function Overview({ summary, summaryError, summaryLoading, state, workflo
   const workers = usePoll('/api/opencode/active-subagents', 5000, tick);
   const advisorHistory = usePoll('/api/telemetry/advisor-history?limit=40', 5000, tick);
   const injections = usePoll('/api/memory/injections?limit=40', 5000, tick);
-  const graph = usePoll('/api/memory/graph', 15000, tick);
-  return <OverviewContent {...{ summary, summaryError, summaryLoading, state, workflow, workflowError, workflowLoading, workers, advisorHistory, injections, graph }} />;
+  const projectGraph = usePoll(OVERVIEW_GRAPH_ENDPOINTS.project, 15000, tick);
+  const globalGraph = usePoll(OVERVIEW_GRAPH_ENDPOINTS.global, 15000, tick);
+  return <OverviewContent {...{ summary, summaryError, summaryLoading, state, workflow, workflowError, workflowLoading, workers, advisorHistory, injections, projectGraph, globalGraph }} />;
 }
