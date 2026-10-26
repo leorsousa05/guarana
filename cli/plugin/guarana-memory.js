@@ -141,10 +141,15 @@ export const GuaranaMemory = async ({ directory }) => {
     scope === 'global' ? e.vault.initUserVault() : e.vault.initVault(directory);
 
   const mergeContexts = (projectContext, globalContext, globalPreferences, limit) => {
-    const out = { decisions: [], bugs: [], solutions: [], refactors: [], preferences: [], superseded: [], atoms: [] };
+    const out = {
+      decisions: [], bugs: [], solutions: [], refactors: [], preferences: [],
+      relatedPreferences: [], relatedSuperseded: [], superseded: [], atoms: [],
+    };
     const keys = Object.keys(out);
     const candidates = [
       ...(globalPreferences.preferences || []).map((node) => ({ node, group: 'preferences' })),
+      ...(globalPreferences.relatedPreferences || []).map((node) => ({ node, group: 'relatedPreferences' })),
+      ...(globalPreferences.relatedSuperseded || []).map((node) => ({ node, group: 'relatedSuperseded' })),
       ...keys.flatMap((group) => (projectContext[group] || []).map((node) => ({ node, group }))),
       ...keys.flatMap((group) => (globalContext[group] || []).map((node) => ({ node, group }))),
     ];
@@ -194,7 +199,7 @@ export const GuaranaMemory = async ({ directory }) => {
         const [projectContext, globalContext, preferences] = await Promise.all([
           e.tools.memoryGetContextForTask(projectVault, { ...options, limit }),
           e.tools.memoryGetContextForTask(globalVault, { ...options, limit }),
-          e.tools.memoryGetGlobalPreferences(globalVault, { limit: Math.min(5, limit) }),
+          e.tools.memoryGetGlobalPreferences(globalVault, { limit }),
         ]);
         for (const group of Object.keys(projectContext)) {
           if (Array.isArray(projectContext[group]))
@@ -205,6 +210,20 @@ export const GuaranaMemory = async ({ directory }) => {
             globalContext[group] = globalContext[group].map((node) => ({ ...node, scope: 'global' }));
         }
         return JSON.stringify(mergeContexts(projectContext, globalContext, preferences, limit));
+      }
+
+      if (handlerName === 'memoryGetContextForTask' && scope === 'global') {
+        const globalVault = e.vault.initUserVault();
+        const limit = Number.isInteger(options.limit) && options.limit > 0 ? options.limit : 10;
+        const [globalContext, preferences] = await Promise.all([
+          e.tools.memoryGetContextForTask(globalVault, { ...options, limit }),
+          e.tools.memoryGetGlobalPreferences(globalVault, { limit }),
+        ]);
+        for (const group of Object.keys(globalContext)) {
+          if (Array.isArray(globalContext[group]))
+            globalContext[group] = globalContext[group].map((node) => ({ ...node, scope: 'global' }));
+        }
+        return JSON.stringify(mergeContexts({}, globalContext, preferences, limit));
       }
 
       const vaultDir = scopedDelete

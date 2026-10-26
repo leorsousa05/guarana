@@ -6,6 +6,9 @@ Entry format: date · feature · what validated / failed / re-opened · proof pa
 
 ## Records
 
+### 2026-10-26 — memory
+- [Global preference context tool groups](2026-10-26-global-preference-context-tool-groups.md) — independent worker-verify overall PASS; focused suite 16/16; VALIDATED, not shipped; follow-up push pending, no npm publication or tag
+
 ### 2026-10-25 — dashboard Settings
 - [Advisor model variant discovery via model.list](2026-10-25-advisor-variant-discovery-model-list.md) — fresh independent worker-verify PASS (5/5); bounded project-scoped model.list and six sanitized live IDs verified on installed OpenCode v2.1.3 only; VALIDATED, not shipped
 

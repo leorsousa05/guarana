@@ -31,6 +31,8 @@ The TASKED [global `workflow_tick` runtime deployment](orchestrator/global-workf
 
 The existing [persistent memory feature](memory/memory.md) remains VALIDATED. Its separate [memory hardening follow-up](memory/memory-hardening.md) is now VALIDATED after fresh independent worker-verify returned overall PASS for all eight acceptance criteria. The accepted capture, confirmed-node erasure, retrieval, and bounded-trust context decisions remain recorded in [ADR-038](../decisions/ADR-038-safe-bounded-memory-context.md); no shipping is claimed.
 
+The bounded [global preference context tool groups](memory/global-preference-context-groups.md) follow-up is VALIDATED, not SHIPPED. Explicit `memory_get_context_for_task` results keep direct, active-related, and reached superseded global preferences in separate groups; proof is in the [2026-10-26 change record](../changes/2026-10-26-global-preference-context-tool-groups.md). Push remains pending; no npm publication or tag is claimed.
+
 ## Release assurance
 The [release-readiness feature](release/release-readiness.md) defines the supported Node/OpenCode contract, reproducible npm packaging, and automated CI matrix. [Smoke-test retirement](release/smoke-test-retirement.md) states that package/release/OpenCode-host smoke tests MUST NOT be run or reintroduced; `npm pack --dry-run --json` remains package-content inspection only. The TASKED [Guarana 1.5.0 version-bump candidate](release/version-bump-1-5-0.md) records the authorized local unpublished version metadata for the validated [blocker-recovery and atomic-kickoff feature](orchestrator/blocker-recovery-and-atomic-kickoff.md); publication, tagging, commit, and push are excluded.
 
