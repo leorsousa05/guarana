@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-10-26T21:43:02.490Z
+Last updated: 2026-10-26T21:59:01.539Z
 
 ## Per-skill status
 | Skill | Status |
@@ -24,7 +24,7 @@ Last updated: 2026-10-26T21:43:02.490Z
 | Guarana optional model advisor | **VALIDATED** — UI criteria 11–14 and ADR-027 runtime proof |
 
 ## Current step
-VALIDATED: Dashboard Overview memory scope graphs passed independent worker-verify for all six acceptance criteria. Details are recorded in .specs/changes/2026-10-26-dashboard-overview-memory-scope-graphs.md. No shipping occurred.
+SHIPPED: Dashboard Overview memory scope graphs are confirmed on origin/main at 037a315a4fcdf302a8dabcfe08d2e823d35a54d3 by normal push; no tag, npm publication, GitHub Release, or package release occurred.
 
 ## Bounded feature validation — Dashboard Overview operational workbench — 2026-10-24
 

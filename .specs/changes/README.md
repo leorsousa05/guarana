@@ -7,7 +7,7 @@ Entry format: date · feature · what validated / failed / re-opened · proof pa
 ## Records
 
 ### 2026-10-26 — dashboard Overview
-- [Dashboard Overview memory scope graphs](2026-10-26-dashboard-overview-memory-scope-graphs.md) — fresh independent worker-verify overall PASS (6/6); synthetic-fixture Chromium proof at 1440x900 and 375x812 with no overflow; VALIDATED, not shipped; no API/server/schema changes
+- [Dashboard Overview memory scope graphs](2026-10-26-dashboard-overview-memory-scope-graphs.md) — fresh independent worker-verify overall PASS (6/6); synthetic-fixture Chromium proof at 1440x900 and 375x812 with no overflow; source SHIPPED on `origin/main` at `037a315a4fcdf302a8dabcfe08d2e823d35a54d3` by normal push; no API/server/schema changes, tag, npm publication, GitHub Release, or package release
 
 ### 2026-10-25 — dashboard Memory
 - [Dashboard Memory preference graph, scope labels, and one-hop context groups](2026-10-25-dashboard-memory-preference-graph-scope-labels-one-hop-groups.md) — read-only global graph, explicit scope labels, and exactly-one-hop context groups; source shipped on origin/main; no package publication or tag, and no actual vault access or change
