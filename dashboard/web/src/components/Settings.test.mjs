@@ -41,10 +41,10 @@ test('Settings SSR combines Models with scoped workflow and web preferences, eff
       },
     },
     workflowSettings: {
-      global: { verify: { enabled: false } },
-      project: { specs: { enabled: false } },
-      effective: { specs: { enabled: false }, verify: { enabled: false } },
-      sources: { specs: 'project', verify: 'global' },
+      global: { verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 4096 } },
+      project: { specs: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 1024 } },
+      effective: { specs: { enabled: false }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 1024 } },
+      sources: { specs: 'project', verify: 'global', memory: { preferenceInjectionBudgetTokens: 'project' } },
     },
   }));
 
@@ -58,6 +58,10 @@ test('Settings SSR combines Models with scoped workflow and web preferences, eff
   assert.match(html, /Editing Project changes this checkout only/);
   assert.match(html, /<label[^>]*for="settings-workflow-specs"[^>]*><span>Specs \+ worker-specs<\/span>/);
   assert.match(html, /<label[^>]*for="settings-workflow-verify"[^>]*><span>Independent verification<\/span>/);
+  assert.match(html, /id="settings-workflow-memory-preferenceInjectionBudgetTokens" type="number" min="1" step="1"/);
+  assert.match(html, /Global preference injection budget \(tokens\)/);
+  assert.match(html, /Effective: 1024 tokens · Source: Project/);
+  assert.match(html, /UTF-8 serialized byte length is compared with the token budget as an estimate/);
   assert.match(html, /Effective: disabled · Source: Project/);
   assert.match(html, /Effective: disabled · Source: Global/);
   assert.match(html, /id="settings-web-appearance-theme"/);
@@ -72,6 +76,7 @@ test('Settings SSR combines Models with scoped workflow and web preferences, eff
   assert.match(html, /Server port and auto-open changes apply on the next guarana web invocation/);
   assert.match(html, /Clear project override/);
   assert.match(html, /aria-label="Clear project override for Specs \+ worker-specs"/);
+  assert.match(html, /aria-label="Clear project override for preference injection budget"/);
   assert.match(html, /aria-label="Clear project override for Start page"/);
   assert.match(html, /Save Project web preferences/);
   assert.doesNotMatch(html, /Save Global/);
@@ -103,7 +108,7 @@ test('live refresh changes 5-second data polls while fixed configuration polls r
 test('scoped Settings requests send only the selected scope and clear helpers preserve other fields', async (t) => {
   const vite = await createServer({ root: webRoot, server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
   t.after(() => vite.close());
-  const { clearWebField, clearWorkflowField, putScopedSettings } = await vite.ssrLoadModule('/src/components/Settings.jsx');
+  const { clearWebField, clearWorkflowField, clearWorkflowBudgetField, putScopedSettings, setWorkflowBudgetField } = await vite.ssrLoadModule('/src/components/Settings.jsx');
 
   const calls = [];
   const request = async (url, options) => {
@@ -112,14 +117,20 @@ test('scoped Settings requests send only the selected scope and clear helpers pr
   };
   await putScopedSettings('/api/web/settings', 'global', { appearance: { theme: 'dark' } }, request);
   await putScopedSettings('/api/workflow/settings', 'project', clearWorkflowField({ specs: { enabled: false }, verify: { enabled: true } }, 'specs'), request);
+  await putScopedSettings('/api/workflow/settings', 'project', setWorkflowBudgetField({ specs: { enabled: false } }, 2048), request);
+  await putScopedSettings('/api/workflow/settings', 'project', clearWorkflowBudgetField({ memory: { preferenceInjectionBudgetTokens: 1024 }, verify: { enabled: false } }), request);
   await putScopedSettings('/api/web/settings', 'project', clearWebField({ appearance: { startPage: 'runs', theme: 'dark' }, server: { open: false } }, 'appearance', 'startPage'), request);
 
   assert.equal(calls[0].url, '/api/web/settings');
   assert.equal(calls[1].url, '/api/workflow/settings');
-  assert.equal(calls[2].url, '/api/web/settings');
+  assert.equal(calls[2].url, '/api/workflow/settings');
+  assert.equal(calls[3].url, '/api/workflow/settings');
+  assert.equal(calls[4].url, '/api/web/settings');
   assert.deepEqual(calls.map(({ body }) => body), [
     { scope: 'global', settings: { appearance: { theme: 'dark' } } },
     { scope: 'project', settings: { verify: { enabled: true } } },
+    { scope: 'project', settings: { specs: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 2048 } } },
+    { scope: 'project', settings: { verify: { enabled: false } } },
     { scope: 'project', settings: { appearance: { theme: 'dark' }, server: { open: false } } },
   ]);
   assert.ok(calls.every(({ options }) => options.method === 'PUT'));

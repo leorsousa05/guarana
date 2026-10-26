@@ -12,7 +12,8 @@ import { decide, resultFailed } from './decide.js';
 import { buildSystemBlock, buildInjection, resolveSkillBody, completionAction } from './prompt.js';
 import { ensureSpecs, taskSlug } from './specs.js';
 import {
-  clearWorkflowPreference, readWorkflowSettings, setWorkflowPreference,
+  clearPreferenceInjectionBudget, clearWorkflowPreference, readWorkflowSettings,
+  setPreferenceInjectionBudget, setWorkflowPreference,
   validateWorkflowSettings, workflowSettingsPaths, writeWorkflowSettings,
 } from './workflow-settings.js';
 
@@ -76,8 +77,14 @@ test('workflow settings default on, use isolated XDG paths, and merge fields ind
   const config = path.join(root, 'xdg');
   const options = { directory: path.join(root, 'project'), env: { XDG_CONFIG_HOME: config }, home };
   const empty = readWorkflowSettings(options);
-  assert.deepEqual(empty.effective, { specs: { enabled: true }, verify: { enabled: true } });
-  assert.deepEqual(empty.sources, { specs: 'default', verify: 'default' });
+  assert.deepEqual(empty.effective, {
+    specs: { enabled: true }, verify: { enabled: true },
+    memory: { preferenceInjectionBudgetTokens: null },
+  });
+  assert.deepEqual(empty.sources, {
+    specs: 'default', verify: 'default',
+    memory: { preferenceInjectionBudgetTokens: 'default' },
+  });
   assert.equal(workflowSettingsPaths(options).global, path.join(config, 'guarana', 'workflow.json'));
   assert.equal(workflowSettingsPaths({ directory: options.directory, env: {}, home }).global,
     path.join(home, '.config', 'guarana', 'workflow.json'));
@@ -85,20 +92,41 @@ test('workflow settings default on, use isolated XDG paths, and merge fields ind
   writeWorkflowSettings('global', { specs: { enabled: false }, verify: { enabled: false } }, options);
   writeWorkflowSettings('project', { verify: { enabled: true } }, options);
   let resolved = readWorkflowSettings(options);
-  assert.deepEqual(resolved.effective, { specs: { enabled: false }, verify: { enabled: true } });
-  assert.deepEqual(resolved.sources, { specs: 'global', verify: 'project' });
+  assert.deepEqual(resolved.effective, {
+    specs: { enabled: false }, verify: { enabled: true }, memory: { preferenceInjectionBudgetTokens: null },
+  });
+  assert.deepEqual(resolved.sources, {
+    specs: 'global', verify: 'project', memory: { preferenceInjectionBudgetTokens: 'default' },
+  });
 
   clearWorkflowPreference('project', 'verify', options);
   resolved = readWorkflowSettings(options);
-  assert.deepEqual(resolved.effective, { specs: { enabled: false }, verify: { enabled: false } });
+  assert.deepEqual(resolved.effective, {
+    specs: { enabled: false }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: null },
+  });
   assert.equal(resolved.sources.verify, 'global');
 
   writeWorkflowSettings('global', { specs: { enabled: true }, verify: { enabled: true } }, options);
   setWorkflowPreference('project', 'specs', false, options);
   resolved = readWorkflowSettings(options);
-  assert.deepEqual(resolved.effective, { specs: { enabled: false }, verify: { enabled: true } });
+  assert.deepEqual(resolved.effective, {
+    specs: { enabled: false }, verify: { enabled: true }, memory: { preferenceInjectionBudgetTokens: null },
+  });
   clearWorkflowPreference('project', 'specs', options);
   assert.equal(readWorkflowSettings(options).effective.specs.enabled, true);
+
+  setPreferenceInjectionBudget('global', 4096, options);
+  setPreferenceInjectionBudget('project', 1024, options);
+  resolved = readWorkflowSettings(options);
+  assert.equal(resolved.effective.memory.preferenceInjectionBudgetTokens, 1024);
+  assert.equal(resolved.sources.memory.preferenceInjectionBudgetTokens, 'project');
+  clearPreferenceInjectionBudget('project', options);
+  resolved = readWorkflowSettings(options);
+  assert.equal(resolved.effective.memory.preferenceInjectionBudgetTokens, 4096);
+  assert.equal(resolved.sources.memory.preferenceInjectionBudgetTokens, 'global');
+  assert.equal(JSON.parse(fs.readFileSync(workflowSettingsPaths(options).global, 'utf8'))
+    .memory.preferenceInjectionBudgetTokens, 4096);
+  assert.equal(Object.hasOwn(JSON.parse(fs.readFileSync(workflowSettingsPaths(options).project, 'utf8')), 'memory'), false);
 });
 
 test('workflow settings reject unknown sections, fields, and non-booleans without partial writes', () => {
@@ -107,6 +135,11 @@ test('workflow settings reject unknown sections, fields, and non-booleans withou
     { specs: { automatic: false } },
     { verify: { enabled: 'false' } },
     { specs: null },
+    { memory: { preferenceInjectionBudgetTokens: 0 } },
+    { memory: { preferenceInjectionBudgetTokens: -1 } },
+    { memory: { preferenceInjectionBudgetTokens: 1.5 } },
+    { memory: { preferenceInjectionBudgetTokens: '100' } },
+    { memory: { extra: 100 } },
   ]) assert.throws(() => validateWorkflowSettings(invalid), TypeError);
 
   const root = tmp();
@@ -741,7 +774,7 @@ test('coding, verification, and debugging delegate to native Task workers withou
   assert.match(blocked, /if Task is unavailable\/denied, report the blocker and stop/i);
 });
 
-test('injection includes automatic memory context when supplied', () => {
+test('automatic context preserves supplied task-relevant project memory', () => {
   const w = apply(createWorkflow(), 'new_task', { goal: 'OAuth' });
   const inj = buildInjection(w, {
     memoryContext: {
@@ -751,6 +784,7 @@ test('injection includes automatic memory context when supplied', () => {
     },
   });
   assert.match(inj, /guarana memory \(automatic context\)/);
+  assert.match(inj, /project_context/);
   assert.match(inj, /Use PKCE/);
 });
 

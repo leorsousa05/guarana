@@ -912,8 +912,12 @@ describe('GET/PUT /api/workflow/settings', () => {
     assert.deepEqual(Object.keys(initial), ['global', 'project', 'effective', 'sources']);
     assert.deepEqual(initial.global, { specs: { enabled: false } });
     assert.deepEqual(initial.project, {});
-    assert.deepEqual(initial.effective, { specs: { enabled: false }, verify: { enabled: true } });
-    assert.deepEqual(initial.sources, { specs: 'global', verify: 'default' });
+    assert.deepEqual(initial.effective, {
+      specs: { enabled: false }, verify: { enabled: true }, memory: { preferenceInjectionBudgetTokens: null },
+    });
+    assert.deepEqual(initial.sources, {
+      specs: 'global', verify: 'default', memory: { preferenceInjectionBudgetTokens: 'default' },
+    });
 
     const savedResponse = await putSettings({ settings: {
       specs: { enabled: true },
@@ -925,8 +929,8 @@ describe('GET/PUT /api/workflow/settings', () => {
       ok: true,
       global: { specs: { enabled: false } },
       project: { specs: { enabled: true }, verify: { enabled: false } },
-      effective: { specs: { enabled: true }, verify: { enabled: false } },
-      sources: { specs: 'project', verify: 'project' },
+      effective: { specs: { enabled: true }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: null } },
+      sources: { specs: 'project', verify: 'project', memory: { preferenceInjectionBudgetTokens: 'default' } },
     });
     const projectFile = path.join(root, '.guarana', 'workflow.json');
     assert.deepEqual(JSON.parse(fs.readFileSync(projectFile, 'utf8')), {
@@ -936,14 +940,22 @@ describe('GET/PUT /api/workflow/settings', () => {
     const inheritSpecs = await putSettings({ settings: { verify: { enabled: false } } });
     const inheritedSpecs = await inheritSpecs.json();
     assert.equal(inheritSpecs.status, 200);
-    assert.deepEqual(inheritedSpecs.effective, { specs: { enabled: false }, verify: { enabled: false } });
-    assert.deepEqual(inheritedSpecs.sources, { specs: 'global', verify: 'project' });
+    assert.deepEqual(inheritedSpecs.effective, {
+      specs: { enabled: false }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: null },
+    });
+    assert.deepEqual(inheritedSpecs.sources, {
+      specs: 'global', verify: 'project', memory: { preferenceInjectionBudgetTokens: 'default' },
+    });
 
     const inheritAll = await putSettings({ settings: {} });
     const inheritedAll = await inheritAll.json();
     assert.equal(inheritAll.status, 200);
-    assert.deepEqual(inheritedAll.effective, { specs: { enabled: false }, verify: { enabled: true } });
-    assert.deepEqual(inheritedAll.sources, { specs: 'global', verify: 'default' });
+    assert.deepEqual(inheritedAll.effective, {
+      specs: { enabled: false }, verify: { enabled: true }, memory: { preferenceInjectionBudgetTokens: null },
+    });
+    assert.deepEqual(inheritedAll.sources, {
+      specs: 'global', verify: 'default', memory: { preferenceInjectionBudgetTokens: 'default' },
+    });
     assert.deepEqual(fs.readFileSync(globalFile), globalBefore);
     assert.deepEqual(fs.readFileSync(globalAdvisor), globalAdvisorBefore);
     assert.deepEqual(fs.readFileSync(projectAdvisor), projectAdvisorBefore);
@@ -958,6 +970,10 @@ describe('GET/PUT /api/workflow/settings', () => {
       { settings: { unknown: { enabled: true } } },
       { settings: { specs: { enabled: true, extra: false } } },
       { settings: { verify: { enabled: 'yes' } } },
+      { settings: { memory: { preferenceInjectionBudgetTokens: 0 } } },
+      { settings: { memory: { preferenceInjectionBudgetTokens: -1 } } },
+      { settings: { memory: { preferenceInjectionBudgetTokens: 1.5 } } },
+      { settings: { memory: { preferenceInjectionBudgetTokens: '100' } } },
     ];
     for (const body of invalidBodies) {
       const response = await putSettings(body);
@@ -1018,10 +1034,44 @@ describe('GET/PUT /api/workflow/settings', () => {
     const projectBody = await projectResponse.json();
     assert.deepEqual(projectBody.global, { specs: { enabled: false } });
     assert.deepEqual(projectBody.project, { verify: { enabled: false } });
-    assert.deepEqual(projectBody.effective, { specs: { enabled: false }, verify: { enabled: false } });
+    assert.deepEqual(projectBody.effective, {
+      specs: { enabled: false }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: null },
+    });
+    assert.deepEqual(projectBody.sources.memory, { preferenceInjectionBudgetTokens: 'default' });
     assert.deepEqual(fs.readFileSync(globalFile), Buffer.from('{\n  "specs": {\n    "enabled": false\n  }\n}\n'));
     assert.deepEqual(fs.readFileSync(globalAdvisor), globalAdvisorBefore);
     assert.deepEqual(fs.readFileSync(projectAdvisor), projectAdvisorBefore);
+  });
+
+  it('persists positive token budgets by scope, inherits global values, and clears project overrides', async () => {
+    const globalFile = path.join(xdg, 'guarana', 'workflow.json');
+    const projectFile = path.join(root, '.guarana', 'workflow.json');
+    const globalResponse = await putSettings({ scope: 'global', settings: {
+      memory: { preferenceInjectionBudgetTokens: 8192 },
+    } });
+    assert.equal(globalResponse.status, 200);
+    assert.deepEqual(JSON.parse(fs.readFileSync(globalFile, 'utf8')), {
+      memory: { preferenceInjectionBudgetTokens: 8192 },
+    });
+
+    const projectResponse = await putSettings({ settings: {
+      memory: { preferenceInjectionBudgetTokens: 2048 },
+    } });
+    const project = await projectResponse.json();
+    assert.equal(projectResponse.status, 200);
+    assert.equal(project.effective.memory.preferenceInjectionBudgetTokens, 2048);
+    assert.equal(project.sources.memory.preferenceInjectionBudgetTokens, 'project');
+    assert.deepEqual(JSON.parse(fs.readFileSync(projectFile, 'utf8')), {
+      memory: { preferenceInjectionBudgetTokens: 2048 },
+    });
+
+    const clearResponse = await putSettings({ scope: 'project', settings: {} });
+    const cleared = await clearResponse.json();
+    assert.equal(clearResponse.status, 200);
+    assert.deepEqual(JSON.parse(fs.readFileSync(projectFile, 'utf8')), {});
+    assert.equal(cleared.effective.memory.preferenceInjectionBudgetTokens, 8192);
+    assert.equal(cleared.sources.memory.preferenceInjectionBudgetTokens, 'global');
+    assert.equal(JSON.parse(fs.readFileSync(globalFile, 'utf8')).memory.preferenceInjectionBudgetTokens, 8192);
   });
 });
 

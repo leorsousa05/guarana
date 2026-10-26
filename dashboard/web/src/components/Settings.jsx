@@ -17,6 +17,7 @@ const WORKFLOW_FIELDS = [
   { name: 'specs', label: 'Specs + worker-specs' },
   { name: 'verify', label: 'Independent verification' },
 ];
+const PREFERENCE_BUDGET_FIELD = 'preferenceInjectionBudgetTokens';
 
 function copySettings(settings) {
   return Object.fromEntries(Object.entries(settings || {}).map(([key, value]) => [key, { ...value }]));
@@ -56,6 +57,23 @@ export function clearWorkflowField(settings, name) {
   return next;
 }
 
+export function setWorkflowBudgetField(settings, value) {
+  const next = copySettings(settings);
+  if (value === '') {
+    if (next.memory) {
+      delete next.memory[PREFERENCE_BUDGET_FIELD];
+      if (!Object.keys(next.memory).length) delete next.memory;
+    }
+  } else {
+    next.memory = { ...(next.memory || {}), [PREFERENCE_BUDGET_FIELD]: value };
+  }
+  return next;
+}
+
+export function clearWorkflowBudgetField(settings) {
+  return setWorkflowBudgetField(settings, '');
+}
+
 export async function putScopedSettings(endpoint, scope, settings, request = fetch) {
   const response = await request(endpoint, {
     method: 'PUT',
@@ -87,6 +105,14 @@ function workflowValue(scope, draft, global, name) {
   if (Object.hasOwn(draft?.[name] || {}, 'enabled')) return draft[name].enabled;
   if (scope === 'project' && Object.hasOwn(global?.[name] || {}, 'enabled')) return global[name].enabled;
   return true;
+}
+
+function workflowBudgetValue(scope, draft, global) {
+  if (Object.hasOwn(draft?.memory || {}, PREFERENCE_BUDGET_FIELD)) return draft.memory[PREFERENCE_BUDGET_FIELD];
+  if (scope === 'project' && Object.hasOwn(global?.memory || {}, PREFERENCE_BUDGET_FIELD)) {
+    return global.memory[PREFERENCE_BUDGET_FIELD];
+  }
+  return '';
 }
 
 function webValueLabel(field, value) {
@@ -212,12 +238,50 @@ export function Settings({
                 </div>
               );
             })}
+            {(() => {
+              const field = PREFERENCE_BUDGET_FIELD;
+              const id = `settings-workflow-memory-${field}`;
+              const effective = workflow.effective?.memory?.[field];
+              const source = workflow.sources?.memory?.[field] || 'default';
+              const value = workflowBudgetValue(workflowScope, workflowDraft, workflow.global);
+              const canClear = workflowScope === 'project' && Object.hasOwn(workflowDraft?.memory || {}, field);
+              return (
+                <div className="settings-row" key={id}>
+                  <label className="settings-control" htmlFor={id}>
+                    <span>Global preference injection budget (tokens)</span>
+                    <input
+                      id={id}
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={value}
+                      aria-describedby={`${id}-source settings-workflow-budget-note`}
+                      onChange={(event) => setWorkflowDraft((current) => setWorkflowBudgetField(
+                        current,
+                        event.currentTarget.value === '' ? '' : Number(event.currentTarget.value),
+                      ))}
+                    />
+                  </label>
+                  <p className="settings-source" id={`${id}-source`}>
+                    Effective: {effective == null ? 'model context when available' : `${effective} tokens`} · Source: {sourceLabel(source)}
+                  </p>
+                  {canClear && <button className="settings-clear" type="button" aria-label="Clear project override for preference injection budget" onClick={() => {
+                    const next = clearWorkflowBudgetField(workflowDraft);
+                    setWorkflowDraft(next);
+                    saveWorkflow('project', next);
+                  }}>Clear project override</button>}
+                </div>
+              );
+            })()}
           </fieldset>
         ) : (
           <p className="settings-loading" role={workflowSettingsError ? 'alert' : 'status'}>
             {workflowSettingsError ? `Unable to load workflow preferences: ${workflowSettingsError}` : 'Loading workflow preferences…'}
           </p>
         )}
+        <p className="settings-scope-note" id="settings-workflow-budget-note">
+          The complete preference set is injected or omitted as a whole. UTF-8 serialized byte length is compared with the token budget as an estimate, not exact tokenization or remaining conversation capacity. When unset, model context is used.
+        </p>
         {workflowSettingsError && workflow && <p className="settings-feedback settings-feedback--error" role="alert">Unable to refresh workflow preferences: {workflowSettingsError}</p>}
         {workflowFeedback && <p className={`settings-feedback settings-feedback--${workflowFeedback.type}`} role={workflowFeedback.type === 'error' ? 'alert' : 'status'}>{workflowFeedback.text}</p>}
         {workflow && <button className="settings-save" type="button" disabled={workflowSaving} onClick={() => saveWorkflow()}>{workflowSaving ? 'Saving…' : `Save ${sourceLabel(workflowScope)} workflow preferences`}</button>}

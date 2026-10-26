@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 const PREFERENCE_NAMES = ['specs', 'verify'];
+const PREFERENCE_BUDGET_FIELD = 'preferenceInjectionBudgetTokens';
 
 function assertObject(value, label) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -20,7 +21,7 @@ export function validateWorkflowSettings(settings) {
   const normalized = {};
 
   for (const section of Object.keys(settings)) {
-    if (!PREFERENCE_NAMES.includes(section)) {
+    if (![...PREFERENCE_NAMES, 'memory'].includes(section)) {
       throw new TypeError(`Unknown workflow settings section: ${section}`);
     }
   }
@@ -41,6 +42,25 @@ export function validateWorkflowSettings(settings) {
       normalized[name] = { enabled: section.enabled };
     } else {
       normalized[name] = {};
+    }
+  }
+
+  if (Object.hasOwn(settings, 'memory')) {
+    const memory = settings.memory;
+    assertObject(memory, 'Workflow settings section "memory"');
+    for (const field of Object.keys(memory)) {
+      if (field !== PREFERENCE_BUDGET_FIELD) {
+        throw new TypeError(`Unknown workflow settings field: memory.${field}`);
+      }
+    }
+    if (Object.hasOwn(memory, PREFERENCE_BUDGET_FIELD)) {
+      const budget = memory[PREFERENCE_BUDGET_FIELD];
+      if (!Number.isSafeInteger(budget) || budget <= 0) {
+        throw new TypeError(`Workflow setting memory.${PREFERENCE_BUDGET_FIELD} must be a positive integer token budget`);
+      }
+      normalized.memory = { [PREFERENCE_BUDGET_FIELD]: budget };
+    } else {
+      normalized.memory = {};
     }
   }
 
@@ -88,6 +108,16 @@ export function mergeWorkflowSettings(globalSettings, projectSettings) {
       sources[name] = 'default';
     }
   }
+
+  const projectBudget = project.memory?.[PREFERENCE_BUDGET_FIELD];
+  const globalBudget = global.memory?.[PREFERENCE_BUDGET_FIELD];
+  const budget = projectBudget ?? globalBudget ?? null;
+  effective.memory = { [PREFERENCE_BUDGET_FIELD]: budget };
+  sources.memory = {
+    [PREFERENCE_BUDGET_FIELD]: projectBudget !== undefined
+      ? 'project'
+      : globalBudget !== undefined ? 'global' : 'default',
+  };
 
   return { global, project, effective, sources };
 }
@@ -156,5 +186,25 @@ export function clearWorkflowPreference(scope, name, options = {}) {
   const file = scopeFile(scope, options);
   const current = readScope(file);
   delete current[name];
+  return writeWorkflowSettings(scope, current, options);
+}
+
+export function setPreferenceInjectionBudget(scope, budget, options = {}) {
+  if (!Number.isSafeInteger(budget) || budget <= 0) {
+    throw new TypeError(`Workflow setting memory.${PREFERENCE_BUDGET_FIELD} must be a positive integer token budget`);
+  }
+  const file = scopeFile(scope, options);
+  const current = readScope(file);
+  current.memory = { ...(current.memory || {}), [PREFERENCE_BUDGET_FIELD]: budget };
+  return writeWorkflowSettings(scope, current, options);
+}
+
+export function clearPreferenceInjectionBudget(scope, options = {}) {
+  const file = scopeFile(scope, options);
+  const current = readScope(file);
+  if (current.memory) {
+    delete current.memory[PREFERENCE_BUDGET_FIELD];
+    if (!Object.keys(current.memory).length) delete current.memory;
+  }
   return writeWorkflowSettings(scope, current, options);
 }

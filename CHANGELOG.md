@@ -120,6 +120,11 @@ separate maintainer action.
 - Activity telemetry merges late parent/agent metadata into the identified
   session without replacing its newer observed lifecycle status.
 
+## [1.5.1] - 2026-10-25 (unpublished candidate)
+
+### Added
+- Configurable fail-closed budget for lossless global preference injection.
+
 ## [1.4.0] - 2026-10-22
 
 ### Added

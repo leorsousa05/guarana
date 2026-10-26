@@ -65,15 +65,15 @@ test('workflow read reports scoped partial settings, enabled defaults, and per-f
     assert.deepEqual(parsedOutput(await invoke(['workflow', 'read'])), {
       scope: 'global',
       settings: {},
-      effective: { specs: { enabled: true }, verify: { enabled: true } },
-      sources: { specs: 'default', verify: 'default' },
+      effective: { specs: { enabled: true }, verify: { enabled: true }, memory: { preferenceInjectionBudgetTokens: null } },
+      sources: { specs: 'default', verify: 'default', memory: { preferenceInjectionBudgetTokens: 'default' } },
     });
 
     assert.deepEqual(parsedOutput(await invoke(['workflow', 'read', '--project'])), {
       scope: 'project',
       settings: {},
-      effective: { specs: { enabled: true }, verify: { enabled: true } },
-      sources: { specs: 'default', verify: 'default' },
+      effective: { specs: { enabled: true }, verify: { enabled: true }, memory: { preferenceInjectionBudgetTokens: null } },
+      sources: { specs: 'default', verify: 'default', memory: { preferenceInjectionBudgetTokens: 'default' } },
     });
     assert.deepEqual([fs.readFileSync(projectAdvisor), fs.readFileSync(globalAdvisor)], advisorBefore);
     assert.equal(fs.existsSync(path.join(project, '.guarana', 'workflow.json')), false);
@@ -90,31 +90,40 @@ test('workflow set and clear target only the selected scope and project clear re
     assert.deepEqual(await invoke(['workflow', 'set', 'verify', 'false']), {
       status: 0, stdout: 'saved workflow preference verify.enabled=false (global)\n', stderr: '',
     });
+    assert.deepEqual(await invoke(['workflow', 'set', 'memory.preferenceInjectionBudgetTokens', '4096']), {
+      status: 0, stdout: 'saved workflow preference memory.preferenceInjectionBudgetTokens=4096 (global)\n', stderr: '',
+    });
     assert.deepEqual(parsedOutput(await invoke(['workflow', 'read'])), {
       scope: 'global',
-      settings: { specs: { enabled: false }, verify: { enabled: false } },
-      effective: { specs: { enabled: false }, verify: { enabled: false } },
-      sources: { specs: 'global', verify: 'global' },
+      settings: { specs: { enabled: false }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 4096 } },
+      effective: { specs: { enabled: false }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 4096 } },
+      sources: { specs: 'global', verify: 'global', memory: { preferenceInjectionBudgetTokens: 'global' } },
     });
     assert.deepEqual(await invoke(['workflow', 'set', 'verify', 'true', '--project']), {
       status: 0, stdout: 'saved workflow preference verify.enabled=true (project)\n', stderr: '',
     });
+    assert.deepEqual(await invoke(['workflow', 'set', 'memory.preferenceInjectionBudgetTokens', '1024', '--project']), {
+      status: 0, stdout: 'saved workflow preference memory.preferenceInjectionBudgetTokens=1024 (project)\n', stderr: '',
+    });
 
     assert.deepEqual(parsedOutput(await invoke(['workflow', 'read', '--project'])), {
       scope: 'project',
-      settings: { verify: { enabled: true } },
-      effective: { specs: { enabled: false }, verify: { enabled: true } },
-      sources: { specs: 'global', verify: 'project' },
+      settings: { verify: { enabled: true }, memory: { preferenceInjectionBudgetTokens: 1024 } },
+      effective: { specs: { enabled: false }, verify: { enabled: true }, memory: { preferenceInjectionBudgetTokens: 1024 } },
+      sources: { specs: 'global', verify: 'project', memory: { preferenceInjectionBudgetTokens: 'project' } },
     });
 
     assert.deepEqual(await invoke(['workflow', 'clear', 'verify', '--project']), {
       status: 0, stdout: 'cleared workflow preference verify.enabled (project)\n', stderr: '',
     });
+    assert.deepEqual(await invoke(['workflow', 'clear', 'memory.preferenceInjectionBudgetTokens', '--project']), {
+      status: 0, stdout: 'cleared workflow preference memory.preferenceInjectionBudgetTokens (project)\n', stderr: '',
+    });
     assert.deepEqual(parsedOutput(await invoke(['workflow', 'read', '--project'])), {
       scope: 'project',
       settings: {},
-      effective: { specs: { enabled: false }, verify: { enabled: false } },
-      sources: { specs: 'global', verify: 'global' },
+      effective: { specs: { enabled: false }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 4096 } },
+      sources: { specs: 'global', verify: 'global', memory: { preferenceInjectionBudgetTokens: 'global' } },
     });
 
     await invoke(['workflow', 'set', 'specs', 'true', '--project']);
@@ -122,7 +131,7 @@ test('workflow set and clear target only the selected scope and project clear re
       status: 0, stdout: 'cleared workflow preferences (project)\n', stderr: '',
     });
     assert.deepEqual(JSON.parse(fs.readFileSync(globalFile, 'utf8')), {
-      specs: { enabled: false }, verify: { enabled: false },
+      specs: { enabled: false }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 4096 },
     });
     assert.deepEqual(JSON.parse(fs.readFileSync(projectFile, 'utf8')), {});
   });
@@ -137,6 +146,7 @@ test('workflow rejects malformed and invalid settings without overwriting them',
       ['{\n', ['workflow', 'set', 'specs', 'false', '--project'], 'workflow: malformed workflow settings JSON\n'],
       ['{"specs":{"enabled":"false"}}\n', ['workflow', 'clear', '--project'], 'workflow: Workflow setting specs.enabled must be a boolean\n'],
       ['{"advisor":{"enabled":false}}\n', ['workflow', 'read', '--project'], 'workflow: Unknown workflow settings section: advisor\n'],
+      ['{"memory":{"preferenceInjectionBudgetTokens":0}}\n', ['workflow', 'read', '--project'], 'workflow: Workflow setting memory.preferenceInjectionBudgetTokens must be a positive integer token budget\n'],
     ]) {
       fs.writeFileSync(projectFile, bytes);
       const before = fs.readFileSync(projectFile);
@@ -166,7 +176,7 @@ test('workflow argument errors and detailed help have deterministic output and n
 
     const help = await invoke(['workflow', '--help']);
     assert.deepEqual(help, { status: 0, stdout: workflow.HELP, stderr: '' });
-    assert.match(help.stdout, /guarana workflow clear \[specs\|verify\] \[--project\]/);
+    assert.match(help.stdout, /guarana workflow clear \[specs\|verify\|memory\.preferenceInjectionBudgetTokens\] \[--project\]/);
   });
 });
 

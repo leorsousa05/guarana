@@ -356,6 +356,54 @@ describe("security", () => {
     assert.equal(getNode(legacyOnly, legacy.id).priority, undefined);
   });
 
+  it("selects every eligible active global preference while preserving one-hop historical and eligibility boundaries", async () => {
+    const { memoryGetGlobalPreferences } = await import("./tools.js");
+    const globalVault = initUserVault(path.join(tmpDir, "complete-preferences-home"));
+    const active = Array.from({ length: 12 }, (_, index) => createNode(globalVault, {
+      id: `complete-pref-${String(index + 1).padStart(2, "0")}`,
+      type: "preference", status: "confirmed", scope: "global", ts: 200 - index,
+      intent: `Synthetic active preference ${index + 1}`,
+      summary: `Complete preference ${index + 1} — ${"Preserve all synthetic preference text. ".repeat(35)}`,
+      ...(index === 0 ? { tags: ["ordinary-tag", "api_key=synthetic-fixture-secret-123"] } : {}),
+    }));
+    const old = createNode(globalVault, {
+      id: "one-hop-old-pref", type: "preference", status: "confirmed", scope: "global", ts: 10,
+      intent: "synthetic historical preference", summary: "One-hop historical preference.",
+    });
+    const secondHopOld = createNode(globalVault, {
+      id: "second-hop-old-pref", type: "preference", status: "confirmed", scope: "global", ts: 9,
+      intent: "synthetic second-hop historical preference", summary: "Must remain outside the one-hop context.",
+    });
+    const ineligible = [
+      { id: "global-draft-preference", type: "preference", status: "draft", scope: "global", ts: 8, intent: "draft sentinel", summary: "Must not be selected." },
+      { id: "global-decision-not-preference", type: "decision", status: "confirmed", scope: "global", ts: 7, intent: "wrong type sentinel", summary: "Must not be selected." },
+      { id: "project-preference-in-global-vault", type: "preference", status: "confirmed", scope: "project", ts: 6, intent: "wrong scope sentinel", summary: "Must not be selected." },
+    ];
+    fs.appendFileSync(paths(globalVault).nodes, `${ineligible.map((node) => JSON.stringify(node)).join("\n")}\n`);
+    createEdge(globalVault, { from: active[0].id, to: old.id, rel: "supersedes" });
+    createEdge(globalVault, { from: old.id, to: secondHopOld.id, rel: "supersedes" });
+    fs.appendFileSync(paths(globalVault).edges, `${ineligible.map((node) => JSON.stringify({
+      from: active[0].id, to: node.id, rel: "relates-to", ts: 5,
+    })).join("\n")}\n`);
+
+    const files = [paths(globalVault).nodes, paths(globalVault).edges, paths(globalVault).config];
+    const before = files.map((file) => fs.readFileSync(file));
+    const selected = await memoryGetGlobalPreferences(globalVault, { complete: true });
+
+    assert.deepEqual(selected.preferences.map(({ id }) => id), active.map(({ id }) => id));
+    assert.equal(selected.preferences.length, 12, "complete selection exceeds the former direct-three and total-ten caps");
+    assert.deepEqual(selected.relatedPreferences, []);
+    assert.deepEqual(selected.relatedSuperseded.map(({ id }) => id), [old.id]);
+    assert.equal(selected.preferences[0].summary, active[0].summary, "selection retains long preference text in full");
+    assert.deepEqual(selected.preferences[0].tags, ["ordinary-tag"], "sensitive tag-shaped values are excluded");
+    const selectedIds = [...selected.preferences, ...selected.relatedPreferences, ...selected.relatedSuperseded]
+      .map(({ id }) => id);
+    for (const node of [...ineligible, secondHopOld]) assert.ok(!selectedIds.includes(node.id));
+    assert.ok([...selected.preferences, ...selected.relatedSuperseded]
+      .every(({ scope, type }) => scope === "global" && type === "preference"));
+    assert.deepEqual(files.map((file) => fs.readFileSync(file)), before, "selection reads leave synthetic fixture bytes unchanged");
+  });
+
   it("rejects priority on non-global preferences and unsupported priority values", async () => {
     const { memorySaveNode } = await import("./tools.js");
     for (const options of [

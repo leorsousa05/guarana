@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/leorsousa05/guarana"><img src="https://img.shields.io/github/stars/leorsousa05/guarana?style=for-the-badge&logo=github&logoColor=white&color=f59e0b" alt="GitHub stars"></a>
-  <a href="https://github.com/leorsousa05/guarana/tree/v1.5.0"><img src="https://img.shields.io/badge/tag-v1.5.0%20Stable-7c3aed?style=for-the-badge&logo=github&logoColor=white" alt="GitHub tag v1.5.0, Stable"></a>
+  <a href="https://github.com/leorsousa05/guarana/tree/main"><img src="https://img.shields.io/badge/v1.5.1%20source%20candidate-unpublished%2Funtagged-7c3aed?style=for-the-badge&logo=github&logoColor=white" alt="v1.5.1 source candidate, unpublished and untagged"></a>
   <img src="https://img.shields.io/badge/core_dependencies-zero-059669?style=for-the-badge" alt="Zero core runtime dependencies">
   <br>
   <a href="https://opencode.ai/"><img src="https://img.shields.io/badge/runtime-OpenCode-111827?style=for-the-badge" alt="OpenCode runtime"></a>
@@ -23,6 +23,9 @@
 Guarana turns an OpenCode agent into a disciplined engineering partner. Natural
 task requests automatically move through planning, implementation, verification,
 and memory, while the important state stays inspectable on disk.
+
+**Current source candidate:** `1.5.1` is unpublished and untagged. The stable
+installation instructions below remain for the `v1.5.0` tag.
 
 <p>
   <img src="https://img.shields.io/badge/released-2026--10--25-7c3aed?style=flat-square" alt="Released October 25, 2026">
@@ -176,8 +179,22 @@ overwrites existing project content.
 
 Project memories live in a gitignored vault; standing user preferences live in
 the private global vault. Guarana Web's memory graph displays both scopes with
-their relationships. Relevant confirmed memories are injected as bounded
-context; normal tool activity remains telemetry and never becomes a memory atom.
+their relationships. Relevant confirmed project memories are injected as
+bounded context; normal tool activity remains telemetry and never becomes a
+memory atom.
+
+Global preference injection preserves the complete eligible active preference
+set and full text. The entire serialized preference payload is injected or
+omitted as a whole, subject to an optional positive-integer
+`memory.preferenceInjectionBudgetTokens` setting in global
+`$XDG_CONFIG_HOME/guarana/workflow.json` (falling back to
+`~/.config/guarana/workflow.json`) or project `.guarana/workflow.json` settings.
+Project values override global values; clearing a project value restores
+inheritance. When unset, the model context limit is used if available. If
+neither source provides a usable limit, preference injection fails closed with
+an explicit notice. UTF-8 serialized byte length is compared with the token
+budget as an estimate, not exact tokenization or remaining conversation
+capacity.
 
 ## Skills
 
@@ -221,10 +238,18 @@ guarana memory review --list              Inspect legacy draft atoms
 guarana memory export <file>             Export project memory
 guarana memory import <file>             Import project memory
 
+guarana workflow set memory.preferenceInjectionBudgetTokens <positive-integer> [--project]
+                                        Set the global-preference injection budget in tokens
+guarana workflow clear memory.preferenceInjectionBudgetTokens [--project]
+                                        Clear the budget; project clear restores global inheritance
+
 guarana web [--port N] [--no-open]       Open the local dashboard
 guarana specs validate [root] [--json]   Validate a project's .specs
 guarana --help                           Show all commands
 ```
+
+The effective preference ceiling is the lower of the configured token budget
+and model context limit when both are available.
 
 Memory commands always use `.guarana/memory/` under the current working
 directory. A global `--project` before `memory` does not switch the memory

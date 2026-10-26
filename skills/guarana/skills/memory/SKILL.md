@@ -67,9 +67,17 @@ data, or raw conversation transcripts. The plugin's always-on policy remains the
 runtime authority.
 
 ## Automatic retrieval boundary
-Relevant project nodes and up to three current global preferences are injected
-automatically (ten nodes total). Global preferences apply across projects unless
-a project-specific instruction overrides them. Legacy drafts are never injected.
+Relevant project nodes and the complete eligible active global preference set
+are injected automatically subject to the preference budget. Global
+preferences apply across projects unless a project-specific instruction
+overrides them. Legacy drafts are never injected. The preference injection
+budget applies to the complete eligible global payload; it is injected
+losslessly or omitted as a whole. Configure the optional positive-integer token
+budget as `memory.preferenceInjectionBudgetTokens` in workflow settings. When
+unset, model context is used if available; otherwise an explicit notice explains
+that preference text was not injected. The UTF-8 serialized-byte comparison is
+an estimate, not exact tokenization or remaining conversation capacity. Existing
+task-relevant project-memory injection remains bounded independently.
 
 ## Gotchas
 - A normal task request is not a memory; capture only durable user intent.

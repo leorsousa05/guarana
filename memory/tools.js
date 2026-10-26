@@ -14,7 +14,7 @@ import {
   removeNode,
   updateNode,
 } from "./graph.js";
-import { isSensitive, sanitize } from "./security.js";
+import { filterSensitiveTags, isSensitive, sanitize } from "./security.js";
 import { projectHashFor } from "./capture.js";
 import path from "node:path";
 
@@ -177,7 +177,9 @@ export async function memoryGetContextForTask(vaultDir, opts = {}) {
 
 // Global user preferences are standing instructions, so retrieve them even
 // when their vocabulary does not overlap the current task.
-export async function memoryGetGlobalPreferences(vaultDir, { limit = 3 } = {}) {
+export async function memoryGetGlobalPreferences(vaultDir, { limit = 3, complete = false } = {}) {
+  const totalLimit = Number.isInteger(limit) ? Math.max(0, limit) : 3;
+  const edges = listEdges(vaultDir);
   const nodes = listNodes(vaultDir)
     .filter((n) => n.status === "confirmed" && n.type === "preference" && n.scope === "global")
     .sort((a, b) => {
@@ -185,22 +187,40 @@ export async function memoryGetGlobalPreferences(vaultDir, { limit = 3 } = {}) {
       return priority || b.ts - a.ts || String(a.id).localeCompare(String(b.id));
     });
   const superseded = new Set(
-    listEdges(vaultDir).filter((e) => e.rel === "supersedes").map((e) => e.to)
+    edges.filter((e) => e.rel === "supersedes").map((e) => e.to)
   );
-  const preferences = nodes
+  const selected = nodes
     .filter((n) => !superseded.has(n.id))
-    .slice(0, Math.min(3, Number.isInteger(limit) ? Math.max(0, limit) : 3))
-    .map((n) => ({
+    .slice(0, complete ? Number.MAX_SAFE_INTEGER : Math.min(3, totalLimit));
+  const selectedIds = new Set(selected.map((node) => node.id));
+  const neighborIds = new Set();
+  for (const edge of edges) {
+    if (!CTX_RELS.includes(edge.rel)) continue;
+    if (selectedIds.has(edge.from)) neighborIds.add(edge.to);
+    if (selectedIds.has(edge.to)) neighborIds.add(edge.from);
+  }
+  const related = [...neighborIds]
+    .filter((id) => !selectedIds.has(id))
+    .map((id) => getNode(vaultDir, id))
+    .filter((node) => node && node.status === "confirmed" && node.type === "preference" && node.scope === "global");
+  const brief = (n) => ({
       id: n.id,
       type: n.type,
       scope: "global",
       priority: n.priority === "essential" ? "essential" : "normal",
       intent: n.intent || "",
       summary: n.summary || "",
-      tags: n.tags || [],
+      rejectedAlternatives: n.rejectedAlternatives || [],
+      tags: filterSensitiveTags(n.tags),
       ts: n.ts,
-    }));
-  return { preferences, count: preferences.length };
+    });
+  const preferences = selected.map(brief);
+  const neighborCapacity = complete ? Number.MAX_SAFE_INTEGER : Math.max(0, totalLimit - preferences.length);
+  const relatedPreferences = related.filter((node) => !superseded.has(node.id))
+    .slice(0, neighborCapacity).map(brief);
+  const relatedSuperseded = related.filter((node) => superseded.has(node.id))
+    .slice(0, Math.max(0, neighborCapacity - relatedPreferences.length)).map(brief);
+  return { preferences, relatedPreferences, relatedSuperseded, count: preferences.length };
 }
 
 // Confirmed-node deletion is intentionally separate from legacy draft review.

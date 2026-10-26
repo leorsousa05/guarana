@@ -69,10 +69,17 @@ const WORKFLOW = {
       details: ['    Set one preference in global settings, or in the project with --project.'],
     },
     {
-      rows: ['  guarana workflow clear [specs|verify] [--project]'],
+      rows: ['  guarana workflow set memory.preferenceInjectionBudgetTokens <positive-integer> [--project]'],
+      details: [
+        '    Set the maximum global-preference injection budget in tokens. Project values override global.',
+        '    UTF-8 serialized byte length is compared with this token count as an estimate, not exact tokenization.',
+      ],
+    },
+    {
+      rows: ['  guarana workflow clear [specs|verify|memory.preferenceInjectionBudgetTokens] [--project]'],
       details: [
         '    Clear one preference or all stored preferences in the selected scope.',
-        '    Clearing a project preference restores inheritance from global settings.',
+        '    Clearing a project preference restores inheritance from global settings; an unset budget uses model context.',
       ],
     },
     { rows: ['  guarana workflow --help              Show this help'] },

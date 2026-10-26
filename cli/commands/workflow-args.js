@@ -1,10 +1,11 @@
 'use strict';
 
 const PREFERENCES = ['specs', 'verify'];
+const BUDGET_PREFERENCE = 'memory.preferenceInjectionBudgetTokens';
 const WORKFLOW_USAGE = 'usage: guarana workflow <read|set|clear> [--project]';
 const READ_USAGE = 'usage: guarana workflow read [--project]';
-const SET_USAGE = 'usage: guarana workflow set <specs|verify> <true|false> [--project]';
-const CLEAR_USAGE = 'usage: guarana workflow clear [specs|verify] [--project]';
+const SET_USAGE = 'usage: guarana workflow set <specs|verify|memory.preferenceInjectionBudgetTokens> <value> [--project]';
+const CLEAR_USAGE = 'usage: guarana workflow clear [specs|verify|memory.preferenceInjectionBudgetTokens] [--project]';
 
 function parseWorkflowArgs(args = []) {
   const [subcommand, ...rest] = args;
@@ -21,6 +22,13 @@ function parseWorkflowArgs(args = []) {
     if (rest.length < 2) return { error: SET_USAGE };
     if (rest.length > 2) return { error: 'unexpected extra arguments' };
     const [name, value] = rest;
+    if (name === BUDGET_PREFERENCE) {
+      const budgetTokens = Number(value);
+      if (!/^[1-9]\d*$/.test(String(value)) || !Number.isSafeInteger(budgetTokens)) {
+        return { error: `invalid positive integer token budget for ${name}: ${value}` };
+      }
+      return { command: 'set-budget', budgetTokens };
+    }
     if (!PREFERENCES.includes(name)) return { error: `unknown workflow preference: ${name}` };
     if (value !== 'true' && value !== 'false') {
       return { error: `invalid boolean value for ${name}: ${value} (expected true or false)` };
@@ -31,10 +39,10 @@ function parseWorkflowArgs(args = []) {
   if (subcommand === 'clear') {
     if (rest.length > 1) return { error: 'unexpected extra arguments' };
     const [name] = rest;
-    if (name !== undefined && !PREFERENCES.includes(name)) {
+    if (name !== undefined && name !== BUDGET_PREFERENCE && !PREFERENCES.includes(name)) {
       return { error: `unknown workflow preference: ${name}` };
     }
-    return { command: 'clear', name };
+    return { command: 'clear', name: name === BUDGET_PREFERENCE ? 'memory' : name };
   }
 
   return { error: `unknown workflow command: ${subcommand || '(missing)'}`, usage: WORKFLOW_USAGE };

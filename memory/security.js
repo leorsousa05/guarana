@@ -15,6 +15,13 @@ const ENV_LINE = /^[A-Za-z_][A-Za-z0-9_]*=\S+$/;
 // Redactable: generic secret assignments (key=value / key: value).
 const ASSIGN_RE =
   /(\b(?:api[_-]?key|secret|password|passwd|token|credential)\b\s*[:=]\s*)(["']?)[^\s"']+\2/gi;
+// Detection is derived from the redaction shape but stays non-global so test()
+// cannot leak lastIndex state between sensitive-content checks.
+const SENSITIVE_ASSIGN_RE = new RegExp(ASSIGN_RE.source, "i");
+
+export function hasSensitiveAssignment(text) {
+  return typeof text === "string" && SENSITIVE_ASSIGN_RE.test(text);
+}
 
 export function isSensitive(text) {
   if (typeof text !== "string" || !text) return false;
@@ -24,6 +31,15 @@ export function isSensitive(text) {
     .map((l) => l.trim())
     .filter((l) => ENV_LINE.test(l));
   return envLines.length >= 2; // .env-style key=value block
+}
+
+export function filterSensitiveTags(tags) {
+  if (!Array.isArray(tags)) return [];
+  const values = tags.filter((tag) => typeof tag === "string" && tag);
+  const containsSensitiveBlock = isSensitive(values.join("\n"));
+  return values.filter((tag) =>
+    !isSensitive(tag) && !hasSensitiveAssignment(tag) && !(containsSensitiveBlock && ENV_LINE.test(tag.trim()))
+  );
 }
 
 export function sanitize(text) {

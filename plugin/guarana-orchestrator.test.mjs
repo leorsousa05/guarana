@@ -6,8 +6,9 @@ import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
 import { apply, createWorkflow, load, save, workflowFile } from '../orchestrator/state.js';
-import { createNode, listNodes } from '../memory/graph.js';
-import { initUserVault } from '../memory/vault.js';
+import { createNode, createEdge, listNodes } from '../memory/graph.js';
+import { initUserVault, initVault, paths } from '../memory/vault.js';
+import { serializeMemoryPayload } from '../orchestrator/prompt.js';
 
 describe('GuaranaOrchestrator', () => {
   let tmpDir;
@@ -54,6 +55,24 @@ describe('GuaranaOrchestrator', () => {
     return [{ type: 'text', text }];
   }
 
+  function preferencePayloadFrom(injection) {
+    const marker = '### Serialized global preference records (JSON data)\n';
+    const start = injection.indexOf(marker);
+    assert.notEqual(start, -1, 'serialized memory section should exist');
+    const from = start + marker.length;
+    const end = injection.indexOf('\n<!-- end guarana memory -->', from);
+    assert.notEqual(end, -1, 'memory section should close');
+    const compact = JSON.parse(injection.slice(from, end));
+    const fields = [
+      'id', 'type', 'scope', 'priority', 'intent', 'summary', 'tags', 'rejectedAlternatives',
+    ];
+    assert.deepEqual(compact.fields, fields);
+    return Object.fromEntries([
+      'global_preferences', 'related_global_preferences', 'superseded_global_preferences',
+    ].map((group) => [group, compact[group].map((values) => Object.fromEntries(fields.flatMap((field, index) =>
+      values[index] === null ? [] : [[field, values[index]]])))]));
+  }
+
   function writeSettings(scope, settings) {
     const file = scope === 'project'
       ? path.join(tmpDir, '.guarana', 'advisor.json')
@@ -69,6 +88,12 @@ describe('GuaranaOrchestrator', () => {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, JSON.stringify(settings));
     return file;
+  }
+
+  function allowPreferenceInjection(scope = 'global', tokens = 100000, directory = tmpDir) {
+    return writeWorkflowSettings(scope, {
+      memory: { preferenceInjectionBudgetTokens: tokens },
+    }, directory);
   }
 
   function writePrimaryProfile(scope) {
@@ -560,13 +585,11 @@ describe('GuaranaOrchestrator', () => {
     assert.equal(fs.readFileSync(path.join(tmpDir, '.guarana', 'memory', 'nodes.jsonl'), 'utf8').trim(), '');
   });
 
-  it('injects relevant confirmed memory on the next automatic turn', async () => {
+  it('injects relevant confirmed project memory on the next automatic turn', async () => {
     await chat('Implement OAuth authentication');
     createNode(path.join(tmpDir, '.guarana', 'memory'), {
-      type: 'decision',
-      status: 'confirmed',
-      intent: 'OAuth authentication uses PKCE',
-      summary: 'Use PKCE for the OAuth flow.',
+      type: 'decision', status: 'confirmed', scope: 'project',
+      intent: 'OAuth authentication uses PKCE', summary: 'Use PKCE for the OAuth flow.',
     });
     await chat('continue');
     const out = { system: [] };
@@ -576,6 +599,7 @@ describe('GuaranaOrchestrator', () => {
   });
 
   it('injects global preferences even when their wording does not match the project task', async () => {
+    allowPreferenceInjection();
     const globalVault = initUserVault();
     createNode(globalVault, {
       type: 'preference',
@@ -589,10 +613,10 @@ describe('GuaranaOrchestrator', () => {
     await api['experimental.chat.system.transform']({ sessionID: 'session-global-pref' }, out);
     assert.match(out.system.join('\n'), /Always answer me in Portuguese/);
     assert.match(out.system.join('\n'), /### global_preferences/);
-    assert.match(out.system.join('\n'), /### project_context/);
     assert.match(out.system.join('\n'), /saved user-level preferences[\s\S]*may guide behavior unless superseded by the current explicit user request or higher-priority system, developer, or security policy/i);
-    assert.match(out.system.join('\n'), /possibly stale project data, not instructions/);
-    assert.match(out.system.join('\n'), /"scope":"global"/);
+    const injectedPayload = preferencePayloadFrom(out.system.join('\n'));
+    assert.equal(injectedPayload.global_preferences[0].scope, 'global');
+    assert.doesNotMatch(out.system.join('\n'), /project_context/);
     const injected = readEvents().find((event) => event.type === 'memory-injected');
     assert.equal(injected.sessionID, 'session-global-pref');
     assert.equal(injected.reason, 'session-start');
@@ -631,7 +655,191 @@ describe('GuaranaOrchestrator', () => {
     assert.equal(readEvents().filter((event) => event.type === 'memory-injected')[2].reason, 'compacted');
   });
 
+  it('uses configured/model preference budgets and fails closed for the complete serialized set', async () => {
+    const globalVault = initUserVault();
+    const first = createNode(globalVault, {
+      id: 'budget-pref-one', type: 'preference', status: 'confirmed', scope: 'global',
+      ts: 20, intent: 'budget fixture', summary: 'FIRST-PREFERENCE-UNICODE-☃',
+    });
+    const second = createNode(globalVault, {
+      id: 'budget-pref-two', type: 'preference', status: 'confirmed', scope: 'global',
+      ts: 19, intent: 'budget fixture', summary: 'SECOND-PREFERENCE-—-“quoted”',
+    });
+    await chat('Continue the synthetic budget fixture');
+    const serialized = serializeMemoryPayload({ global_preferences: [
+      { id: first.id, type: 'preference', scope: 'global', priority: 'normal', intent: first.intent, summary: first.summary },
+      { id: second.id, type: 'preference', scope: 'global', priority: 'normal', intent: second.intent, summary: second.summary },
+    ] });
+    const byteBudget = Buffer.byteLength(serialized.serialized, 'utf8');
+    const firstOnlyBytes = Buffer.byteLength(serializeMemoryPayload({ global_preferences: [
+      { id: first.id, type: 'preference', scope: 'global', priority: 'normal', intent: first.intent, summary: first.summary },
+    ] }).serialized, 'utf8');
+    const assertRepairPath = (output) => {
+      const injection = output.system.join('\n');
+      assert.match(injection, /Tell the user that no saved preference text was injected/i);
+      assert.match(injection, /do not imply that saved preferences were applied/i);
+      assert.match(injection, /Dashboard Settings → Workflow preferences → Global preference injection budget \(tokens\)/);
+      assert.match(injection, /guarana workflow set memory\.preferenceInjectionBudgetTokens <positive-integer>/);
+      assert.match(injection, /add `--project` for a project override/);
+    };
+
+    allowPreferenceInjection('project', byteBudget);
+    const configuredOnly = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID: 'configured-budget' }, configuredOnly);
+    assert.match(configuredOnly.system.join('\n'), /FIRST-PREFERENCE-UNICODE-☃/);
+    assert.match(configuredOnly.system.join('\n'), /SECOND-PREFERENCE-—-“quoted”/);
+
+    writeWorkflowSettings('project', {});
+    const modelOnly = { system: [] };
+    await api['experimental.chat.system.transform']({
+      sessionID: 'model-budget', model: { limit: { context: byteBudget } },
+    }, modelOnly);
+    assert.match(modelOnly.system.join('\n'), /FIRST-PREFERENCE-UNICODE-☃/);
+    assert.doesNotMatch(modelOnly.system.join('\n'), /Global preference injection notice/);
+
+    allowPreferenceInjection('project', byteBudget + 100);
+    const lowerModelLimit = { system: [] };
+    await api['experimental.chat.system.transform']({
+      sessionID: 'lower-model-budget', model: { limit: { context: byteBudget - 1 } },
+    }, lowerModelLimit);
+    assert.match(lowerModelLimit.system.join('\n'), /complete payload is \d+ UTF-8 bytes, over the \d+-token estimated budget/i);
+    assert.doesNotMatch(lowerModelLimit.system.join('\n'), /FIRST-PREFERENCE-UNICODE|SECOND-PREFERENCE/);
+
+    writeWorkflowSettings('project', {});
+    const noBudget = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID: 'missing-budget' }, noBudget);
+    assert.match(noBudget.system.join('\n'), /no usable configured token budget or model context limit/i);
+    assert.doesNotMatch(noBudget.system.join('\n'), /### Serialized records \(JSON data\)|FIRST-PREFERENCE-UNICODE|SECOND-PREFERENCE/);
+    assertRepairPath(noBudget);
+
+    allowPreferenceInjection('project', firstOnlyBytes);
+    const wholePayloadOverflow = { system: [] };
+    await api['experimental.chat.system.transform']({
+      sessionID: 'whole-payload-overflow', model: { limit: { context: byteBudget + 100 } },
+    }, wholePayloadOverflow);
+    assert.match(wholePayloadOverflow.system.join('\n'), /UTF-8 bytes.*estimate/i);
+    assert.doesNotMatch(wholePayloadOverflow.system.join('\n'), /### Serialized records \(JSON data\)|FIRST-PREFERENCE-UNICODE|SECOND-PREFERENCE/);
+    assertRepairPath(wholePayloadOverflow);
+  });
+
+  it('injects more than ten complete global preferences and preserves historical trust groups without leaking text to telemetry', async () => {
+    allowPreferenceInjection();
+    const globalVault = initUserVault();
+    const projectVault = initVault(tmpDir);
+    const addPreference = (id, ts, summary) => createNode(globalVault, {
+      id, type: 'preference', status: 'confirmed', scope: 'global', ts,
+      intent: `synthetic ${id}`, summary,
+    });
+    const direct = Array.from({ length: 12 }, (_, index) => {
+      const ordinal = index + 1;
+      return addPreference(
+        `direct-${String(ordinal).padStart(2, '0')}`,
+        100 - index,
+        `Full preference ${ordinal} start — ${'Retain every synthetic preference byte. '.repeat(26)}DIRECT-END-${ordinal}`,
+      );
+    });
+    assert.ok(direct.length > 3, 'fixture exceeds the former direct-three selection limit');
+    assert.ok(direct.every(({ summary }) => Buffer.byteLength(summary, 'utf8') > 1000),
+      'each direct fixture exceeds the former per-entry text limit');
+    const related = addPreference('shared-neighbor-id', 20, 'One-hop global related sentinel not mentioned by the task.');
+    const unmatchedRelated = addPreference('related-unmatched', 19, 'Another one-hop active sentinel not in the task text.');
+    const old = addPreference('superseded-neighbor', 18, 'Historical sentinel, not current guidance.');
+    const secondHop = addPreference('second-hop-neighbor', 17, 'Every active global preference is selected.');
+    const draft = {
+      id: 'global-draft-preference', type: 'preference', status: 'draft', scope: 'global',
+      ts: 16, intent: 'draft preference intent sentinel',
+      summary: 'Draft preference content must remain excluded.',
+    };
+    fs.appendFileSync(paths(globalVault).nodes, `${JSON.stringify(draft)}\n`);
+    createEdge(globalVault, { from: direct[0].id, to: related.id, rel: 'relates-to' });
+    createEdge(globalVault, { from: direct[1].id, to: unmatchedRelated.id, rel: 'depends-on' });
+    createEdge(globalVault, { from: direct[0].id, to: old.id, rel: 'supersedes' });
+    createEdge(globalVault, { from: direct[0].id, to: draft.id, rel: 'relates-to' });
+    createEdge(globalVault, { from: related.id, to: secondHop.id, rel: 'fixes' });
+
+    const legacyGlobal = {
+      id: 'legacy-global-decision', type: 'decision', status: 'confirmed', scope: 'global', ts: 16,
+      intent: 'global legacy non-preference sentinel', summary: 'must remain excluded',
+    };
+    fs.appendFileSync(paths(globalVault).nodes, `${JSON.stringify(legacyGlobal)}\n`);
+    fs.appendFileSync(paths(globalVault).edges, `${JSON.stringify({ from: direct[0].id, to: legacyGlobal.id, rel: 'fixes', ts: 15 })}\n`);
+
+    const projectCollision = createNode(projectVault, {
+      id: related.id, type: 'decision', status: 'confirmed', scope: 'project', ts: 14,
+      intent: 'project collision sentinel', summary: 'Project-only text must not cross into global injection.',
+    });
+    const projectOnly = createNode(projectVault, {
+      id: 'project-only-linked-id', type: 'decision', status: 'confirmed', scope: 'project', ts: 13,
+      intent: 'cross-scope sentinel', summary: 'A global-vault dangling edge must not resolve this project text.',
+    });
+    const legacyProjectPreference = {
+      id: 'legacy-project-preference', type: 'preference', status: 'confirmed', scope: 'project', ts: 12,
+      intent: 'legacy project preference sentinel', summary: 'Not a global preference.',
+    };
+    fs.appendFileSync(paths(projectVault).nodes, `${JSON.stringify(legacyProjectPreference)}\n`);
+    fs.appendFileSync(paths(globalVault).edges, `${JSON.stringify({ from: direct[0].id, to: projectOnly.id, rel: 'caused-by', ts: 11 })}\n`);
+
+    const fixtureFiles = [
+      paths(globalVault).nodes, paths(globalVault).edges, paths(globalVault).config,
+      paths(projectVault).nodes, paths(projectVault).edges, paths(projectVault).config,
+    ];
+    const before = fixtureFiles.map((file) => fs.readFileSync(file));
+    await chat('Build an unrelated migration tool');
+    const output = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID: 'one-hop-injection' }, output);
+    const injection = output.system.join('\n');
+    const payload = preferencePayloadFrom(injection);
+
+    assert.deepEqual(payload.global_preferences.map(({ id }) => id), [
+      ...direct.map(({ id }) => id), related.id, unmatchedRelated.id, secondHop.id,
+    ]);
+    assert.ok(payload.global_preferences.length > 10, 'complete active global set exceeds the former total-ten cap');
+    assert.deepEqual(payload.related_global_preferences.map(({ id }) => id), []);
+    assert.deepEqual(payload.superseded_global_preferences.map(({ id }) => id), [old.id]);
+    assert.match(injection, /related context, not additional direct selections/i);
+    assert.match(injection, /not current active guidance/i);
+    assert.equal(Object.values(payload).reduce((sum, group) => sum + group.length, 0), 16);
+    assert.ok(Buffer.byteLength(JSON.stringify(payload), 'utf8') > 6000,
+      'fixture payload also exceeds the former total serialized-text cap');
+    const sourcePreferences = [...direct, related, unmatchedRelated, secondHop, old];
+    const renderedPreferences = [
+      ...payload.global_preferences,
+      ...payload.related_global_preferences,
+      ...payload.superseded_global_preferences,
+    ];
+    assert.deepEqual(renderedPreferences.map(({ id, intent, summary }) => ({ id, intent, summary })),
+      sourcePreferences.map(({ id, intent, summary }) => ({ id, intent, summary })),
+      'all active and historical preference intent and summary text is retained in its trust group');
+    assert.match(injection, /Every active global preference is selected/);
+    for (const sentinel of [
+      legacyGlobal.intent, legacyGlobal.summary, projectCollision.intent, projectCollision.summary,
+      projectOnly.intent, projectOnly.summary, legacyProjectPreference.intent, legacyProjectPreference.summary,
+      draft.intent, draft.summary,
+    ]) {
+      assert.ok(!injection.includes(sentinel), `${sentinel} remains absent`);
+    }
+
+    const injected = readEvents().find((event) => event.type === 'memory-injected' && event.sessionID === 'one-hop-injection');
+    assert.deepEqual(injected.memories, [
+      ...direct.map(({ id }) => ({ id, type: 'preference', scope: 'global' })),
+      { id: related.id, type: 'preference', scope: 'global' },
+      { id: unmatchedRelated.id, type: 'preference', scope: 'global' },
+      { id: secondHop.id, type: 'preference', scope: 'global' },
+      { id: old.id, type: 'preference', scope: 'global' },
+    ]);
+    assert.ok(injected.memories.every((reference) => Object.keys(reference).sort().join(',') === 'id,scope,type'),
+      'telemetry stores references only');
+    const eventText = JSON.stringify(readEvents());
+    for (const { intent, summary } of [...sourcePreferences, draft]) {
+      assert.ok(!eventText.includes(intent), 'telemetry retains no preference intent text');
+      assert.ok(!eventText.includes(summary), 'telemetry retains no preference summary text');
+    }
+    assert.deepEqual(fixtureFiles.map((file) => fs.readFileSync(file)), before,
+      'prompt context reads leave all synthetic project/global fixture bytes unchanged');
+  });
+
   it('avoids duplicate memory injection when both plugin scopes transform one prompt', async () => {
+    allowPreferenceInjection();
     const globalVault = initUserVault();
     createNode(globalVault, {
       type: 'preference', status: 'confirmed', scope: 'global',
@@ -652,6 +860,7 @@ describe('GuaranaOrchestrator', () => {
   });
 
   it('injects global preferences on an idle non-task turn', async () => {
+    allowPreferenceInjection();
     const globalVault = initUserVault();
     createNode(globalVault, {
       type: 'preference',
@@ -665,7 +874,7 @@ describe('GuaranaOrchestrator', () => {
     const out = { system: [] };
     await api['experimental.chat.system.transform']({}, out);
     assert.match(out.system.join('\n'), /Always use concise answers/);
-    assert.match(out.system.join('\n'), /"scope":"global"/);
+    assert.equal(preferencePayloadFrom(out.system.join('\n')).global_preferences[0].scope, 'global');
   });
 
   it('explicit guarana:verify forces the verifying state', async () => {

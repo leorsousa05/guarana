@@ -16,7 +16,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const pluginDir = path.dirname(fileURLToPath(import.meta.url));
 const ORCHESTRATOR_INJECTION_MARKER = '<!-- guarana orchestrator injection -->';
 const ADVISOR_OPT_IN_MARKER = '<!-- guarana-advisor-opt-in -->';
-const MEMORY_CONTEXT_GROUPS = ['project_context', 'global_preferences'];
+const MEMORY_CONTEXT_GROUPS = [
+  'global_preferences',
+  'related_global_preferences',
+  'superseded_global_preferences',
+  'project_context',
+];
 const WORKER_AGENT_NAMES = new Set(['worker-code', 'worker-verify', 'worker-debug', 'worker-specs', 'guarana-advisor']);
 const INJECTION_CACHE_SYMBOL = Symbol.for('guarana.orchestrator.memory-injection-cache');
 const injectedMemoryBySession = globalThis[INJECTION_CACHE_SYMBOL] || new Map();
@@ -100,7 +105,10 @@ function selectUnseenMemory(context, seen) {
   for (const group of MEMORY_CONTEXT_GROUPS) {
     selected[group] = [];
     for (const node of context?.[group] || []) {
-      if (!node.id) continue;
+      if (!node || !node.id) continue;
+      if (group === 'project_context') {
+        if (node.scope !== 'project') continue;
+      } else if (node.scope !== 'global' || node.type !== 'preference') continue;
       const key = memoryNodeKey(node);
       if (seen.has(key)) continue;
       seen.add(key);
@@ -447,14 +455,19 @@ export const GuaranaOrchestrator = async ({ directory, client, session, sdkVersi
         task
           ? e.tools.memoryGetContextForTask(e.vault.initVault(directory), { task, limit: 7 })
           : Promise.resolve({ decisions: [], bugs: [], solutions: [], refactors: [], preferences: [], superseded: [], atoms: [], count: 0 }),
-        e.tools.memoryGetGlobalPreferences(userVaultDir, { limit: 3 }),
+        e.tools.memoryGetGlobalPreferences(userVaultDir, { complete: true }),
       ]);
       const projectNodes = ['decisions', 'bugs', 'solutions', 'refactors', 'preferences', 'superseded', 'atoms']
-        .flatMap((group) => projectContext[group] || []);
+        .flatMap((group) => projectContext[group] || [])
+        .map((node) => ({ ...node, scope: 'project' }));
       return {
         global_preferences: globalPreferences.preferences,
+        related_global_preferences: globalPreferences.relatedPreferences || [],
+        superseded_global_preferences: globalPreferences.relatedSuperseded || [],
         project_context: projectNodes,
-        count: projectNodes.length + globalPreferences.count,
+        count: projectNodes.length + (globalPreferences.preferences || []).length
+          + (globalPreferences.relatedPreferences || []).length
+          + (globalPreferences.relatedSuperseded || []).length,
       };
     } catch (err) {
       append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
@@ -677,15 +690,37 @@ export const GuaranaOrchestrator = async ({ directory, client, session, sdkVersi
         if (!c) return;
         const wf = latest ? latest : c.state.load(directory);
         const candidates = selectUnseenMemory(memoryContext, new Set(seen));
-        const claim = candidates.memories.length
-          ? await claimMemoryReferences(directory, sessionID, candidates.memories, sessionMemory.nextReason)
-          : { memories: [], reason: sessionMemory.nextReason };
-        const pendingMemory = {
-          memories: claim?.memories || [],
-          context: contextForReferences(candidates.context, claim?.memories || []),
-        };
         const preferences = workflowPreferences(c);
-        const injection = `${ORCHESTRATOR_INJECTION_MARKER}\n${c.prompt.buildInjection(wf, { memoryContext: pendingMemory.context, directory, preferences })}`;
+        const serializedMemory = c.prompt.serializeMemoryPayload(candidates.context);
+        const configuredBudget = preferences.memory?.preferenceInjectionBudgetTokens;
+        const modelContext = input?.model?.limit?.context;
+        const usableConfigured = Number.isSafeInteger(configuredBudget) && configuredBudget > 0 ? configuredBudget : null;
+        const usableModelContext = Number.isSafeInteger(modelContext) && modelContext > 0 ? modelContext : null;
+        const effectiveBudget = usableConfigured != null && usableModelContext != null
+          ? Math.min(usableConfigured, usableModelContext)
+          : usableConfigured ?? usableModelContext;
+        const serializedBytes = serializedMemory
+          ? Buffer.byteLength(serializedMemory.serialized, 'utf8')
+          : 0;
+        let memoryNotice;
+        let claim = { memories: [], reason: sessionMemory.nextReason };
+        let pendingMemoryContext = null;
+        const preferenceBudgetRepair = 'Tell the user that no saved preference text was injected, and do not imply that saved preferences were applied. To enable injection, set or raise `memory.preferenceInjectionBudgetTokens` high enough for the complete payload (subject to the model context limit) in Dashboard Settings → Workflow preferences → Global preference injection budget (tokens), or run `guarana workflow set memory.preferenceInjectionBudgetTokens <positive-integer>`; add `--project` for a project override.';
+        if (serializedMemory && effectiveBudget == null) {
+          memoryNotice = `Global preferences were not injected because no usable configured token budget or model context limit is available. No preference text was included. ${preferenceBudgetRepair}`;
+        } else if (serializedMemory && serializedBytes > effectiveBudget) {
+          memoryNotice = `Global preferences were not injected because the complete payload is ${serializedBytes} UTF-8 bytes, over the ${effectiveBudget}-token estimated budget. UTF-8 bytes are only an estimate, not exact tokenization or remaining conversation capacity; no preference text was included. ${preferenceBudgetRepair}`;
+        }
+        const referencesToClaim = serializedMemory && (effectiveBudget == null || serializedBytes > effectiveBudget)
+          ? candidates.memories.filter((node) => node.scope !== 'global')
+          : candidates.memories;
+        if (referencesToClaim.length) {
+          claim = await claimMemoryReferences(directory, sessionID, referencesToClaim, sessionMemory.nextReason)
+            || { memories: [], reason: sessionMemory.nextReason };
+          pendingMemoryContext = contextForReferences(candidates.context, claim.memories);
+        }
+        const pendingMemory = { memories: claim.memories, context: pendingMemoryContext };
+        const injection = `${ORCHESTRATOR_INJECTION_MARKER}\n${c.prompt.buildInjection(wf, { memoryContext: pendingMemory.context, memoryNotice, directory, preferences })}`;
         if (!Array.isArray(output.system)) output.system = [];
         if (output.system.length > 0) {
           output.system[output.system.length - 1] += '\n\n' + injection;
@@ -825,7 +860,7 @@ async function setupGuaranaOrchestrator(ctx) {
       .filter(({ text }) => typeof text === 'string');
     const output = { system: textItems.map(({ text }) => text) };
     await hooks['experimental.chat.system.transform'](
-      { sessionID: event.sessionID, agent: event.agent },
+      { sessionID: event.sessionID, agent: event.agent, model: event.model },
       output,
     );
     for (let i = 0; i < output.system.length; i++) {

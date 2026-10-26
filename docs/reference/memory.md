@@ -26,6 +26,24 @@ Only explicit memory decisions, plus the existing verified-workflow completion
 record, are persisted as vault nodes; normal tool activity remains telemetry.
 The disk tree remains the source of truth; legacy drafts are never injected.
 
+Global preference injection selects the complete eligible active preference
+set and preserves its text. The whole serialized payload is injected only when
+it fits the effective budget; otherwise an explicit notice is shown and no
+preference content is included. Configure the optional positive-integer
+`memory.preferenceInjectionBudgetTokens` in global workflow settings
+(`$XDG_CONFIG_HOME/guarana/workflow.json`, falling back to
+`~/.config/guarana/workflow.json`) or project settings
+(`.guarana/workflow.json`). Project values override global values, and clearing
+a project value restores inheritance. When configured and a model
+`limit.context` is available, the lower limit applies; when unset, model context
+is used. If neither provides a usable budget, injection fails closed. The hook
+compares UTF-8 serialized byte length with the token budget as an estimate, not
+exact tokenization or remaining conversation capacity. Configure it in
+Dashboard Settings or with `guarana workflow set
+memory.preferenceInjectionBudgetTokens <positive-integer>`; use
+`guarana workflow clear memory.preferenceInjectionBudgetTokens` to clear it
+(add `--project` for project settings).
+
 ## Silent context truncation
 Contexts truncate without notice. Keep transient stage, budget, and current-step
 checkpoints in operational workflow/run state; project-state records task start/end
