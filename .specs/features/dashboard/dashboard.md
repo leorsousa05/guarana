@@ -867,6 +867,10 @@ visual slice remains separately **VALIDATED** as recorded above.
    verification is pending; no test, build, screenshot, or verification outcome
    is claimed by this task acceptance.
 
+### TASKED follow-up — Memory domain separation UI
+
+The accepted [Memory domain separation UI](memory-domain-separation-ui.md) follow-up is TASKED; coding has not begun. When implemented, it supersedes only the combined project/global presentation in this and the historical Memory UI records. Their historical statuses and proofs, and established graph interaction decisions, remain unchanged.
+
 ### Bounded Skills screen redesign planning — 2026-10-10
 
 This planning checkpoint scopes the next implementation slice to the Skills
@@ -1209,3 +1213,98 @@ viewport remain required. This follow-up does not revise the historical
 `memory-relationship-management.md` and `memory-graph-presentation.md`; those
 records remain unchanged. No implementation or verification result is claimed
 by this planning addendum.
+
+### Dashboard project selection and Memory Drafts scope — 2026-10-25
+
+The accepted bounded follow-up is specified in
+[`project-selection-and-memory-drafts.md`](project-selection-and-memory-drafts.md)
+and its security/data-scope decision in
+[`ADR-041`](../../decisions/ADR-041-dashboard-project-root-allowlisting.md).
+It adds an explicit persistent per-user XDG allowlist for project roots, a
+current-root-only registration action, browser-local opaque project selection,
+and unregister that removes only the allowlist entry. Canonical roots stay
+server-side; project-scoped reads/writes follow the selected root, while global
+settings and global Memory remain global. The allowlist is not authentication
+and the Dashboard remains loopback-only.
+
+The follow-up also adds a fifth accessible Memory tab, `Drafts`, for project-only
+review through the existing draft/review APIs. It displays only intent, type,
+timestamp/date, and tags; Confirm and Discard are available without field
+editing or global-draft review. Discard warns that deletion of the draft and its
+edges is irreversible. Project switching reloads the drafts and binds actions
+to the selected root.
+
+This accepted scope supersedes only the earlier `multi-project views` exclusion
+in the 2026-08-21 out-of-scope list and the 2026-10-10 CLI/API-only draft/review
+exclusion, and only for the bounded behavior above. Those earlier statements
+remain historically accurate for their original checkpoints. No other dashboard
+contract or historical proof is revised. This is a planning addendum only; no
+implementation, test, build, browser, independent-verification, or shipping
+result is claimed.
+
+### Bounded Dashboard Memory domain-separation UI follow-up — 2026-10-25
+
+The bounded UI follow-up in
+[`memory-domain-separation-ui.md`](memory-domain-separation-ui.md) is
+**VALIDATED, not SHIPPED**. Fresh independent `worker-verify` returned overall
+PASS for all eight criteria. Focused tests passed 83/83; `npm test` passed
+646/646; production build and CLI sync, `npm run check-cli`, specs validation
+(237 Markdown files, 93 feature specs, 42 ADRs, 261 local links, zero issues),
+and `git diff --check` passed. Browser verification used temporary project and
+global fixtures only, at 375x812 and 1440x900; document/body widths matched the
+viewport, with no horizontal overflow, and reduced-motion canvas transition
+computed to 0.01ms. Screenshots: `/tmp/opencode/memory-domain-375x812.png`,
+`/tmp/opencode/memory-domain-1440x900.png`, and
+`/tmp/opencode/memory-domain-reduced-375x812.png`. No real memory vault contents
+were inspected or mutated. This follow-up supersedes only the combined
+project/global UI presentation; historical validation proofs remain unchanged.
+The separate Memory architecture task and Dashboard project-selector proof are
+not closed by this result.
+
+### Dashboard Memory preference graph and related-context follow-up — 2026-10-25
+
+The user-approved follow-up is specified in
+[`memory-preference-graph-and-context.md`](memory-preference-graph-and-context.md)
+and its accepted context decision is
+[`ADR-043`](../../decisions/ADR-043-global-preference-related-context.md). It
+adds a read-only global-only Preference graph and explicit scope labels, and
+expands automatic context exactly one hop from the existing selection of up to
+three active confirmed global preferences through the current `CTX_RELS`
+allowlist. The expansion remains global-only and confirmed-preference-only;
+superseded neighbors remain explicitly superseded, and all current context caps
+and filtering remain in force.
+
+This follow-up preserves the existing strict scope/type matrix and the separate
+architecture task's TASKED status. The Dashboard Memory domain-separation UI
+predecessor remains VALIDATED, not SHIPPED, with its historical proof unchanged.
+This is a planning addendum only; implementation, tests, browser proof,
+independent verification, and shipping are not claimed.
+
+### Dashboard Memory preference graph and related-context validation — 2026-10-25
+
+The follow-up in
+[`memory-preference-graph-and-context.md`](memory-preference-graph-and-context.md)
+and its accepted decision in
+[`ADR-043`](../../decisions/ADR-043-global-preference-related-context.md) are
+**VALIDATED, not SHIPPED**. Fresh independent `worker-verify` returned overall
+PASS with criteria 1–8 passing. The explicit context tool preserves direct,
+active-related, and superseded groups for both `scope: "both"` and
+`scope: "global"`; the automatic prompt path also preserves distinct bounded
+direct/active-related/superseded groups.
+
+The focused test command passed 154/154 in primary and independent runs;
+`npm test` passed 654/654. Production Dashboard build and canonical-to-CLI sync,
+`npm run check-cli`, pre-record `npm run specs:validate` (239 Markdown files,
+94 feature specs, 43 ADRs, 265 local links, zero issues), and `git diff --check`
+passed. Synthetic-only browser report:
+`/tmp/opencode/guarana-memory-preference-browser/browser-report.json`;
+screenshots at 375x812 and 1440x900 are
+`preferences-library-375x812.png`, `preferences-library-1440x900.png`,
+`preference-graph-375x812.png`, and `preference-graph-1440x900.png` in that
+directory. No actual memory vault contents were accessed or changed.
+
+Only `plugin/guarana-memory.js` and `plugin/guarana-memory.tools.test.mjs` are
+attributed to this follow-up. It makes no schema, vault, or type-matrix change;
+the separate Memory architecture work remains TASKED. The Dashboard Memory
+domain-separation UI predecessor remains VALIDATED, not SHIPPED. The planning
+addendum above remains a historical record of the pre-implementation scope.

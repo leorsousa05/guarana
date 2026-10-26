@@ -17,8 +17,9 @@ async function loadMemory(t) {
   const memory = await vite.ssrLoadModule('/src/components/Memory.jsx');
   const graph = await vite.ssrLoadModule('/src/components/MemoryGraph.jsx');
   const injections = await vite.ssrLoadModule('/src/components/MemoryInjections.jsx');
+  const preferences = await vite.ssrLoadModule('/src/components/MemoryPreferences.jsx');
   const common = await vite.ssrLoadModule('/src/components/common.jsx');
-  return { ...memory, ...graph, ...injections, ...common };
+  return { ...memory, ...graph, ...injections, ...preferences, ...common };
 }
 
 async function loadMemoryInjectionsWithData(t, data) {
@@ -44,35 +45,45 @@ async function loadMemoryInjectionsWithData(t, data) {
   return vite.ssrLoadModule('/src/components/MemoryInjections.jsx');
 }
 
-test('Memory SSR keeps its four linked tabs, Injected default, and loading feedback', async (t) => {
+test('Memory SSR exposes separate workspaces, Project knowledge default, and independent project tabs', async (t) => {
   const { Memory } = await loadMemory(t);
   const html = render(React.createElement(Memory));
   const tabs = [...html.matchAll(/<button(?=[^>]*role="tab")([^>]*)>(.*?)<\/button>/gs)];
-  assert.equal(tabs.length, 4);
-  assert.deepEqual(tabs.map(([, , content]) => content.match(/class="mem-tab-label">([^<]+)/)?.[1]), [
-    'Injected', 'Summary', 'Search', 'Graph',
+  assert.equal(tabs.length, 7);
+  assert.deepEqual(tabs.slice(0, 2).map(([, , content]) => content.match(/class="mem-workspace-tab-label">([^<]+)/)?.[1]), [
+    'Project knowledge', 'User preferences',
   ]);
-  assert.equal(tabs.filter(([, attrs]) => /aria-selected="true"/.test(attrs)).length, 1);
+  assert.deepEqual(tabs.slice(2).map(([, , content]) => content.replace(/<[^>]*>/g, '')), [
+    'Overview', 'Search', 'Graph', 'Drafts', 'Legacy injections',
+  ]);
+  assert.equal([...html.matchAll(/role="tablist"/g)].length, 2);
+  assert.equal(tabs.filter(([, attrs]) => /aria-selected="true"/.test(attrs)).length, 2);
   assert.match(tabs[0][1], /aria-selected="true"/);
   assert.match(tabs[0][1], /tabindex="0"/);
-  assert.equal([...html.matchAll(/role="tabpanel"/g)].length, 4);
-  for (const id of ['injected', 'summary', 'search', 'graph']) {
-    assert.match(html, new RegExp(`id="memory-tab-${id}"[^>]*aria-controls="memory-panel-${id}"`));
-    assert.match(html, new RegExp(`id="memory-panel-${id}"[^>]*aria-labelledby="memory-tab-${id}"`));
+  assert.match(tabs[2][1], /aria-selected="true"/);
+  assert.equal([...html.matchAll(/role="tabpanel"/g)].length, 7);
+  for (const id of ['project', 'preferences']) {
+    assert.match(html, new RegExp(`id="memory-workspace-tab-${id}"[^>]*aria-controls="memory-workspace-panel-${id}"`));
+    assert.match(html, new RegExp(`id="memory-workspace-panel-${id}"[^>]*aria-labelledby="memory-workspace-tab-${id}"`));
   }
-  assert.match(html, /loading memory history/);
-  assert.doesNotMatch(html, /review drafts|confirm draft|discard draft/i);
+  for (const id of ['overview', 'search', 'graph', 'drafts', 'legacy-injections']) {
+    assert.match(html, new RegExp(`id="memory-project-tab-${id}"[^>]*aria-controls="memory-project-panel-${id}"`));
+    assert.match(html, new RegExp(`id="memory-project-panel-${id}"[^>]*aria-labelledby="memory-project-tab-${id}"`));
+  }
+  assert.match(html, /loading project summary/);
+  assert.match(html, /id="memory-workspace-panel-preferences"[^>]*hidden=""/);
+  assert.match(html, /Project memory overview/);
+  assert.doesNotMatch(html, /Global preference library|Private global memories/);
 });
 
-test('Memory tabs retain ArrowLeft, ArrowRight, Home, and End roving focus', async (t) => {
+test('Workspace and local tablists retain ArrowLeft, ArrowRight, Home, and End roving focus', async (t) => {
   const { handleTabKeyDown } = await loadMemory(t);
-  const ids = ['injected', 'summary', 'search', 'graph'];
-  for (const [key, current, expected] of [
-    ['ArrowRight', 'injected', 'summary'],
-    ['ArrowLeft', 'injected', 'graph'],
-    ['Home', 'search', 'injected'],
-    ['End', 'summary', 'graph'],
-  ]) {
+  const lists = [
+    { ids: ['project', 'preferences'], cases: [['ArrowRight', 'project', 'preferences'], ['ArrowLeft', 'project', 'preferences'], ['Home', 'preferences', 'project'], ['End', 'project', 'preferences']] },
+    { ids: ['overview', 'search', 'graph', 'drafts', 'legacy-injections'], cases: [['ArrowRight', 'overview', 'search'], ['ArrowRight', 'drafts', 'legacy-injections'], ['ArrowLeft', 'overview', 'legacy-injections'], ['Home', 'search', 'overview'], ['End', 'overview', 'legacy-injections']] },
+    { ids: ['library', 'graph', 'injection-history'], cases: [['ArrowRight', 'library', 'graph'], ['ArrowRight', 'graph', 'injection-history'], ['ArrowLeft', 'library', 'injection-history'], ['Home', 'injection-history', 'library'], ['End', 'library', 'injection-history']] },
+  ];
+  for (const { ids, cases } of lists) for (const [key, current, expected] of cases) {
     let selected;
     let focused = false;
     let prevented = false;
@@ -93,7 +104,88 @@ test('Memory tabs retain ArrowLeft, ArrowRight, Home, and End roving focus', asy
   }
 });
 
-test('Memory summary preserves scope counts and every existing count field', async (t) => {
+test('Drafts display only approved metadata and accessible review actions', async (t) => {
+  const { MemoryDraftList } = await loadMemory(t);
+  const html = render(React.createElement(MemoryDraftList, {
+    drafts: [{
+      id: 'private-draft-id', type: 'decision', intent: 'Draft intent', ts: 1700000000000,
+      tags: ['review', 'project'], scope: 'global', summary: 'secret summary', decision: 'secret decision', extra: 'secret field',
+    }],
+    onReview() {},
+    reviewingId: null,
+  }));
+  for (const value of ['Draft intent', 'decision', fmtTs(1700000000000), 'review, project']) assert.ok(html.includes(value));
+  assert.match(html, /<dt>type<\/dt>/);
+  assert.match(html, /<dt>timestamp<\/dt><dd><time dateTime="2023-11-14T22:13:20\.000Z"/);
+  assert.match(html, /<dt>tags<\/dt>/);
+  assert.match(html, /<div class="memory-draft-actions" role="group" aria-label="Review Draft intent draft">/);
+  assert.match(html, /<label class="memory-draft-type-label">Convert to project type<select[^>]*aria-label="Convert Draft intent draft to project type"[^>]*aria-required="true"/);
+  assert.deepEqual([...html.matchAll(/<option\b[^>]*>([^<]*)<\/option>/g)].map(([, label]) => label), [
+    'Select type…', 'decision', 'bug', 'solution', 'refactor',
+  ]);
+  assert.match(html, /<button[^>]*disabled=""[^>]*aria-label="Confirm draft: Draft intent"[^>]*>Confirm<\/button>/,
+    'confirmation stays unavailable until an explicit conversion type is selected');
+  assert.match(html, /<button[^>]*aria-label="Discard draft: Draft intent"[^>]*>Discard<\/button>/);
+  assert.doesNotMatch(html, /private-draft-id|secret summary|secret decision|secret field|global|<textarea|<input|Edit draft/i);
+});
+
+test('Draft review requires an allowed conversion, confirms discard, and posts through the project fetch boundary', async (t) => {
+  const { MEMORY_DRAFT_DISCARD_WARNING, reviewMemoryDraft } = await loadMemory(t);
+  const calls = [];
+  const projectFetch = async (url, options) => {
+    calls.push({ url, options });
+    return { ok: true, status: 200, json: async () => ({ ok: true }) };
+  };
+  let warning;
+  assert.equal(await reviewMemoryDraft('draft-1', 'discard', projectFetch, undefined, (message) => {
+    warning = message;
+    return false;
+  }), false);
+  assert.match(warning, /draft and its edges/);
+  assert.match(warning, /deleted permanently/);
+  assert.match(warning, /cannot be restored/);
+  assert.equal(calls.length, 0, 'canceling discard sends no request');
+
+  await assert.rejects(reviewMemoryDraft('draft-2', 'confirm', projectFetch), /explicit project memory type/);
+  await assert.rejects(reviewMemoryDraft('draft-2', 'confirm', projectFetch, 'atom'), /explicit project memory type/);
+  assert.equal(calls.length, 0, 'missing and disallowed conversion targets send no request');
+
+  assert.equal(await reviewMemoryDraft('draft-1', 'discard', projectFetch, undefined, () => true), true);
+  assert.equal(await reviewMemoryDraft('draft-2', 'confirm', projectFetch, 'decision'), true);
+  assert.deepEqual(calls.map(({ url, options }) => [url, options.method, JSON.parse(options.body)]), [
+    ['/api/memory/review', 'POST', { id: 'draft-1', action: 'discard' }],
+    ['/api/memory/review', 'POST', { id: 'draft-2', action: 'confirm', edits: { type: 'decision' } }],
+  ]);
+  assert.ok(calls.every(({ options }) => options.headers['Content-Type'] === 'application/json'));
+  assert.deepEqual(Object.keys(JSON.parse(calls[0].options.body)).sort(), ['action', 'id'], 'discard remains unchanged');
+  assert.deepEqual(Object.keys(JSON.parse(calls[1].options.body)).sort(), ['action', 'edits', 'id']);
+});
+
+test('Draft loads and review requests stay on the current project fetch boundary', async () => {
+  const source = fs.readFileSync(path.join(webRoot, 'src/components/Memory.jsx'), 'utf8');
+  const app = fs.readFileSync(path.join(webRoot, 'src/App.jsx'), 'utf8');
+  const css = fs.readFileSync(path.join(webRoot, 'src/style.css'), 'utf8');
+  const memoryCss = css.slice(css.indexOf('/* ---------- memory view ----------'), css.indexOf('/* ---------- rendered markdown ----------'));
+  assert.match(source, /const projectFetch = useProjectFetch\(\)/);
+  assert.match(source, /projectFetch\('\/api\/memory\/drafts'\)/);
+  assert.match(source, /usePoll\('\/api\/memory\/summary\?scope=project'/);
+  assert.match(source, /usePoll\('\/api\/memory\/graph\?scope=project'/);
+  assert.match(source, /reviewMemoryDraft\(id, action, projectFetch, targetType\)/);
+  assert.match(source, /\}, \[tab, projectFetch, draftReload\]\)/, 'project fetch changes and successful reviews reload the draft list');
+  assert.match(source, /draftLoading && <p className="loading" role="status">/);
+  assert.match(source, /draftError && <ErrorBanner/);
+  assert.match(source, /draftNotice && <p[^>]*role="status" aria-live="polite"/);
+  assert.match(app, /key=\{selectedProjectId\}/, 'switching projects remounts the dashboard and drops pending component state');
+  assert.doesNotMatch(source, /\/api\/memory\/global|scope:\s*['"]global/i);
+  assert.match(memoryCss, /\.mem-tabs\s*\{[^}]*grid-template-columns:\s*repeat\(5, minmax\(0, 1fr\)\)/s);
+  assert.match(memoryCss, /\.mem-tab:focus-visible,[\s\S]*?\.memory-draft-actions select:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--guarana\)/s);
+  assert.match(memoryCss, /\.memory-draft-actions\s*\{[^}]*flex-wrap:\s*wrap/s);
+  const mobileTabs = memoryCss.slice(memoryCss.indexOf('@media (max-width: 520px)'));
+  assert.match(mobileTabs, /\.mem-tab-hint\s*\{[^}]*overflow-wrap:\s*anywhere/s);
+  assert.match(mobileTabs, /\.memory-draft-type-label\s*\{\s*flex-basis:\s*100%;\s*\}/);
+});
+
+test('Project overview renders only project counts', async (t) => {
   const { memorySummaryRows, MemorySummary } = await loadMemory(t);
   const data = {
     nodes: { total: 7, byScope: { project: 4, global: 3 }, confirmed: 6 },
@@ -102,24 +194,81 @@ test('Memory summary preserves scope counts and every existing count field', asy
   };
   const rows = memorySummaryRows(data);
   assert.deepEqual(rows, [
-    ['project nodes', 4, 'project'],
-    ['global nodes', 3, 'global'],
-    ['total nodes', 7],
+    ['project memories', 4],
     ['confirmed', 6],
+    ['drafts', 0],
     ['supernodes', 2],
     ['edges', 9],
   ]);
-  assert.deepEqual(memorySummaryRows({ nodes: { total: 2 } }).slice(0, 2), [
-    ['project nodes', 2, 'project'],
-    ['global nodes', 0, 'global'],
-  ]);
+  assert.deepEqual(memorySummaryRows({ nodes: { total: 2 } }).slice(0, 2), [['project memories', 2], ['confirmed', 0]]);
 
   const html = render(React.createElement(MemorySummary, { data }));
-  assert.match(html, /aria-label="Memory counts by scope"/);
-  assert.match(html, /Project memories<\/dt><dd>4/);
-  assert.match(html, /Private global memories<\/dt><dd>3/);
-  for (const count of ['total nodes', 'confirmed', 'supernodes', 'edges']) assert.ok(html.includes(count));
-  assert.match(html, /aria-label="Other memory counts"/);
+  assert.match(html, /aria-label="Project memory counts"/);
+  for (const count of ['project memories', 'confirmed', 'drafts', 'supernodes', 'edges']) assert.ok(html.includes(count));
+  assert.doesNotMatch(html, /global|total nodes/i);
+});
+
+test('Preference library and graph are read-only, scoped, and keyboard accessible', async (t) => {
+  const { MEMORY_PREFERENCE_CATEGORIES, memoryPreferencesUrl, loadMemoryPreferences, loadMemoryPreferenceGraph, groupMemoryPreferences, MemoryPreferenceRecords, MemoryPreferences } = await loadMemory(t);
+  assert.deepEqual(MEMORY_PREFERENCE_CATEGORIES, ['agent_behavior', 'workflow', 'communication', 'general']);
+  assert.equal(memoryPreferencesUrl({ query: '  concise  ', category: 'communication', status: 'active' }),
+    '/api/memory/preferences?q=concise&category=communication&status=active');
+  assert.equal(memoryPreferencesUrl({ status: 'superseded' }), '/api/memory/preferences?status=superseded');
+
+  const calls = [];
+  const entries = [{ id: 'pref-1', scope: 'global', type: 'preference', category: 'communication', status: 'active', intent: 'Be concise', summary: 'Prefer brief replies.', tags: ['style'], priority: 'essential', ts: 1700000000000 }];
+  assert.deepEqual(await loadMemoryPreferences({ query: 'concise', category: 'communication', status: 'active' }, async (...args) => {
+    calls.push(args);
+    return { ok: true, json: async () => ({ preferences: entries }) };
+  }), entries);
+  assert.deepEqual(calls, [['/api/memory/preferences?q=concise&category=communication&status=active']],
+    'the preference endpoint is invoked with no mutation method or request body');
+  const graphCalls = [];
+  const graph = await loadMemoryPreferenceGraph(async (...args) => {
+    graphCalls.push(args);
+    return { ok: true, json: async () => ({ nodes: [{ id: 'global-1', scope: 'global', type: 'preference' }], edges: [] }) };
+  });
+  assert.deepEqual(graphCalls, [['/api/memory/graph?scope=global', { method: 'GET' }]],
+    'the preference graph uses only the global graph GET endpoint with no request body');
+  assert.deepEqual(graph.nodes.map(({ id }) => id), ['global-1']);
+  assert.deepEqual(groupMemoryPreferences([
+    ...entries,
+    { id: 'pref-2', category: 'unrecognized', status: 'superseded', intent: 'Legacy category' },
+  ]).map(([category, records]) => [category, records.length]), [['communication', 1], ['general', 1]]);
+
+  const records = render(React.createElement(MemoryPreferenceRecords, { preferences: [
+    ...entries,
+    { id: 'pref-2', scope: 'global', type: 'preference', category: 'general', status: 'superseded', intent: 'Older preference', summary: 'Prior preference.', tags: ['old'], ts: 1699990000000 },
+  ] }));
+  for (const value of ['communication', 'general', 'Be concise', 'Prefer brief replies.', 'essential', 'active', 'Older preference', 'superseded']) {
+    assert.ok(records.includes(value), `renders preference field ${value}`);
+  }
+  assert.match(records, /memory-preference-status memory-preference-status--active">active/);
+  assert.match(records, /memory-preference-status memory-preference-status--superseded">superseded/);
+  assert.match(records, /<dt>timestamp<\/dt><dd><time dateTime="2023-11-14T22:13:20\.000Z"/);
+  assert.equal([...records.matchAll(/<dt>scope<\/dt><dd>Global<\/dd>/g)].length, 2);
+  assert.doesNotMatch(records, /Project rule|project memory|<button/);
+
+  const filters = render(React.createElement(MemoryPreferences, { tab: 'library', setTab() {} }));
+  assert.match(filters, /aria-label="Search global preferences"/);
+  assert.match(filters, /aria-label="Filter preferences by category"/);
+  assert.match(filters, /aria-label="Filter preferences by status"/);
+  assert.match(filters, /role="tablist" aria-label="User preferences sections"/);
+  for (const id of ['library', 'graph', 'injection-history']) {
+    assert.match(filters, new RegExp(`id="memory-preferences-tab-${id}"[^>]*aria-controls="memory-preferences-panel-${id}"`));
+    assert.match(filters, new RegExp(`id="memory-preferences-panel-${id}"[^>]*aria-labelledby="memory-preferences-tab-${id}"`));
+  }
+  for (const category of MEMORY_PREFERENCE_CATEGORIES) assert.match(filters, new RegExp(`<option value="${category}">`));
+  assert.match(filters, /<option value="active" selected="">active<\/option>/);
+  assert.match(filters, /<option value="superseded">superseded<\/option>/);
+  assert.match(filters, /<option value="all">all statuses<\/option>/);
+  assert.match(filters, /role="tab" id="memory-preferences-tab-graph"[^>]*>Preference graph<\/button>/);
+  assert.doesNotMatch(filters, /Create preference|Edit preference|Delete preference/);
+  const graphTab = render(React.createElement(MemoryPreferences, { tab: 'graph', setTab() {} }));
+  assert.match(graphTab, /id="memory-preferences-tab-graph"[^>]*aria-selected="true"/);
+  assert.match(graphTab, /Global preference graph/);
+  assert.match(graphTab, /read-only and independent of the selected project/);
+  assert.doesNotMatch(graphTab, /Filter memories by scope|Project relationship editor|Review link|Remove link/);
 });
 
 test('Memory search remains project-only and renders readable confirmed-result entries', async (t) => {
@@ -146,11 +295,20 @@ test('Memory search remains project-only and renders readable confirmed-result e
   assert.match(html, /role="region" aria-label="Memory search results"/);
   assert.match(html, /<ol class="mem-result-list">/);
   assert.match(html, /<dt>type<\/dt><dd class="mem-result-type">decision<\/dd>/);
+  assert.match(html, /<dt>scope<\/dt><dd>project<\/dd>/);
   assert.match(html, /<span class="mem-result-label">intent<\/span>retry safely/);
   assert.match(html, /<span class="mem-result-label">summary<\/span>Back off before retrying\./);
   assert.match(html, /<dt>score<\/dt><dd>0\.875<\/dd>/);
   assert.match(html, /<dt>timestamp<\/dt><dd><time dateTime=/);
   assert.doesNotMatch(html, /<table|<th>/);
+
+  const legacy = render(React.createElement(MemorySearchResults, { results: [
+    { id: 'legacy-pref', type: 'preference', intent: 'Legacy project preference', summary: 'Project-only sentinel.', ts },
+    { id: 'legacy-atom', type: 'atom', intent: 'Legacy project atom', summary: 'Existing label remains.', ts },
+  ] }));
+  assert.match(legacy, /Project · legacy preference/);
+  assert.match(legacy, /Legacy project record/);
+  assert.match(legacy, /<dt>scope<\/dt><dd>project<\/dd>/);
 });
 
 test('Memory graph SSR selects the first scoped record and shows readable directed neighbors and lineage', async (t) => {
@@ -273,6 +431,64 @@ test('Graph filters scope, type, relation, and searchable memory text without lo
   }
   assert.match(html, /aria-label="Memory index"/);
   assert.match(html, /class="memory-scope memory-scope--global">global/);
+});
+
+test('Project-only graph presentation drops global nodes and controls without changing project editing', async (t) => {
+  const { MemoryGraph } = await loadMemory(t);
+  const html = render(React.createElement(MemoryGraph, {
+    projectOnly: true,
+    nodes: [
+      { id: 'project-rule', scope: 'project', type: 'decision', intent: 'Project-only rule' },
+      { id: 'private-pref', scope: 'global', type: 'preference', intent: 'Private response preference' },
+    ],
+    edges: [
+      { scope: 'project', from: 'project-rule', to: 'project-rule', rel: 'relates-to' },
+      { scope: 'global', from: 'private-pref', to: 'private-pref', rel: 'relates-to' },
+    ],
+    selected: null,
+    onSelect() {},
+  }));
+  assert.match(html, /<legend>Filter project memories and relationships<\/legend>/);
+  assert.doesNotMatch(html, /Filter memories by scope|all scopes|global preference: Private response preference|Private response preference|memory-scope--global/);
+  assert.match(html, /project decision: Project-only rule/);
+  assert.match(html, /Project relationship editor/);
+});
+
+test('Global preference graph defensively filters scope, type, and edge endpoints without mutation controls', async (t) => {
+  const { filterGlobalPreferenceGraph, MemoryGraph } = await loadMemory(t);
+  const nodes = [
+    { id: 'preference-safe', scope: 'global', type: 'preference', intent: 'Global preference safe sentinel', summary: 'Private global preference text.' },
+    { id: 'project-only', scope: 'project', type: 'decision', intent: 'Project-only sentinel', summary: 'Must not leak.' },
+    { id: 'global-legacy', scope: 'global', type: 'decision', intent: 'Global legacy non-preference sentinel', summary: 'Must not leak either.' },
+    { id: 'preference-next', scope: 'global', type: 'preference', intent: 'Another global preference' },
+    null,
+  ];
+  const edges = [
+    { scope: 'global', from: 'preference-safe', to: 'preference-next', rel: 'relates-to' },
+    { scope: 'project', from: 'preference-safe', to: 'project-only', rel: 'fixes' },
+    { scope: 'global', from: 'preference-safe', to: 'project-only', rel: 'fixes' },
+    { scope: 'global', from: 'preference-safe', to: 'global-legacy', rel: 'caused-by' },
+    null,
+  ];
+  assert.deepEqual(filterGlobalPreferenceGraph(nodes, edges), {
+    nodes: [nodes[0], nodes[3]], edges: [edges[0]],
+  });
+  const html = render(React.createElement(MemoryGraph, {
+    nodes, edges, selected: 'global:preference-safe', onSelect() {}, globalPreferencesOnly: true,
+  }));
+  assert.match(html, /Global preference map/);
+  assert.match(html, /aria-label="Selected global preference inspector"/);
+  assert.match(html, /Global preference safe sentinel/);
+  assert.match(html, /Another global preference/);
+  assert.doesNotMatch(html, /Project-only sentinel|Must not leak|global legacy non-preference sentinel|Filter memories by scope|Filter memories by type|all scopes|project<\/option>/i);
+  assert.match(html, /aria-label="Filter global preferences by type"/);
+  assert.deepEqual([...html.matchAll(/<option value="([^"]*)"[^>]*>([^<]*)<\/option>/g)].map(([, value, label]) => [value, label]), [
+    ['', 'all preferences'], ['preference', 'preference'],
+    ['', 'all relationships'], ['caused-by', 'caused-by — was caused by'], ['depends-on', 'depends-on — depends on'],
+    ['supersedes', 'supersedes — supersedes'], ['summarizes', 'summarizes — summarizes'],
+    ['fixes', 'fixes — fixes'], ['relates-to', 'relates-to — is related to'],
+  ]);
+  assert.doesNotMatch(html, /Project relationship editor|Manage project links|Review link|Remove link|Confirm removal|\/api\/memory\/relationships/);
 });
 
 test('Graph global selection and global links remain read-only', async (t) => {
@@ -455,13 +671,15 @@ test('Graph uses native focused controls and contains the index without drag, re
 });
 
 test('Memory injection history remains session-filterable and responsive scrolling is contained', async (t) => {
-  const { filterInjectionsForSession } = await loadMemory(t);
+  const { filterInjectionsForSession, filterInjectionsForScope } = await loadMemory(t);
   const history = [
     { id: 'project-turn', sessionID: 'root', memories: [{ id: 'p1', type: 'decision', scope: 'project' }] },
     { id: 'global-turn', sessionID: 'helper', memories: [{ id: 'g1', type: 'preference', scope: 'global' }] },
   ];
   assert.deepEqual(filterInjectionsForSession(history, 'root').map(({ id }) => id), ['project-turn']);
   assert.deepEqual(filterInjectionsForSession(history).map(({ id }) => id), ['project-turn', 'global-turn']);
+  assert.deepEqual(filterInjectionsForScope(history, 'project').map(({ id }) => id), ['project-turn']);
+  assert.deepEqual(filterInjectionsForScope(history, 'global').map(({ id }) => id), ['global-turn']);
 
   const css = fs.readFileSync(path.join(webRoot, 'src/style.css'), 'utf8');
   const start = css.indexOf('/* ---------- memory view ----------');
@@ -474,7 +692,41 @@ test('Memory injection history remains session-filterable and responsive scrolli
   assert.match(memoryCss, /\.mem-bubble-viewport\s*\{[^}]*overflow:\s*clip;[^}]*overscroll-behavior:\s*contain/s);
   assert.doesNotMatch(memoryCss, /mem-graph-svg|mem-graph-viewport/);
   assert.match(memoryCss, /@media \(prefers-reduced-motion: reduce\)/);
+  assert.match(memoryCss, /\.mem-workspace-switch\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/s);
+  assert.match(memoryCss, /\.memory-preference-list\s*> li\s*\{[^}]*border-bottom:\s*1px solid var\(--hairline\)/s);
+  assert.match(memoryCss, /\.memory-preference-status--superseded\s*\{\s*color:\s*var\(--amber\)/);
   assert.doesNotMatch(memoryCss, /\.mem-summary\s*\{[^}]*grid-template-columns/s);
+});
+
+test('Injection workspaces request and render only their own scope, with legacy project history labelled', async (t) => {
+  const { MemoryInjections } = await loadMemoryInjectionsWithData(t, { injections: [{
+    id: 'mixed-legacy-event', sessionID: 'root', ts: 1700000000000,
+    memories: [
+      { id: 'p1', scope: 'project', type: 'decision', intent: 'Historical project rule', summary: 'Old context.' },
+      { id: 'g1', scope: 'global', type: 'preference', intent: 'Global writing style', summary: 'Use short replies.' },
+      { id: 'g2', scope: 'global', type: 'decision', intent: 'Not a preference', summary: 'Exclude from global history.' },
+    ],
+    edges: [
+      { scope: 'project', from: 'p1', to: 'p1', rel: 'relates-to' },
+      { scope: 'global', from: 'g1', to: 'g1', rel: 'relates-to' },
+    ],
+  }] });
+  const globalHtml = render(React.createElement(MemoryInjections, { scope: 'global' }));
+  assert.match(globalHtml, /Global preference injection history/);
+  assert.match(globalHtml, /aria-label="User preferences in this injection"/);
+  assert.match(globalHtml, /aria-label="Recent preference injections"/);
+  assert.match(globalHtml, /Global writing style/);
+  assert.doesNotMatch(globalHtml, /Historical project rule|Not a preference|Old context/);
+
+  const projectHtml = render(React.createElement(MemoryInjections, { scope: 'project', historical: true }));
+  assert.match(projectHtml, /Legacy project injection history/);
+  assert.match(projectHtml, /Older project-context history only\. Project memories are not injected now\./);
+  assert.match(projectHtml, /Historical project rule/);
+  assert.doesNotMatch(projectHtml, /Global writing style|Use short replies|Not a preference/);
+
+  const source = fs.readFileSync(path.join(webRoot, 'src/components/MemoryInjections.jsx'), 'utf8');
+  assert.match(source, /params\.set\('scope', scope\)/);
+  assert.match(source, /usePoll\(`\/api\/memory\/injections\?\$\{params\.toString\(\)\}`/);
 });
 
 test('Injected renders readable scoped records, typed links, unavailable state, and event history', async (t) => {
@@ -496,7 +748,7 @@ test('Injected renders readable scoped records, typed links, unavailable state, 
     },
   ] });
   const html = render(React.createElement(MemoryInjections));
-  assert.match(html, /aria-label="Memories in this injection"/);
+  assert.match(html, /aria-label="Memory records in this injection"/);
   assert.match(html, /class="memory-folio-type">decision/);
   assert.match(html, /class="memory-scope memory-scope--project">project/);
   assert.match(html, /class="memory-scope memory-scope--global">global/);

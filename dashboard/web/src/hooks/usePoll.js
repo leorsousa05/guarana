@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react';
+import { ProjectIdContext, projectApiUrl } from '../lib/projectApi.js';
 
 export const PollIntervalContext = createContext(5000);
 
@@ -8,6 +9,7 @@ export function pollIntervalFor(intervalMs, liveIntervalMs) {
 
 export function usePoll(url, intervalMs = 5000, tick = 0) {
   const liveIntervalMs = useContext(PollIntervalContext);
+  const projectId = useContext(ProjectIdContext);
   const effectiveIntervalMs = pollIntervalFor(intervalMs, liveIntervalMs);
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -16,7 +18,7 @@ export function usePoll(url, intervalMs = 5000, tick = 0) {
     let cancelled = false;
     const load = async () => {
       try {
-        const res = await fetch(url);
+        const res = await fetch(projectApiUrl(url, projectId));
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
         const json = await res.json();
         if (!cancelled) {
@@ -33,6 +35,6 @@ export function usePoll(url, intervalMs = 5000, tick = 0) {
       cancelled = true;
       clearInterval(id);
     };
-  }, [url, effectiveIntervalMs, nonce, tick]);
+  }, [url, effectiveIntervalMs, nonce, tick, projectId]);
   return { data, error, refetch: () => setNonce((n) => n + 1) };
 }

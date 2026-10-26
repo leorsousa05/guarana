@@ -138,3 +138,31 @@ in the private user vault and loaded every turn; each preference is injected
 once per session, then again after compaction, independent of task wording.
 Project decisions and knowledge use the project vault and task-relevant retrieval.
 When a preference changes, the new node supersedes its previous version.
+
+## Amendment: project knowledge and user preference separation (TASKED)
+
+The accepted [memory-domain separation follow-up](project-knowledge-and-user-preferences-separation.md),
+recorded in [ADR-042](../../decisions/ADR-042-project-knowledge-and-user-preference-separation.md),
+supersedes the prior automatic project-context injection behavior when
+implemented. This amendment records an accepted, planned follow-up only; the
+historical VALIDATED status and evidence above are unchanged, and no
+implementation or proof is claimed here.
+
+### Strict legacy-lifecycle clarification (2026-10-25; implementation TASKED)
+
+For this follow-up, new project writes are limited to `decision | bug | solution
+| refactor`; new global preferences require category `agent_behavior | workflow
+| communication`. Only bounded confirmed global preferences are eligible for
+automatic prompt injection. Legacy project preferences, atoms, and supernodes
+remain readable/searchable but are not injected or reclassified. Compaction and
+pruning are safe no-ops for legacy records: they create no supernodes and delete
+or clean up no legacy nodes or edges. Draft discard remains available, while
+confirmation requires an explicit `edits.type` conversion to one of the four
+project types. This records the accepted strict clarification; implementation
+and verification remain pending. Criterion 1 import validation and canonical documentation remain unverified.
+
+### Implementation checkpoint — 2026-10-25 (follow-up TASKED)
+
+This checkpoint supersedes only the preceding statement that implementation/import validation and canonical documentation remain unverified; the historical VALIDATED status/evidence and follow-up link above are unchanged. Fresh independent verification found no remaining implementation defect. Criteria 1–7, 9–11, and 13 pass. Criterion 12 is BLOCKED because browser binaries, Playwright/Puppeteer, and a browser tool are unavailable; criterion 8 remains incomplete until interactive browser proof and a final independent overall PASS. Verified areas include null-scope rejection, legacy secret-tag filtering in engine/prompt/Dashboard, project-only injection, category/general behavior, strict prune/draft lifecycle, documentation and CLI mirrors, and archive preflight.
+
+Primary gates passed: `npm test` (640/640), `npm run build`, `npm run check-cli`, `npm run specs:validate` (236 Markdown files, 92 feature specs, 42 ADRs, 257 local links, zero issues), and `git diff --check`. Independent verification reran `npm test` (640/640), `npm run check-cli`, specs validation, and diff-check successfully; it did not rerun build under its no-edit constraint, and the primary build PASS is retained. Focused Dashboard canonical/mirror tests passed 32/32, and security injection/temp-fixture checks passed. No actual memory vault contents were inspected or mutated.

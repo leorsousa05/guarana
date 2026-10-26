@@ -4,6 +4,7 @@ import { ErrorBanner, handleTabKeyDown, Stamp } from './common.jsx';
 import { MdLink, isSpecPath } from '../lib/markdown.jsx';
 import { Documents, buildGroups } from './Documents.jsx';
 import { SpecsMarkdownModal } from './SpecsMarkdownModal.jsx';
+import { useProjectFetch } from '../lib/projectApi.js';
 
 function excerpt(text, limit = 190) {
   const source = String(text || '');
@@ -274,6 +275,7 @@ function Overview({ tracker, state, decisions, pending, resolving, resolution, o
 }
 
 export function Specs({ tracker, state, tick = 0 }) {
+  const projectFetch = useProjectFetch();
   const [view, setView] = useState('overview');
   const [tree, setTree] = useState(null);
   const [treeError, setTreeError] = useState(null);
@@ -291,7 +293,7 @@ export function Specs({ tracker, state, tick = 0 }) {
     setResolving(id);
     setResolution(null);
     try {
-      await postDecisionResolution(file, statement, outcome);
+      await postDecisionResolution(file, statement, outcome, projectFetch);
       setResolution({ type: 'success', text: `Decision ${outcome}.` });
     } catch (error) {
       setResolution({ type: 'error', text: `Unable to ${outcome} decision: ${error.message || error}` });
@@ -303,7 +305,7 @@ export function Specs({ tracker, state, tick = 0 }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/specs/tree')
+    projectFetch('/api/specs/tree')
       .then((response) => {
         if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
         return response.json();
@@ -317,7 +319,7 @@ export function Specs({ tracker, state, tick = 0 }) {
         if (!cancelled) setTreeError(`Unable to load documents: ${error.message || error}`);
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [projectFetch]);
 
   const docPaths = useMemo(() => flattenDocumentPaths(buildGroups(tree)), [tree]);
   useEffect(() => {
@@ -326,7 +328,7 @@ export function Specs({ tracker, state, tick = 0 }) {
     if (need.length === 0) return undefined;
     Promise.all(need.map(async (path) => {
       try {
-        const response = await fetch(`/api/specs/file?path=${encodeURIComponent(path)}`);
+        const response = await projectFetch(`/api/specs/file?path=${encodeURIComponent(path)}`);
         const text = response.ok ? await response.text() : '';
         const match = text.match(/^\s*#\s+(.+)$/m);
         return [path, match ? match[1].trim() : fallbackTitle(path)];
@@ -337,7 +339,7 @@ export function Specs({ tracker, state, tick = 0 }) {
       if (!cancelled) setTitles((current) => ({ ...current, ...Object.fromEntries(entries) }));
     });
     return () => { cancelled = true; };
-  }, [docPaths, titles]);
+  }, [docPaths, titles, projectFetch]);
 
   const openText = (title, text) => setReader({ title, text });
   const openDoc = (rel) => {

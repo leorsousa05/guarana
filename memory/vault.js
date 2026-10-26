@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { MemoryValidationError, validateEdge, validateNewNode } from "./schema.js";
 
 export const DEFAULT_CONFIG = {
   compactionThreshold: 1000,
@@ -125,10 +126,33 @@ export function exportVault(vaultDir, outFile) {
 
 export function importVault(vaultDir, inFile) {
   const data = JSON.parse(fs.readFileSync(inFile, "utf8"));
+  if (!data || typeof data !== "object" || Array.isArray(data))
+    throw new MemoryValidationError("archive must be an object");
+  if (data.version !== 1)
+    throw new MemoryValidationError("archive.version must be 1");
+  if (typeof data.exportedAt !== "string" || !Number.isFinite(Date.parse(data.exportedAt)))
+    throw new MemoryValidationError("archive.exportedAt must be a valid date string");
+  if (!Array.isArray(data.nodes))
+    throw new MemoryValidationError("archive.nodes must be an array");
+  if (!Array.isArray(data.edges))
+    throw new MemoryValidationError("archive.edges must be an array");
+
+  const nodeIds = new Set();
+  for (const node of data.nodes) {
+    if (node?.scope !== undefined && node.scope !== "project")
+      throw new MemoryValidationError('project archive node.scope must be "project"');
+    validateNewNode(node);
+    if (nodeIds.has(node.id))
+      throw new MemoryValidationError(`duplicate archive node.id: ${node.id}`);
+    nodeIds.add(node.id);
+  }
+  for (const edge of data.edges) validateEdge(edge, nodeIds);
+
+  // No target write occurs before the complete archive has passed validation.
   const p = paths(vaultDir);
   fs.mkdirSync(p.drafts, { recursive: true });
-  writeJsonl(p.nodes, Array.isArray(data.nodes) ? data.nodes : []);
-  writeJsonl(p.edges, Array.isArray(data.edges) ? data.edges : []);
+  writeJsonl(p.nodes, data.nodes);
+  writeJsonl(p.edges, data.edges);
   if (!fs.existsSync(p.config))
     fs.writeFileSync(p.config, JSON.stringify(DEFAULT_CONFIG, null, 2) + "\n", "utf8");
   return { nodes: data.nodes.length, edges: data.edges.length };

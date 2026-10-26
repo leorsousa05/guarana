@@ -6,22 +6,22 @@ import { SPECS_DIR, TELEMETRY_DIR_SEGMENTS, EVENTS_FILE } from '../lib/constants
 
 export function createTelemetryRouter({ root }) {
   const router = express.Router();
-  const telemetryFile = path.join(root, SPECS_DIR, ...TELEMETRY_DIR_SEGMENTS, EVENTS_FILE);
+  const telemetryFile = (req) => path.join(req.projectRoot || root, SPECS_DIR, ...TELEMETRY_DIR_SEGMENTS, EVENTS_FILE);
 
-  router.get('/summary', (_req, res) => {
-    const events = readJsonl(telemetryFile);
+  router.get('/summary', (req, res) => {
+    const events = readJsonl(telemetryFile(req));
     res.json({ runs: summarize(events) });
   });
 
   router.get('/advisor-history', (req, res) => {
     const rawLimit = Number(req.query.limit);
     const limit = Number.isInteger(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 100) : 25;
-    res.json({ history: advisorHistory(readJsonl(telemetryFile), limit) });
+    res.json({ history: advisorHistory(readJsonl(telemetryFile(req)), limit) });
   });
 
   router.get('/events', (req, res) => {
     const sessions = (Array.isArray(req.query.session) ? req.query.session : [req.query.session]).filter((s) => typeof s === 'string').slice(0, 5);
-    const events = readJsonl(telemetryFile);
+    const events = readJsonl(telemetryFile(req));
     const filtered = sessions.length ? events.filter((e) => sessions.includes(e.sessionID)) : events;
     const rawLimit = Number(req.query.limit);
     const limit = Number.isInteger(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 200) : null;
@@ -33,6 +33,7 @@ export function createTelemetryRouter({ root }) {
   // by mtime polling (robust even when the file does not exist yet), with a
   // heartbeat to keep the connection alive through proxies.
   router.get('/stream', (req, res) => {
+    const selectedTelemetryFile = telemetryFile(req);
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
@@ -45,7 +46,7 @@ export function createTelemetryRouter({ root }) {
     const check = () => {
       let mtime = 0;
       try {
-        mtime = fs.statSync(telemetryFile).mtimeMs;
+        mtime = fs.statSync(selectedTelemetryFile).mtimeMs;
       } catch {
         /* file absent */
       }

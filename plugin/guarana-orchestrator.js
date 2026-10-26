@@ -20,7 +20,6 @@ const MEMORY_CONTEXT_GROUPS = [
   'global_preferences',
   'related_global_preferences',
   'superseded_global_preferences',
-  'project_context',
 ];
 const WORKER_AGENT_NAMES = new Set(['worker-code', 'worker-verify', 'worker-debug', 'worker-specs', 'guarana-advisor']);
 const INJECTION_CACHE_SYMBOL = Symbol.for('guarana.orchestrator.memory-injection-cache');
@@ -105,10 +104,7 @@ function selectUnseenMemory(context, seen) {
   for (const group of MEMORY_CONTEXT_GROUPS) {
     selected[group] = [];
     for (const node of context?.[group] || []) {
-      if (!node || !node.id) continue;
-      if (group === 'project_context') {
-        if (node.scope !== 'project') continue;
-      } else if (node.scope !== 'global' || node.type !== 'preference') continue;
+      if (!node || !node.id || node.scope !== 'global' || node.type !== 'preference') continue;
       const key = memoryNodeKey(node);
       if (seen.has(key)) continue;
       seen.add(key);
@@ -450,22 +446,15 @@ export const GuaranaOrchestrator = async ({ directory, client, session, sdkVersi
     const e = await memoryPromise;
     if (!e) return null;
     try {
-      const userVaultDir = e.vault.userVaultDir();
-      const [projectContext, globalPreferences] = await Promise.all([
-        task
-          ? e.tools.memoryGetContextForTask(e.vault.initVault(directory), { task, limit: 7 })
-          : Promise.resolve({ decisions: [], bugs: [], solutions: [], refactors: [], preferences: [], superseded: [], atoms: [], count: 0 }),
-        e.tools.memoryGetGlobalPreferences(userVaultDir, { complete: true }),
-      ]);
-      const projectNodes = ['decisions', 'bugs', 'solutions', 'refactors', 'preferences', 'superseded', 'atoms']
-        .flatMap((group) => projectContext[group] || [])
-        .map((node) => ({ ...node, scope: 'project' }));
+      // Preserve the established task-start project-vault initialization, but
+      // never read project nodes for automatic prompt context.
+      if (task) e.vault.initVault(directory);
+      const globalPreferences = await e.tools.memoryGetGlobalPreferences(e.vault.userVaultDir(), { complete: true });
       return {
         global_preferences: globalPreferences.preferences,
         related_global_preferences: globalPreferences.relatedPreferences || [],
         superseded_global_preferences: globalPreferences.relatedSuperseded || [],
-        project_context: projectNodes,
-        count: projectNodes.length + (globalPreferences.preferences || []).length
+        count: (globalPreferences.preferences || []).length
           + (globalPreferences.relatedPreferences || []).length
           + (globalPreferences.relatedSuperseded || []).length,
       };
@@ -710,12 +699,8 @@ export const GuaranaOrchestrator = async ({ directory, client, session, sdkVersi
           memoryNotice = `Global preferences were not injected because no usable configured token budget or model context limit is available. No preference text was included. ${preferenceBudgetRepair}`;
         } else if (serializedMemory && serializedBytes > effectiveBudget) {
           memoryNotice = `Global preferences were not injected because the complete payload is ${serializedBytes} UTF-8 bytes, over the ${effectiveBudget}-token estimated budget. UTF-8 bytes are only an estimate, not exact tokenization or remaining conversation capacity; no preference text was included. ${preferenceBudgetRepair}`;
-        }
-        const referencesToClaim = serializedMemory && (effectiveBudget == null || serializedBytes > effectiveBudget)
-          ? candidates.memories.filter((node) => node.scope !== 'global')
-          : candidates.memories;
-        if (referencesToClaim.length) {
-          claim = await claimMemoryReferences(directory, sessionID, referencesToClaim, sessionMemory.nextReason)
+        } else if (candidates.memories.length) {
+          claim = await claimMemoryReferences(directory, sessionID, candidates.memories, sessionMemory.nextReason)
             || { memories: [], reason: sessionMemory.nextReason };
           pendingMemoryContext = contextForReferences(candidates.context, claim.memories);
         }

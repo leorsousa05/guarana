@@ -41,8 +41,9 @@ function responseSettings(projectRoot) {
 export function createModelsRouter({ root }) {
   const router = express.Router();
 
-  router.get('/runtime', (_req, res) => {
-    const file = path.join(root, SPECS_DIR, ...TELEMETRY_DIR_SEGMENTS, EVENTS_FILE);
+  router.get('/runtime', (req, res) => {
+    const selectedRoot = req.projectRoot || root;
+    const file = path.join(selectedRoot, SPECS_DIR, ...TELEMETRY_DIR_SEGMENTS, EVENTS_FILE);
     const events = readJsonl(file);
     const event = events.filter((row) => row.type === 'advisor-execution').sort((a, b) => (b.ts || 0) - (a.ts || 0))[0];
     if (!event) return res.json({ execution: null });
@@ -56,7 +57,7 @@ export function createModelsRouter({ root }) {
   router.get('/catalog', async (req, res) => {
     const provider = req.query.provider;
     const result = await modelCatalog.discoverModels({
-      cwd: root,
+      cwd: req.projectRoot || root,
       ...(provider === undefined ? {} : { provider }),
     });
     res.json(result);
@@ -64,22 +65,23 @@ export function createModelsRouter({ root }) {
 
   router.get('/variants', async (req, res) => {
     const result = await modelCatalog.discoverVariants({
-      cwd: root,
+      cwd: req.projectRoot || root,
       provider: req.query.provider,
       model: req.query.model,
     });
     res.json(result);
   });
 
-  router.get('/', (_req, res) => {
+  router.get('/', (req, res) => {
     try {
-      res.json(responseSettings(root));
+      res.json(responseSettings(req.projectRoot || root));
     } catch (error) {
       res.status(500).json({ error: `Unable to load model settings: ${error.message}` });
     }
   });
 
   router.put('/', (req, res) => {
+    const selectedRoot = req.projectRoot || root;
     const body = req.body;
     if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== 1 || !Object.hasOwn(body, 'settings')) {
       return res.status(400).json({ error: 'Request body must contain only a settings object.' });
@@ -93,22 +95,22 @@ export function createModelsRouter({ root }) {
     }
 
     try {
-      const global = advisorSettings.readSettings(false, { projectRoot: root });
+      const global = advisorSettings.readSettings(false, { projectRoot: selectedRoot });
       const effective = advisorSettings.mergeSettings(project, global);
       if (effective.advisor?.enabled === true && (!effective.advisor.provider || !effective.advisor.model)) {
         return res.status(400).json({ error: 'Advisor consultations require an effective Advisor provider and model.' });
       }
-      const options = { projectRoot: root, settingsOverride: effective };
+      const options = { projectRoot: selectedRoot, settingsOverride: effective };
       const profilePlan = advisorProfiles.preflightInstall(true, options);
       const artifacts = artifactTransaction.run([
-        advisorSettingsTarget(true, root),
+        advisorSettingsTarget(true, selectedRoot),
         profilePlan.manifestFile,
         ...artifactTransaction.profileTargets(profilePlan),
       ], () => {
-        advisorSettings.writeSettings(true, project, { projectRoot: root });
-        return advisorProfiles.installAdvisorArtifacts(true, { projectRoot: root, preflight: profilePlan });
+        advisorSettings.writeSettings(true, project, { projectRoot: selectedRoot });
+        return advisorProfiles.installAdvisorArtifacts(true, { projectRoot: selectedRoot, preflight: profilePlan });
       });
-      res.json({ ...responseSettings(root), ok: true, artifacts });
+      res.json({ ...responseSettings(selectedRoot), ok: true, artifacts });
     } catch (error) {
       const conflict = /exists and is not managed by Guarana|managed advisor profile was modified/.test(error.message);
       res.status(conflict ? 409 : 500).json({

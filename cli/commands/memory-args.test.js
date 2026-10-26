@@ -64,10 +64,10 @@ describe('parseMemoryArgs', () => {
       command: 'review', mode: 'list',
     }],
     ['review confirm intent and trimmed tags', [
-      'review', 'node-1', '--tags', ' alpha, ,beta ', '--confirm', '--intent', 'accepted', '--other', 'value',
+      'review', 'node-1', '--tags', ' alpha, ,beta ', '--confirm', '--type', 'solution', '--intent', 'accepted', '--other', 'value',
     ], {
       command: 'review', mode: 'edit', id: 'node-1', action: 'confirm',
-      edits: { intent: 'accepted', tags: ['alpha', 'beta'] },
+      edits: { type: 'solution', intent: 'accepted', tags: ['alpha', 'beta'] },
     }],
     ['review confirm wins when both actions are present', ['review', 'node-1', '--discard', '--confirm'], {
       command: 'review', mode: 'edit', id: 'node-1', action: 'confirm',
@@ -107,6 +107,7 @@ describe('parseMemoryArgs', () => {
     [['review', '--confirm'], 'missing node id: guarana memory review <id> --confirm|--discard (or --list)'],
     [['review', 'node-1'], 'specify --confirm or --discard'],
     [['review', 'node-1', '--confirm', '--intent'], 'missing value for --intent'],
+    [['review', 'node-1', '--confirm', '--type', 'atom'], 'invalid --type value: expected decision, bug, solution, or refactor'],
     [['delete'], 'missing node id: guarana memory delete <id> --scope project|global --confirm'],
     [['delete', 'node-1'], 'memory delete requires --scope project|global'],
     [['delete', 'node-1', '--scope', 'both', '--confirm'], 'invalid --scope value: both'],

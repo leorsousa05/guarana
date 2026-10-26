@@ -138,3 +138,10 @@ separate maintainer action.
   inspection with `npm pack --dry-run --json` is not a smoke test.
 
 ## [Unreleased]
+
+## [1.5.1] - 2026-10-25 (unpublished candidate)
+
+### Added
+- Configurable lossless budget for global preference injection.
+- Dashboard read-only global preference graph and related context.
+- Dashboard Memory project-vs-global workspace separation.

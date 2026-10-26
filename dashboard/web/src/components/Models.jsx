@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useProjectFetch } from '../lib/projectApi.js';
 
 const ROLES = [
   ['primary', 'Primary'],
@@ -410,19 +411,20 @@ export function ModelsForm({
 }
 
 export function Models() {
+  const projectFetch = useProjectFetch();
   const [settings, setSettings] = useState(null);
   const [project, setProject] = useState(emptyProject);
   const [catalog, setCatalog] = useState({ status: 'loading', models: [] });
   const [variants, setVariants] = useState({});
   const variantLoader = useRef(null);
-  if (!variantLoader.current) variantLoader.current = createVariantLoader(setVariants);
+  if (!variantLoader.current) variantLoader.current = createVariantLoader(setVariants, (provider, model) => fetchVariantSuggestions(provider, model, projectFetch));
   const [loadingError, setLoadingError] = useState(null);
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
   const [saving, setSaving] = useState(false);
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/models')
+    projectFetch('/api/models')
       .then(async (response) => {
         const body = await response.json();
         if (!response.ok) throw new Error(body.error || `${response.status} ${response.statusText}`);
@@ -435,7 +437,7 @@ export function Models() {
         if (!cancelled) setLoadingError(cause.message);
       });
 
-    fetch('/api/models/catalog')
+    projectFetch('/api/models/catalog')
       .then(async (response) => {
         const body = await response.json();
         return catalogStateFromResponse(response, body);
@@ -445,7 +447,7 @@ export function Models() {
         if (!cancelled) setCatalog(result);
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [projectFetch]);
 
   const loadVariants = variantLoader.current;
   useEffect(() => {
@@ -472,7 +474,7 @@ export function Models() {
     setError(null);
     setNotice(null);
     try {
-      const response = await fetch('/api/models', {
+      const response = await projectFetch('/api/models', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(settingsPayload(project)),

@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { PollIntervalContext, usePoll } from './hooks/usePoll.js';
 import { useLiveTick } from './hooks/useLiveTick.js';
+import { addCurrentProject, ProjectIdContext, readSavedProjectId, removeRegisteredProject, resolveProjectSelection, saveProjectId, useProjectFetch } from './lib/projectApi.js';
 import { Header } from './components/Header.jsx';
+import { ProjectSelector } from './components/ProjectSelector.jsx';
 import { Sidebar } from './components/Sidebar.jsx';
 import { ErrorBanner } from './components/common.jsx';
 import { Activity, activitySessionIDs } from './components/Activity.jsx';
@@ -24,6 +26,99 @@ export function viewFromHash(startPage = 'overview') {
 }
 
 export default function App() {
+  const [projectList, setProjectList] = useState(null);
+  const [selectedProjectId, setSelectedProjectId] = useState(null);
+  const [projectNotice, setProjectNotice] = useState(null);
+  const [projectBusy, setProjectBusy] = useState(false);
+
+  const reloadProjects = useCallback(async (preferredId, successText = null) => {
+    const response = await fetch('/api/projects');
+    const body = await response.json();
+    if (!response.ok) throw new Error(body?.error || `${response.status} ${response.statusText}`);
+    const choice = resolveProjectSelection(body, preferredId);
+    setProjectList(body);
+    setSelectedProjectId(choice.projectId);
+    if (choice.projectId) saveProjectId(choice.projectId);
+    setProjectNotice(choice.stale
+      ? { type: 'status', text: 'The saved project is no longer available. Showing the current project instead.' }
+      : successText ? { type: 'status', text: successText } : null);
+    return choice.projectId;
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/projects')
+      .then(async (response) => {
+        const body = await response.json();
+        if (!response.ok) throw new Error(body?.error || `${response.status} ${response.statusText}`);
+        if (cancelled) return;
+        const savedId = readSavedProjectId();
+        const choice = resolveProjectSelection(body, savedId);
+        setProjectList(body);
+        setSelectedProjectId(choice.projectId);
+        if (choice.projectId) saveProjectId(choice.projectId);
+        if (choice.stale) setProjectNotice({ type: 'status', text: 'The saved project is no longer available. Showing the current project instead.' });
+      })
+      .catch((error) => {
+        if (!cancelled) setProjectNotice({ type: 'error', text: `Unable to load projects: ${error.message}` });
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const selectProject = (id) => {
+    if (!projectList?.projects.some((project) => project.id === id)) return;
+    saveProjectId(id);
+    setSelectedProjectId(id);
+    setProjectNotice(null);
+  };
+
+  const addProject = async () => {
+    setProjectBusy(true);
+    try {
+      const project = await addCurrentProject();
+      await reloadProjects(project?.id, 'Current project added to the project list.');
+    } catch (error) {
+      setProjectNotice({ type: 'error', text: `Unable to add this project: ${error.message}` });
+    } finally { setProjectBusy(false); }
+  };
+
+  const removeProject = async () => {
+    if (!selectedProjectId || !window.confirm('Remove only this project’s registry entry? Project files and settings will remain untouched.')) return;
+    setProjectBusy(true);
+    try {
+      await removeRegisteredProject(selectedProjectId);
+      await reloadProjects(selectedProjectId, 'Project registry entry removed. Project files and settings were left untouched.');
+    } catch (error) {
+      setProjectNotice({ type: 'error', text: `Unable to remove this project: ${error.message}` });
+    } finally { setProjectBusy(false); }
+  };
+
+  if (!projectList || !selectedProjectId) {
+    return <main className="app-main"><p className={projectNotice?.type === 'error' ? 'error-banner' : 'loading'} role={projectNotice?.type === 'error' ? 'alert' : 'status'}>{projectNotice?.text || 'loading projects…'}</p></main>;
+  }
+
+  const projectSelector = (
+    <ProjectSelector
+      projects={projectList.projects}
+      selectedProjectId={selectedProjectId}
+      notice={projectNotice}
+      busy={projectBusy}
+      onSelect={selectProject}
+      onAdd={addProject}
+      onRemove={removeProject}
+    />
+  );
+  return (
+    <ProjectIdContext.Provider value={selectedProjectId}>
+      <ProjectDashboard
+        key={selectedProjectId}
+        projectSelector={projectSelector}
+      />
+    </ProjectIdContext.Provider>
+  );
+}
+
+function ProjectDashboard({ projectSelector }) {
   const webSettingsPoll = usePoll('/api/web/settings', 15000);
   const [webSettings, setWebSettings] = useState(null);
 
@@ -43,12 +138,14 @@ export default function App() {
         webSettingsError={webSettingsPoll.error}
         onWebSettingsUpdated={setWebSettings}
         pollIntervalMs={pollIntervalMs}
+        projectSelector={projectSelector}
       />
     </PollIntervalContext.Provider>
   );
 }
 
-function Dashboard({ webSettings, webSettingsError, onWebSettingsUpdated, pollIntervalMs }) {
+function Dashboard({ webSettings, webSettingsError, onWebSettingsUpdated, pollIntervalMs, projectSelector }) {
+  const projectFetch = useProjectFetch();
   const liveTick = useLiveTick('/api/telemetry/stream');
   const summary = usePoll('/api/telemetry/summary', 5000, liveTick);
   const state = usePoll('/api/specs/state', 5000);
@@ -96,7 +193,7 @@ function Dashboard({ webSettings, webSettingsError, onWebSettingsUpdated, pollIn
       const ids = recentIDs.split(',');
       try {
         const query = ids.map((id) => `session=${encodeURIComponent(id)}`).join('&');
-        const result = await fetch(`/api/telemetry/events?${query}`).then((r) => r.json());
+        const result = await projectFetch(`/api/telemetry/events?${query}`).then((r) => r.json());
         if (cancelled) return;
         const merged = (result.events || []).sort((a, b) => (a.ts ?? 0) - (b.ts ?? 0));
         setMergedEvents(merged);
@@ -110,13 +207,13 @@ function Dashboard({ webSettings, webSettingsError, onWebSettingsUpdated, pollIn
       cancelled = true;
       clearInterval(id);
     };
-  }, [recentIDs, pollIntervalMs]);
+  }, [recentIDs, pollIntervalMs, projectFetch]);
 
   const lastEventTs = mergedEvents.length ? mergedEvents[mergedEvents.length - 1].ts : null;
   return (
     <main id="main-content" tabIndex={-1} className="app-main">
       <a className="skip-link" href="#main-content">Skip to content</a>
-      <Header lastEventTs={lastEventTs} tickerTick={mergedEvents.length} />
+      <Header lastEventTs={lastEventTs} tickerTick={mergedEvents.length} projectSelector={projectSelector} />
       <div className="app-shell">
         <Sidebar active={active} onSelect={selectView} />
         <div className="app-content">

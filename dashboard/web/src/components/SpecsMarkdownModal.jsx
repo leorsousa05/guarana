@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ErrorBanner } from './common.jsx';
 import { Markdown } from '../lib/markdown.jsx';
+import { useProjectFetch } from '../lib/projectApi.js';
 
 const focusables = (root) =>
   root
@@ -16,6 +17,7 @@ export function scheduleFocusRestore(opener, schedule = (callback) => requestAni
 }
 
 export function SpecsMarkdownModal({ title, text, path, onClose, onOpenFile, canOpen }) {
+  const projectFetch = useProjectFetch();
   const boxRef = useRef(null);
   const originalTriggerRef = useRef(null);
   const originalTriggerCapturedRef = useRef(false);
@@ -50,7 +52,7 @@ export function SpecsMarkdownModal({ title, text, path, onClose, onOpenFile, can
     let cancelled = false;
     setContent(null);
     setError(null);
-    fetch(`/api/specs/file?path=${encodeURIComponent(path)}`)
+    projectFetch(`/api/specs/file?path=${encodeURIComponent(path)}`)
       .then(async (response) => {
         if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
         const markdown = await response.text();
@@ -62,7 +64,7 @@ export function SpecsMarkdownModal({ title, text, path, onClose, onOpenFile, can
     return () => {
       cancelled = true;
     };
-  }, [path, text]);
+  }, [path, text, projectFetch]);
 
   const handleClose = () => {
     const opener = originalTriggerRef.current;

@@ -95,9 +95,9 @@ test('workflow set and clear target only the selected scope and project clear re
     });
     assert.deepEqual(parsedOutput(await invoke(['workflow', 'read'])), {
       scope: 'global',
-      settings: { specs: { enabled: false }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 4096 } },
-      effective: { specs: { enabled: false }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 4096 } },
-      sources: { specs: 'global', verify: 'global', memory: { preferenceInjectionBudgetTokens: 'global' } },
+       settings: { specs: { enabled: false }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 4096 } },
+       effective: { specs: { enabled: false }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 4096 } },
+       sources: { specs: 'global', verify: 'global', memory: { preferenceInjectionBudgetTokens: 'global' } },
     });
     assert.deepEqual(await invoke(['workflow', 'set', 'verify', 'true', '--project']), {
       status: 0, stdout: 'saved workflow preference verify.enabled=true (project)\n', stderr: '',
@@ -108,9 +108,9 @@ test('workflow set and clear target only the selected scope and project clear re
 
     assert.deepEqual(parsedOutput(await invoke(['workflow', 'read', '--project'])), {
       scope: 'project',
-      settings: { verify: { enabled: true }, memory: { preferenceInjectionBudgetTokens: 1024 } },
-      effective: { specs: { enabled: false }, verify: { enabled: true }, memory: { preferenceInjectionBudgetTokens: 1024 } },
-      sources: { specs: 'global', verify: 'project', memory: { preferenceInjectionBudgetTokens: 'project' } },
+       settings: { verify: { enabled: true }, memory: { preferenceInjectionBudgetTokens: 1024 } },
+       effective: { specs: { enabled: false }, verify: { enabled: true }, memory: { preferenceInjectionBudgetTokens: 1024 } },
+       sources: { specs: 'global', verify: 'project', memory: { preferenceInjectionBudgetTokens: 'project' } },
     });
 
     assert.deepEqual(await invoke(['workflow', 'clear', 'verify', '--project']), {
@@ -121,9 +121,9 @@ test('workflow set and clear target only the selected scope and project clear re
     });
     assert.deepEqual(parsedOutput(await invoke(['workflow', 'read', '--project'])), {
       scope: 'project',
-      settings: {},
-      effective: { specs: { enabled: false }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 4096 } },
-      sources: { specs: 'global', verify: 'global', memory: { preferenceInjectionBudgetTokens: 'global' } },
+       settings: {},
+       effective: { specs: { enabled: false }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 4096 } },
+       sources: { specs: 'global', verify: 'global', memory: { preferenceInjectionBudgetTokens: 'global' } },
     });
 
     await invoke(['workflow', 'set', 'specs', 'true', '--project']);
@@ -131,7 +131,7 @@ test('workflow set and clear target only the selected scope and project clear re
       status: 0, stdout: 'cleared workflow preferences (project)\n', stderr: '',
     });
     assert.deepEqual(JSON.parse(fs.readFileSync(globalFile, 'utf8')), {
-      specs: { enabled: false }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 4096 },
+       specs: { enabled: false }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 4096 },
     });
     assert.deepEqual(JSON.parse(fs.readFileSync(projectFile, 'utf8')), {});
   });

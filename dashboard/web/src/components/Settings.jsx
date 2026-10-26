@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Models } from './Models.jsx';
+import { useProjectFetch } from '../lib/projectApi.js';
 
 const WEB_DEFAULTS = {
   appearance: { theme: 'light', startPage: 'overview' },
@@ -143,6 +144,7 @@ export function Settings({
   workflowSettingsError,
   refreshWorkflowSettings,
 }) {
+  const projectFetch = useProjectFetch();
   const [webState, setWebState] = useState(webSettings || null);
   const [workflowState, setWorkflowState] = useState(workflowSettings || null);
   const [webScope, setWebScope] = useState('project');
@@ -163,7 +165,7 @@ export function Settings({
     setWebSaving(true);
     setWebFeedback(null);
     try {
-      const result = await putScopedSettings('/api/web/settings', scope, next);
+      const result = await putScopedSettings('/api/web/settings', scope, next, projectFetch);
       setWebState(result);
       onWebSettingsUpdated?.(result);
       setWebFeedback({ type: 'success', text: `${sourceLabel(scope)} web settings saved.` });
@@ -178,7 +180,7 @@ export function Settings({
     setWorkflowSaving(true);
     setWorkflowFeedback(null);
     try {
-      const result = await putScopedSettings('/api/workflow/settings', scope, next);
+      const result = await putScopedSettings('/api/workflow/settings', scope, next, projectFetch);
       setWorkflowState(result);
       refreshWorkflowSettings?.();
       setWorkflowFeedback({ type: 'success', text: `${sourceLabel(scope)} workflow preferences saved.` });

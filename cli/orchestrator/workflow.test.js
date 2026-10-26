@@ -774,7 +774,7 @@ test('coding, verification, and debugging delegate to native Task workers withou
   assert.match(blocked, /if Task is unavailable\/denied, report the blocker and stop/i);
 });
 
-test('automatic context preserves supplied task-relevant project memory', () => {
+test('automatic context omits supplied project memory', () => {
   const w = apply(createWorkflow(), 'new_task', { goal: 'OAuth' });
   const inj = buildInjection(w, {
     memoryContext: {
@@ -783,9 +783,8 @@ test('automatic context preserves supplied task-relevant project memory', () => 
       project_context: [{ id: 'mem-pkce', type: 'decision', scope: 'project', summary: 'Use PKCE' }],
     },
   });
-  assert.match(inj, /guarana memory \(automatic context\)/);
-  assert.match(inj, /project_context/);
-  assert.match(inj, /Use PKCE/);
+  assert.doesNotMatch(inj, /guarana memory \(automatic context\)/);
+  assert.doesNotMatch(inj, /Use PKCE/);
 });
 
 test('injection for completed state has no skill body', () => {

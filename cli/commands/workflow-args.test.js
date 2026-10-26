@@ -25,8 +25,8 @@ test('workflow parser rejects unknown commands and fields, invalid booleans, and
   for (const [args, expected] of [
     [['bogus'], { error: 'unknown workflow command: bogus', usage: 'usage: guarana workflow <read|set|clear> [--project]' }],
     [['read', 'extra'], { error: 'usage: guarana workflow read [--project]' }],
-    [['set'], { error: 'usage: guarana workflow set <specs|verify|memory.preferenceInjectionBudgetTokens> <value> [--project]' }],
-    [['set', 'specs'], { error: 'usage: guarana workflow set <specs|verify|memory.preferenceInjectionBudgetTokens> <value> [--project]' }],
+     [['set'], { error: 'usage: guarana workflow set <specs|verify|memory.preferenceInjectionBudgetTokens> <value> [--project]' }],
+     [['set', 'specs'], { error: 'usage: guarana workflow set <specs|verify|memory.preferenceInjectionBudgetTokens> <value> [--project]' }],
     [['set', 'other', 'true'], { error: 'unknown workflow preference: other' }],
     [['set', 'verify', 'False'], { error: 'invalid boolean value for verify: False (expected true or false)' }],
     [['set', 'verify', '1'], { error: 'invalid boolean value for verify: 1 (expected true or false)' }],

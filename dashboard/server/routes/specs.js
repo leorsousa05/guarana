@@ -7,22 +7,22 @@ import { resolveAllowed } from '../lib/security.js';
 
 export function createSpecsRouter({ root }) {
   const router = express.Router();
-  const specsDir = path.join(root, SPECS_DIR);
+  const specsDir = (req) => path.join(req.projectRoot || root, SPECS_DIR);
 
-  router.get('/tracker', (_req, res) => {
+  router.get('/tracker', (req, res) => {
     let markdown = '';
     try {
-      markdown = fs.readFileSync(path.join(specsDir, 'README.md'), 'utf8');
+      markdown = fs.readFileSync(path.join(specsDir(req), 'README.md'), 'utf8');
     } catch {
       return res.json({ rows: [], DONE: [], NEXT: [], BLOCKED: [], other: [] });
     }
     res.json(parseTracker(markdown));
   });
 
-  router.get('/tree', (_req, res) => {
+  router.get('/tree', (req, res) => {
     let files = [];
     try {
-      files = listSpecFiles(specsDir);
+      files = listSpecFiles(specsDir(req));
     } catch {
       /* no specs dir */
     }
@@ -31,7 +31,7 @@ export function createSpecsRouter({ root }) {
 
   router.get('/file', (req, res) => {
     const rel = req.query.path;
-    const allowed = resolveAllowed(rel, [specsDir], { requireExt: '.md' });
+    const allowed = resolveAllowed(rel, [specsDir(req)], { requireExt: '.md' });
     if (!allowed) return res.status(400).end();
     try {
       return res.type('text/markdown').send(fs.readFileSync(allowed.realTarget, 'utf8'));
@@ -40,10 +40,11 @@ export function createSpecsRouter({ root }) {
     }
   });
 
-  router.get('/state', (_req, res) => {
+  router.get('/state', (req, res) => {
+    const selectedSpecsDir = specsDir(req);
     const read = (name) => {
       try {
-        return fs.readFileSync(path.join(specsDir, 'state', name), 'utf8');
+        return fs.readFileSync(path.join(selectedSpecsDir, 'state', name), 'utf8');
       } catch {
         return '';
       }

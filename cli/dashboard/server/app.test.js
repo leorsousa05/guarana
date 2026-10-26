@@ -11,6 +11,12 @@ import { createNode, createEdge, listEdges } from '../../memory/graph.js';
 import { createSkill } from '../../skill-engine/index.js';
 import { resolveSharedAdvisorModule } from './routes/shared-advisor-modules.js';
 
+function seedLegacyNode(vaultDir, node) {
+  const seeded = { id: node.id || `legacy-${Date.now()}-${Math.random()}`, ts: Date.now(), tags: [], ...node };
+  fs.appendFileSync(path.join(vaultDir, 'nodes.jsonl'), `${JSON.stringify(seeded)}\n`);
+  return seeded;
+}
+
 describe('GET /api/telemetry/stream (SSE)', () => {
   let tmp;
   let telemetryDir;
@@ -103,12 +109,15 @@ describe('GET/POST /api/memory', () => {
   let server;
   let base;
   let oldHome;
+  let oldXdg;
   let projectMemory;
 
   beforeEach(async () => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-memapp-'));
     oldHome = process.env.HOME;
+    oldXdg = process.env.XDG_CONFIG_HOME;
     process.env.HOME = path.join(tmp, 'home');
+    process.env.XDG_CONFIG_HOME = path.join(tmp, 'xdg');
     const vaultDir = initVault(tmp);
     projectMemory = createNode(vaultDir, {
       type: 'decision',
@@ -116,7 +125,7 @@ describe('GET/POST /api/memory', () => {
       intent: 'dash decision',
       summary: 'confirmed decision for dashboard',
     });
-    createNode(vaultDir, {
+    seedLegacyNode(vaultDir, {
       type: 'atom',
       status: 'draft',
       intent: 'draft leak check',
@@ -133,6 +142,8 @@ describe('GET/POST /api/memory', () => {
     await new Promise((resolve) => server.close(resolve));
     if (oldHome === undefined) delete process.env.HOME;
     else process.env.HOME = oldHome;
+    if (oldXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = oldXdg;
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -160,12 +171,123 @@ describe('GET/POST /api/memory', () => {
     assert.equal(body.nodes.some((n) => n.intent === 'draft leak check'), false);
   });
 
+  it('serves read-only global preference and explicit memory scope projections with safe validation', async () => {
+    const globalVault = initUserVault();
+    const oldPreference = seedLegacyNode(globalVault, {
+      id: 'global-pref-old', ts: 10, type: 'preference', status: 'confirmed', scope: 'global',
+      intent: 'Use Spanish', summary: 'Respond in Spanish.', tags: ['language'],
+    });
+    const currentPreference = seedLegacyNode(globalVault, {
+      id: 'global-pref-current', ts: 20, type: 'preference', status: 'confirmed', scope: 'global',
+      category: 'communication', priority: 'essential', intent: 'Use English', summary: 'Respond in English.',
+    });
+    seedLegacyNode(globalVault, {
+      id: 'global-pref-workflow', ts: 30, type: 'preference', status: 'confirmed', scope: 'global',
+      category: 'workflow', intent: 'Workflow preference', summary: 'Keep the verification order.',
+    });
+    seedLegacyNode(globalVault, {
+      id: 'global-pref-agent', ts: 40, type: 'preference', status: 'confirmed', scope: 'global',
+      category: 'agent_behavior', intent: 'Concise agent', summary: 'Keep answers direct.',
+    });
+    const taggedPreference = seedLegacyNode(globalVault, {
+      id: 'global-pref-tagged', ts: 50, type: 'preference', status: 'confirmed', scope: 'global',
+      category: 'unknown', intent: 'tagged preference', summary: 'Use a plain format.',
+      tags: ['filterneedle', 'sk-abcdefghijklmnop'],
+    });
+    seedLegacyNode(globalVault, {
+      id: 'global-pref-draft', type: 'preference', status: 'draft', scope: 'global',
+      intent: 'draft-only sentinel', summary: 'draft-only text',
+    });
+    const globalDecision = seedLegacyNode(globalVault, {
+      id: 'global-decision-sentinel', type: 'decision', status: 'confirmed', scope: 'global',
+      intent: 'non-preference sentinel', summary: 'non-preference global text',
+    });
+    createEdge(globalVault, { from: currentPreference.id, to: oldPreference.id, rel: 'supersedes', ts: 21 });
+    createEdge(globalVault, { from: currentPreference.id, to: globalDecision.id, rel: 'depends-on', ts: 22 });
+
+    const telemetryDir = path.join(tmp, '.specs', 'state', 'telemetry');
+    fs.mkdirSync(telemetryDir, { recursive: true });
+    const telemetryFile = path.join(telemetryDir, 'events.jsonl');
+    fs.writeFileSync(telemetryFile, `${JSON.stringify({
+      ts: 100, type: 'memory-injected', sessionID: 'mixed-api-session', prompt: 'API_PROMPT_SENTINEL',
+      memories: [
+        { id: projectMemory.id, type: 'decision', scope: 'project' },
+        { id: currentPreference.id, type: 'preference', scope: 'global' },
+        { id: globalDecision.id, type: 'decision', scope: 'global' },
+      ],
+    })}\n`);
+
+    const files = [
+      path.join(tmp, '.guarana', 'memory', 'nodes.jsonl'),
+      path.join(tmp, '.guarana', 'memory', 'edges.jsonl'),
+      path.join(tmp, '.guarana', 'memory', 'config.json'),
+      path.join(globalVault, 'nodes.jsonl'),
+      path.join(globalVault, 'edges.jsonl'),
+      path.join(globalVault, 'config.json'),
+      telemetryFile,
+    ];
+    const bytesBefore = files.map((file) => fs.readFileSync(file));
+
+    const completeResponse = await fetch(`${base}/api/memory/preferences`);
+    const complete = await completeResponse.json();
+    assert.equal(completeResponse.status, 200);
+    assert.equal(complete.count, 5);
+    assert.equal(complete.preferences.length, 5);
+    assert.equal((await (await fetch(`${base}/api/memory/preferences?q=&category=&status=`)).json()).count, 5);
+    assert.equal(complete.preferences.find((node) => node.id === oldPreference.id).status, 'superseded');
+    assert.equal(complete.preferences.find((node) => node.id === currentPreference.id).status, 'active');
+    assert.equal(complete.preferences.find((node) => node.id === taggedPreference.id).category, 'general');
+    assert.deepEqual(complete.preferences.find((node) => node.id === taggedPreference.id).tags, ['filterneedle']);
+    assert.equal(JSON.stringify(complete).includes(globalDecision.id), false);
+    assert.equal(JSON.stringify(complete).includes('draft-only'), false);
+    assert.deepEqual((await (await fetch(`${base}/api/memory/preferences?q=FILTERNEEDLE&category=general&status=active`)).json()).preferences.map((node) => node.id), [taggedPreference.id]);
+    assert.deepEqual((await (await fetch(`${base}/api/memory/preferences?category=communication`)).json()).preferences.map((node) => node.id), [currentPreference.id]);
+    assert.deepEqual((await (await fetch(`${base}/api/memory/preferences?status=superseded`)).json()).preferences.map((node) => node.id), [oldPreference.id]);
+    assert.equal((await (await fetch(`${base}/api/memory/preferences?status=all`)).json()).count, 5);
+
+    const projectSummary = await (await fetch(`${base}/api/memory/summary?scope=project`)).json();
+    assert.equal(projectSummary.nodes.byScope.project, 2);
+    assert.equal('global' in projectSummary.nodes.byScope, false);
+    const projectGraph = await (await fetch(`${base}/api/memory/graph?scope=project`)).json();
+    assert.ok(projectGraph.nodes.every((node) => node.scope === 'project'));
+    const globalSummary = await (await fetch(`${base}/api/memory/summary?scope=global`)).json();
+    assert.deepEqual(globalSummary.nodes.byScope, { global: 5 });
+    const globalGraph = await (await fetch(`${base}/api/memory/graph?scope=global`)).json();
+    assert.ok(globalGraph.nodes.every((node) => node.type === 'preference' && node.scope === 'global'));
+    assert.equal(globalGraph.nodes.some((node) => node.id === globalDecision.id), false);
+
+    const projectInjections = await (await fetch(`${base}/api/memory/injections?scope=project`)).json();
+    assert.deepEqual(projectInjections.injections[0].memories.map((node) => node.id), [projectMemory.id]);
+    const globalInjections = await (await fetch(`${base}/api/memory/injections?scope=global`)).json();
+    assert.deepEqual(globalInjections.injections[0].memories.map((node) => node.id), [currentPreference.id]);
+    assert.equal(JSON.stringify(globalInjections).includes('non-preference global text'), false);
+    assert.equal(JSON.stringify(globalInjections).includes('API_PROMPT_SENTINEL'), false);
+
+    for (const [url, message] of [
+      ['/api/memory/preferences?category=invalid', /category must be/],
+      ['/api/memory/preferences?status=invalid', /status must be/],
+      ['/api/memory/preferences?q=a&q=b', /single string/],
+    ]) {
+      const response = await fetch(`${base}${url}`);
+      assert.equal(response.status, 400);
+      assert.match((await response.json()).error, message);
+    }
+    for (const route of ['/summary', '/graph', '/injections']) {
+      const response = await fetch(`${base}/api/memory${route}?scope=unknown`);
+      assert.equal(response.status, 400);
+      assert.match((await response.json()).error, /scope must be/);
+    }
+    const noWriteRoute = await fetch(`${base}/api/memory/preferences`, { method: 'POST' });
+    assert.equal(noWriteRoute.status, 404);
+    assert.deepEqual(files.map((file) => fs.readFileSync(file)), bytesBefore);
+  });
+
   it('creates only typed relationships between confirmed project memories', async () => {
     const vaultDir = path.join(tmp, '.guarana', 'memory');
     const other = createNode(vaultDir, {
       type: 'solution', status: 'confirmed', intent: 'dashboard solution', summary: 'project endpoint',
     });
-    const draft = createNode(vaultDir, {
+    const draft = seedLegacyNode(vaultDir, {
       type: 'atom', status: 'draft', intent: 'draft endpoint', summary: 'not linkable',
     });
     const post = (body) => fetch(`${base}/api/memory/relationships`, {
@@ -239,10 +361,10 @@ describe('GET/POST /api/memory', () => {
   it('never resolves or mutates global relationship endpoints', async () => {
     const globalVault = initUserVault();
     const globalFrom = createNode(globalVault, {
-      type: 'preference', status: 'confirmed', scope: 'global', intent: 'global start',
+      type: 'preference', status: 'confirmed', scope: 'global', category: 'communication', intent: 'global start',
     });
     const globalTo = createNode(globalVault, {
-      type: 'preference', status: 'confirmed', scope: 'global', intent: 'global end',
+      type: 'preference', status: 'confirmed', scope: 'global', category: 'workflow', intent: 'global end',
     });
     const globalEdge = createEdge(globalVault, {
       from: globalFrom.id, to: globalTo.id, rel: 'relates-to', ts: 103,
@@ -270,6 +392,7 @@ describe('GET/POST /api/memory', () => {
       type: 'preference',
       status: 'confirmed',
       scope: 'global',
+      category: 'communication',
       intent: 'response language',
       summary: 'Always answer me in Portuguese.',
     });
@@ -322,7 +445,7 @@ describe('GET/POST /api/memory', () => {
     assert.equal(body.injections[1].memories.find((node) => node.id === 'missing-large-0').available, false);
   });
 
-  it('drafts lists draft nodes and review confirms them', async () => {
+  it('drafts require an explicit project type conversion before review confirmation', async () => {
     const listRes = await fetch(`${base}/api/memory/drafts`);
     const listBody = await listRes.json();
     assert.equal(listBody.drafts.length, 1);
@@ -331,11 +454,12 @@ describe('GET/POST /api/memory', () => {
     const reviewRes = await fetch(`${base}/api/memory/review`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, action: 'confirm' }),
+      body: JSON.stringify({ id, action: 'confirm', edits: { type: 'decision' } }),
     });
     const reviewBody = await reviewRes.json();
     assert.equal(reviewRes.status, 200);
     assert.equal(reviewBody.node.status, 'confirmed');
+    assert.equal(reviewBody.node.type, 'decision');
 
     const emptyDrafts = await (await fetch(`${base}/api/memory/drafts`)).json();
     assert.equal(emptyDrafts.drafts.length, 0);
@@ -899,7 +1023,7 @@ describe('GET/PUT /api/workflow/settings', () => {
     const projectAdvisor = path.join(root, '.guarana', 'advisor.json');
     fs.mkdirSync(path.dirname(globalFile), { recursive: true });
     fs.mkdirSync(path.dirname(projectAdvisor), { recursive: true });
-    fs.writeFileSync(globalFile, '{"specs":{"enabled":false}}\n');
+    fs.writeFileSync(globalFile, '{"specs":{"enabled":false},"memory":{"preferenceInjectionBudgetTokens":8192}}\n');
     fs.writeFileSync(globalAdvisor, '{"primary":{"provider":"openai","model":"gpt-5"}}\n');
     fs.writeFileSync(projectAdvisor, '{"advisor":{"enabled":false}}\n');
     const globalBefore = fs.readFileSync(globalFile);
@@ -910,51 +1034,52 @@ describe('GET/PUT /api/workflow/settings', () => {
     const initial = await initialResponse.json();
     assert.equal(initialResponse.status, 200);
     assert.deepEqual(Object.keys(initial), ['global', 'project', 'effective', 'sources']);
-    assert.deepEqual(initial.global, { specs: { enabled: false } });
+    assert.deepEqual(initial.global, { specs: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 8192 } });
     assert.deepEqual(initial.project, {});
     assert.deepEqual(initial.effective, {
-      specs: { enabled: false }, verify: { enabled: true }, memory: { preferenceInjectionBudgetTokens: null },
+      specs: { enabled: false }, verify: { enabled: true }, memory: { preferenceInjectionBudgetTokens: 8192 },
     });
     assert.deepEqual(initial.sources, {
-      specs: 'global', verify: 'default', memory: { preferenceInjectionBudgetTokens: 'default' },
+      specs: 'global', verify: 'default', memory: { preferenceInjectionBudgetTokens: 'global' },
     });
 
     const savedResponse = await putSettings({ settings: {
       specs: { enabled: true },
       verify: { enabled: false },
+      memory: { preferenceInjectionBudgetTokens: 2048 },
     } });
     const saved = await savedResponse.json();
     assert.equal(savedResponse.status, 200);
     assert.deepEqual(saved, {
       ok: true,
-      global: { specs: { enabled: false } },
-      project: { specs: { enabled: true }, verify: { enabled: false } },
-      effective: { specs: { enabled: true }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: null } },
-      sources: { specs: 'project', verify: 'project', memory: { preferenceInjectionBudgetTokens: 'default' } },
+      global: { specs: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 8192 } },
+      project: { specs: { enabled: true }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 2048 } },
+      effective: { specs: { enabled: true }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 2048 } },
+      sources: { specs: 'project', verify: 'project', memory: { preferenceInjectionBudgetTokens: 'project' } },
     });
     const projectFile = path.join(root, '.guarana', 'workflow.json');
     assert.deepEqual(JSON.parse(fs.readFileSync(projectFile, 'utf8')), {
-      specs: { enabled: true }, verify: { enabled: false },
+      specs: { enabled: true }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 2048 },
     });
 
     const inheritSpecs = await putSettings({ settings: { verify: { enabled: false } } });
     const inheritedSpecs = await inheritSpecs.json();
     assert.equal(inheritSpecs.status, 200);
     assert.deepEqual(inheritedSpecs.effective, {
-      specs: { enabled: false }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: null },
+      specs: { enabled: false }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 8192 },
     });
     assert.deepEqual(inheritedSpecs.sources, {
-      specs: 'global', verify: 'project', memory: { preferenceInjectionBudgetTokens: 'default' },
+      specs: 'global', verify: 'project', memory: { preferenceInjectionBudgetTokens: 'global' },
     });
 
     const inheritAll = await putSettings({ settings: {} });
     const inheritedAll = await inheritAll.json();
     assert.equal(inheritAll.status, 200);
     assert.deepEqual(inheritedAll.effective, {
-      specs: { enabled: false }, verify: { enabled: true }, memory: { preferenceInjectionBudgetTokens: null },
+      specs: { enabled: false }, verify: { enabled: true }, memory: { preferenceInjectionBudgetTokens: 8192 },
     });
     assert.deepEqual(inheritedAll.sources, {
-      specs: 'global', verify: 'default', memory: { preferenceInjectionBudgetTokens: 'default' },
+      specs: 'global', verify: 'default', memory: { preferenceInjectionBudgetTokens: 'global' },
     });
     assert.deepEqual(fs.readFileSync(globalFile), globalBefore);
     assert.deepEqual(fs.readFileSync(globalAdvisor), globalAdvisorBefore);
@@ -1021,57 +1146,33 @@ describe('GET/PUT /api/workflow/settings', () => {
     const globalAdvisorBefore = fs.readFileSync(globalAdvisor);
     const projectAdvisorBefore = fs.readFileSync(projectAdvisor);
 
-    const globalResponse = await putSettings({ scope: 'global', settings: { specs: { enabled: false } } });
+    const globalResponse = await putSettings({ scope: 'global', settings: {
+      specs: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 8192 },
+    } });
     assert.equal(globalResponse.status, 200);
     const globalBody = await globalResponse.json();
-    assert.deepEqual(globalBody.global, { specs: { enabled: false } });
+    assert.deepEqual(globalBody.global, {
+      specs: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 8192 },
+    });
     assert.deepEqual(globalBody.project, {});
-    assert.deepEqual(JSON.parse(fs.readFileSync(globalFile, 'utf8')), { specs: { enabled: false } });
+    assert.deepEqual(JSON.parse(fs.readFileSync(globalFile, 'utf8')), {
+      specs: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 8192 },
+    });
     assert.equal(fs.existsSync(projectFile), false);
 
     const projectResponse = await putSettings({ scope: 'project', settings: { verify: { enabled: false } } });
     assert.equal(projectResponse.status, 200);
     const projectBody = await projectResponse.json();
-    assert.deepEqual(projectBody.global, { specs: { enabled: false } });
+    assert.deepEqual(projectBody.global, {
+      specs: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 8192 },
+    });
     assert.deepEqual(projectBody.project, { verify: { enabled: false } });
     assert.deepEqual(projectBody.effective, {
-      specs: { enabled: false }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: null },
+      specs: { enabled: false }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 8192 },
     });
-    assert.deepEqual(projectBody.sources.memory, { preferenceInjectionBudgetTokens: 'default' });
-    assert.deepEqual(fs.readFileSync(globalFile), Buffer.from('{\n  "specs": {\n    "enabled": false\n  }\n}\n'));
+    assert.deepEqual(fs.readFileSync(globalFile), Buffer.from('{\n  "specs": {\n    "enabled": false\n  },\n  "memory": {\n    "preferenceInjectionBudgetTokens": 8192\n  }\n}\n'));
     assert.deepEqual(fs.readFileSync(globalAdvisor), globalAdvisorBefore);
     assert.deepEqual(fs.readFileSync(projectAdvisor), projectAdvisorBefore);
-  });
-
-  it('persists positive token budgets by scope, inherits global values, and clears project overrides', async () => {
-    const globalFile = path.join(xdg, 'guarana', 'workflow.json');
-    const projectFile = path.join(root, '.guarana', 'workflow.json');
-    const globalResponse = await putSettings({ scope: 'global', settings: {
-      memory: { preferenceInjectionBudgetTokens: 8192 },
-    } });
-    assert.equal(globalResponse.status, 200);
-    assert.deepEqual(JSON.parse(fs.readFileSync(globalFile, 'utf8')), {
-      memory: { preferenceInjectionBudgetTokens: 8192 },
-    });
-
-    const projectResponse = await putSettings({ settings: {
-      memory: { preferenceInjectionBudgetTokens: 2048 },
-    } });
-    const project = await projectResponse.json();
-    assert.equal(projectResponse.status, 200);
-    assert.equal(project.effective.memory.preferenceInjectionBudgetTokens, 2048);
-    assert.equal(project.sources.memory.preferenceInjectionBudgetTokens, 'project');
-    assert.deepEqual(JSON.parse(fs.readFileSync(projectFile, 'utf8')), {
-      memory: { preferenceInjectionBudgetTokens: 2048 },
-    });
-
-    const clearResponse = await putSettings({ scope: 'project', settings: {} });
-    const cleared = await clearResponse.json();
-    assert.equal(clearResponse.status, 200);
-    assert.deepEqual(JSON.parse(fs.readFileSync(projectFile, 'utf8')), {});
-    assert.equal(cleared.effective.memory.preferenceInjectionBudgetTokens, 8192);
-    assert.equal(cleared.sources.memory.preferenceInjectionBudgetTokens, 'global');
-    assert.equal(JSON.parse(fs.readFileSync(globalFile, 'utf8')).memory.preferenceInjectionBudgetTokens, 8192);
   });
 });
 
@@ -1219,5 +1320,207 @@ describe('GET/PUT /api/web/settings', () => {
     assert.equal(invalidExisting.status, 500);
     assert.equal(fs.existsSync(projectFile), false);
     assert.equal(fs.readFileSync(globalFile, 'utf8'), corruptGlobal);
+  });
+});
+
+describe('persistent Dashboard project selection', () => {
+  let tmp;
+  let home;
+  let xdg;
+  let previousHome;
+  let previousXdg;
+  const servers = [];
+
+  async function start(root, execFileImpl) {
+    const app = createApp({ root, distDir: path.join(tmp, 'dist'), execFileImpl });
+    const server = await new Promise((resolve) => {
+      const listener = app.listen(0, () => resolve(listener));
+    });
+    servers.push(server);
+    return `http://127.0.0.1:${server.address().port}`;
+  }
+
+  beforeEach(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-project-selection-'));
+    home = path.join(tmp, 'home');
+    xdg = path.join(tmp, 'xdg');
+    fs.mkdirSync(home, { recursive: true });
+    previousHome = process.env.HOME;
+    previousXdg = process.env.XDG_CONFIG_HOME;
+    process.env.HOME = home;
+    process.env.XDG_CONFIG_HOME = xdg;
+    servers.length = 0;
+  });
+
+  afterEach(async () => {
+    await Promise.all(servers.map((server) => new Promise((resolve) => server.close(resolve))));
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+    if (previousXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = previousXdg;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('persists safe opaque IDs, registers only the current root, scopes APIs, and unregisters without deleting files', async () => {
+    const rootA = path.join(tmp, 'project-a');
+    const rootB = path.join(tmp, 'project-b');
+    fs.mkdirSync(rootA, { recursive: true });
+    fs.mkdirSync(rootB, { recursive: true });
+    const baseA = await start(rootA);
+    const baseB = await start(rootB, (_command, _args, options, callback) => {
+      assert.equal(options.cwd, rootB);
+      callback(null, '{}', '');
+    });
+
+    const jsonRequest = (base, route, method, body) => fetch(`${base}${route}`, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const rejectedPath = await jsonRequest(baseB, '/api/projects', 'POST', { path: rootA });
+    assert.equal(rejectedPath.status, 400);
+    assert.doesNotMatch(await rejectedPath.text(), new RegExp(rootA.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    const rejectedMalformed = await fetch(`${baseB}/api/projects`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{',
+    });
+    assert.equal(rejectedMalformed.status, 400);
+    const rejectedUnparsed = await fetch(`${baseB}/api/projects`, {
+      method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: rootA,
+    });
+    assert.equal(rejectedUnparsed.status, 400);
+    const beforeRegistration = await (await fetch(`${baseA}/api/projects`)).json();
+    assert.deepEqual(beforeRegistration.projects.map((project) => project.name), ['project-a']);
+    assert.deepEqual(beforeRegistration.projects.map(({ registered }) => registered), [false]);
+    assert.match(beforeRegistration.currentProjectId, /^prj_[A-Za-z0-9_-]{43}$/);
+    assert.equal(beforeRegistration.projects[0].id, beforeRegistration.currentProjectId);
+    assert.doesNotMatch(JSON.stringify(beforeRegistration), /project-selection-|\/home\/|\/tmp\//);
+
+    const registered = await jsonRequest(baseB, '/api/projects', 'POST', {});
+    assert.equal(registered.status, 201);
+    const projectB = (await registered.json()).project;
+    assert.match(projectB.id, /^prj_[A-Za-z0-9_-]{43}$/);
+    assert.equal(projectB.name, 'project-b');
+    assert.doesNotMatch(JSON.stringify(projectB), /project-selection-|\/home\/|\/tmp\//);
+    const registryFile = path.join(xdg, 'guarana', 'dashboard-projects.json');
+    const persisted = JSON.parse(fs.readFileSync(registryFile, 'utf8'));
+    assert.equal(persisted.projects.length, 1);
+    assert.equal(fs.realpathSync(rootB), persisted.projects.find((project) => project.id === projectB.id).root);
+    assert.equal((fs.statSync(registryFile).mode & 0o777), 0o600);
+
+    const listed = await (await fetch(`${baseA}/api/projects`)).json();
+    assert.deepEqual(listed.projects.map(({ name }) => name).sort(), ['project-a', 'project-b']);
+    assert.deepEqual(listed.projects.map(({ name, registered }) => [name, registered]).sort(([a], [b]) => a.localeCompare(b)), [
+      ['project-a', false], ['project-b', true],
+    ]);
+    assert.equal(listed.currentProjectId, beforeRegistration.currentProjectId);
+    assert.equal(listed.projects.find(({ id }) => id === listed.currentProjectId)?.name, 'project-a');
+    assert.doesNotMatch(JSON.stringify(listed), /project-selection-|\/home\/|\/tmp\//);
+    assert.equal((await (await fetch(`${baseA}/api/projects?projectId=${projectB.id}`)).json()).projects.length, 2);
+
+    const alias = path.join(tmp, 'project-b-alias');
+    fs.symlinkSync(rootB, alias, 'dir');
+    const aliasBase = await start(alias);
+    const aliasRegistration = await jsonRequest(aliasBase, '/api/projects', 'POST', {});
+    assert.equal((await aliasRegistration.json()).project.id, projectB.id);
+    assert.equal(JSON.parse(fs.readFileSync(registryFile, 'utf8')).projects.length, 1);
+
+    const writeFixture = (root, marker) => {
+      const specs = path.join(root, '.specs');
+      const telemetry = path.join(specs, 'state', 'telemetry');
+      fs.mkdirSync(path.join(specs, 'state'), { recursive: true });
+      fs.mkdirSync(telemetry, { recursive: true });
+      fs.writeFileSync(path.join(specs, 'README.md'), marker);
+      fs.writeFileSync(path.join(telemetry, 'events.jsonl'), `${JSON.stringify({ ts: 10, type: 'advisor-execution', status: marker, modelID: marker })}\n`);
+    };
+    writeFixture(rootA, 'project-a-marker');
+    writeFixture(rootB, 'project-b-marker');
+    const decisionDirB = path.join(rootB, '.specs', 'decisions');
+    fs.mkdirSync(decisionDirB, { recursive: true });
+    const decisionFileB = path.join(decisionDirB, 'ADR-SELECTED.md');
+    fs.writeFileSync(decisionFileB, '# Selected\n\n- **Decision:** pending: Resolve only in project B.\n');
+    const vaultA = initVault(rootA);
+    const vaultB = initVault(rootB);
+    seedLegacyNode(vaultA, { type: 'atom', status: 'confirmed', intent: 'A only' });
+    seedLegacyNode(vaultB, { type: 'atom', status: 'confirmed', intent: 'B only' });
+    const draftB = seedLegacyNode(vaultB, { type: 'atom', status: 'draft', intent: 'B draft' });
+    createSkill({ projectDir: rootB, homeDir: home, scope: 'project', name: 'selected-project-skill', description: 'Scoped test skill.', content: '# B only' });
+    const globalVault = initUserVault();
+    const globalPreference = createNode(globalVault, {
+      type: 'preference', status: 'confirmed', scope: 'global', category: 'agent_behavior', intent: 'global only',
+    });
+
+    const selected = `?projectId=${encodeURIComponent(projectB.id)}`;
+    const userPreferences = await (await fetch(`${baseA}/api/memory/preferences`)).json();
+    const selectedUserPreferences = await (await fetch(`${baseA}/api/memory/preferences${selected}`)).json();
+    assert.deepEqual(selectedUserPreferences, userPreferences);
+    assert.deepEqual(userPreferences.preferences.map(({ id }) => id), [globalPreference.id]);
+    const selectedProjectGraph = await (await fetch(`${baseA}/api/memory/graph?scope=project${selected.replace('?', '&')}`)).json();
+    assert.deepEqual(selectedProjectGraph.nodes.map(({ intent }) => intent), ['B only']);
+    assert.ok(selectedProjectGraph.nodes.every((node) => node.scope === 'project'));
+    const specFile = await fetch(`${baseA}/api/specs/file?path=README.md${selected.replace('?', '&')}`);
+    assert.equal(await specFile.text(), 'project-b-marker');
+    const pending = await (await fetch(`${baseA}/api/decisions/pending${selected}`)).json();
+    assert.equal(pending.decisions[0].statement, 'Resolve only in project B.');
+    const decisionWrite = await jsonRequest(baseA, `/api/decisions/resolve${selected}`, 'POST', {
+      file: 'ADR-SELECTED.md', statement: 'Resolve only in project B.', outcome: 'accepted',
+    });
+    assert.equal(decisionWrite.status, 200);
+    assert.match(fs.readFileSync(decisionFileB, 'utf8'), /Resolved \(\d{4}-\d{2}-\d{2}\):\*\* accepted/);
+    assert.equal(fs.existsSync(path.join(rootA, '.specs', 'decisions', 'ADR-SELECTED.md')), false);
+    const telemetry = await (await fetch(`${baseA}/api/telemetry/events${selected}`)).json();
+    assert.equal(telemetry.events[0].status, 'project-b-marker');
+    const runtime = await (await fetch(`${baseA}/api/models/runtime${selected}`)).json();
+    assert.equal(runtime.execution.modelID, 'project-b-marker');
+    const skills = await (await fetch(`${baseA}/api/skills${selected}`)).json();
+    assert.deepEqual(skills.project.map((skill) => skill.name), ['selected-project-skill']);
+    const modelCatalog = createRequire(import.meta.url)(resolveSharedAdvisorModule('opencode-model-catalog.js'));
+    const originalDiscoverModels = modelCatalog.discoverModels;
+    modelCatalog.discoverModels = async (options) => {
+      assert.equal(options.cwd, rootB);
+      return { models: [], error: null };
+    };
+    try {
+      const catalog = await fetch(`${baseA}/api/models/catalog${selected}`);
+      assert.equal(catalog.status, 200);
+    } finally {
+      modelCatalog.discoverModels = originalDiscoverModels;
+    }
+    const memory = await (await fetch(`${baseA}/api/memory/summary${selected}`)).json();
+    assert.equal(memory.nodes.byScope.project, 2);
+    assert.equal(memory.nodes.byScope.global, 1);
+    const review = await jsonRequest(baseA, `/api/memory/review${selected}`, 'POST', { id: draftB.id, action: 'confirm', edits: { type: 'decision' } });
+    assert.equal(review.status, 200);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(vaultB, 'nodes.jsonl'), 'utf8').split('\n').filter(Boolean).find((line) => JSON.parse(line).id === draftB.id)).status, 'confirmed');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(vaultB, 'nodes.jsonl'), 'utf8').split('\n').filter(Boolean).find((line) => JSON.parse(line).id === draftB.id)).type, 'decision');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(vaultA, 'nodes.jsonl'), 'utf8').split('\n').filter(Boolean).find((line) => JSON.parse(line).intent === 'A only')).status, 'confirmed');
+
+    const workflowWrite = await jsonRequest(baseA, `/api/workflow/settings${selected}`, 'PUT', { settings: { specs: { enabled: false } } });
+    assert.equal(workflowWrite.status, 200);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(rootB, '.guarana', 'workflow.json'), 'utf8')).specs.enabled, false);
+    assert.equal(fs.existsSync(path.join(rootA, '.guarana', 'workflow.json')), false);
+    const webGlobal = await jsonRequest(baseA, `/api/web/settings${selected}`, 'PUT', { scope: 'global', settings: { appearance: { theme: 'dark' } } });
+    assert.equal(webGlobal.status, 200);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(xdg, 'guarana', 'web.json'), 'utf8')).appearance.theme, 'dark');
+    assert.equal(fs.existsSync(path.join(rootB, '.guarana', 'web.json')), false);
+    assert.equal((await (await fetch(`${baseA}/api/web/settings`)).json()).effective.appearance.theme, 'dark');
+
+    await fetch(`${baseA}/api/opencode/active-subagents${selected}`);
+    const unknown = await fetch(`${baseA}/api/memory/summary?projectId=${encodeURIComponent(rootB)}`);
+    assert.equal(unknown.status, 404);
+    assert.deepEqual(await unknown.json(), { error: 'Unknown project selection.' });
+    const stale = await fetch(`${baseA}/api/memory/summary?projectId=prj_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`);
+    assert.equal(stale.status, 404);
+
+    const restartedBase = await start(rootA);
+    const afterRestart = await (await fetch(`${restartedBase}/api/projects`)).json();
+    assert.equal(afterRestart.projects.find((project) => project.name === 'project-b').id, projectB.id);
+    assert.equal(afterRestart.projects.find((project) => project.name === 'project-b').registered, true);
+    const removed = await fetch(`${baseA}/api/projects/${projectB.id}`, { method: 'DELETE' });
+    assert.equal(removed.status, 200);
+    assert.equal(fs.existsSync(path.join(rootB, '.specs', 'README.md')), true);
+    assert.equal(fs.existsSync(path.join(rootB, '.guarana', 'workflow.json')), true);
+    const afterRemoval = await (await fetch(`${baseA}/api/projects`)).json();
+    assert.deepEqual(afterRemoval.projects.map(({ name }) => name), ['project-a']);
+    assert.equal(afterRemoval.projects[0].registered, false);
   });
 });

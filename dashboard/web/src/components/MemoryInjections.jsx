@@ -23,6 +23,19 @@ export function filterInjectionsForSession(injections, sessionID) {
   return (injections || []).filter((entry) => !sessionID || entry.sessionID === sessionID);
 }
 
+export function filterInjectionsForScope(injections, scope) {
+  if (!['project', 'global'].includes(scope)) return injections || [];
+  return (injections || []).flatMap((entry) => {
+    const memories = (entry.memories || []).filter((node) =>
+      node.scope === scope && (scope !== 'global' || node.type === 'preference')
+    );
+    if (!memories.length) return [];
+    const ids = new Set(memories.map((node) => node.id));
+    const edges = (entry.edges || []).filter((edge) => edge.scope === scope && ids.has(edge.from) && ids.has(edge.to));
+    return [{ ...entry, memories, edges }];
+  });
+}
+
 export function injectedRelationshipText(edge, memories) {
   const byKey = new Map((memories || []).map((node) => [nodeKey(node), node]));
   const scope = edge.scope || 'project';
@@ -34,11 +47,13 @@ export function injectedRelationshipText(edge, memories) {
   return { fromText, phrase, toText };
 }
 
-export function MemoryInjections({ sessionID, tick = 0 } = {}) {
-  const history = usePoll(`/api/memory/injections?limit=${sessionID ? 100 : 40}`, 5000, tick);
+export function MemoryInjections({ sessionID, tick = 0, scope, historical = false } = {}) {
+  const params = new URLSearchParams({ limit: String(sessionID ? 100 : 40) });
+  if (scope) params.set('scope', scope);
+  const history = usePoll(`/api/memory/injections?${params.toString()}`, 5000, tick);
   const [selectedEventId, setSelectedEventId] = useState(null);
   const [selectedNodeKey, setSelectedNodeKey] = useState(null);
-  const injections = filterInjectionsForSession(history.data?.injections, sessionID);
+  const injections = filterInjectionsForScope(filterInjectionsForSession(history.data?.injections, sessionID), scope);
   const injection = injections.find((entry) => entry.id === selectedEventId) || injections[0] || null;
   const selectedNode = injection?.memories.find((node) => nodeKey(node) === selectedNodeKey)
     || injection?.memories[0]
@@ -54,35 +69,50 @@ export function MemoryInjections({ sessionID, tick = 0 } = {}) {
   if (history.data.error) return <ErrorBanner text={history.data.error} />;
 
   if (!injections.length) {
+    const heading = scope === 'global' ? 'Global preference injection history' : scope === 'project' ? 'Project injection history' : 'Injected memory';
+    const copy = scope === 'global'
+      ? 'No global user preferences have been injected yet.'
+      : scope === 'project'
+        ? 'No legacy project injection history is recorded.'
+        : 'No memory has been injected yet.';
+    const hint = scope === 'global'
+      ? 'Global preferences that reach assistant context will appear here.'
+      : scope === 'project'
+        ? 'This historical area covers older project-context events only; project memories are not injected now.'
+        : 'Global preferences and task-relevant project memories will appear after an assistant turn.';
     return (
       <div className="memory-injections">
         <header className="memory-injection-heading">
-          <h3>Injected memory</h3>
-          <p>Memories added to the assistant&rsquo;s context appear here.</p>
+          <h3>{historical ? 'Legacy project injection history' : heading}</h3>
+          <p>{scope === 'global' ? 'User preferences that reached the assistant context.' : historical ? 'Older project-context history only. Project memories are not injected now.' : scope === 'project' ? 'Project memories are shown in this scoped history.' : 'Memories added to the assistant&rsquo;s context appear here.'}</p>
         </header>
-        <EmptyState copy="No memory has been injected yet." hint="Global preferences and task-relevant project memories will appear after an assistant turn." />
+        <EmptyState copy={copy} hint={hint} />
       </div>
     );
   }
 
   const memories = injection.memories || [];
+  const memoryHeading = scope === 'global' ? 'User preferences' : scope === 'project' ? 'Project memories' : 'Memory records';
+  const historyHeading = scope === 'global' ? 'Recent preference injections' : scope === 'project' ? 'Recent project injections' : 'Recent memory injections';
 
   return (
     <div className="memory-injections">
       <header className="memory-injection-heading">
         <div>
-          <h3>Injected memory</h3>
+          <h3>{historical ? 'Legacy project injection history' : scope === 'global' ? 'Global preference injection history' : scope === 'project' ? 'Project injection history' : 'Injected memory'}</h3>
           <p>
-            {memories.length} {memories.length === 1 ? 'memory' : 'memories'} reached the assistant&rsquo;s context
+            {memories.length} {scope === 'global' ? (memories.length === 1 ? 'user preference' : 'user preferences') : scope === 'project' ? (memories.length === 1 ? 'project memory' : 'project memories') : (memories.length === 1 ? 'memory' : 'memories')} reached the assistant&rsquo;s context
             {injection.reason && <> · {reasonLabel(injection.reason)}.</>}
           </p>
+          {historical && <p>Older project-context history only. Project memories are not injected now.</p>}
+          {scope === 'global' && <p>Global user preferences only.</p>}
         </div>
         <time dateTime={injection.ts ? new Date(injection.ts).toISOString() : undefined}>{fmtTs(injection.ts)}</time>
       </header>
 
       <div className="memory-injection-layout">
-        <section className="memory-injected-records" aria-label="Memories in this injection">
-          <h4>Memory records</h4>
+        <section className="memory-injected-records" aria-label={`${memoryHeading} in this injection`}>
+          <h4>{memoryHeading}</h4>
           <ol>
             {memories.map((node) => {
               const key = nodeKey(node);
@@ -130,8 +160,8 @@ export function MemoryInjections({ sessionID, tick = 0 } = {}) {
           )}
         </section>
 
-        <aside className="memory-injection-history" aria-label="Recent memory injections">
-          <h4>Recent injections</h4>
+        <aside className="memory-injection-history" aria-label={historyHeading}>
+          <h4>{historyHeading}</h4>
           <ol>
             {injections.map((entry) => (
               <li key={entry.id}>

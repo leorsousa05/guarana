@@ -1,6 +1,6 @@
 // guarana memory plugin (Component B)
-// Stores explicit memory decisions in the project vault
-// (.guarana/memory/nodes.jsonl), delegating to the memory/ engine.
+// Stores explicit project knowledge and categorized global preferences in the
+// existing memory vaults, delegating to the memory/ engine.
 // Constraints: no external deps, never throws, and initializes the project
 // vault automatically so memory works without a separate setup command.
 
@@ -13,13 +13,13 @@ const pluginDir = path.dirname(fileURLToPath(import.meta.url));
 const MEMORY_POLICY = [
   '## Guarana automatic memory',
   'Before answering each human message, notice whether it establishes a durable preference or project decision.',
-  '- Standing instructions about how the user wants the assistant to behave ("always", "never", response style) are global `preference` memories; save with `memory_save_node` and `scope: "global"`.',
-  '- Decisions, requirements, bugs, solutions, and refactors for the current codebase are project memories; save with the correct type and `scope: "project"`.',
+  '- Standing instructions about how the user wants the assistant to behave ("always", "never", response style) are global `preference` memories; save with `memory_save_node`, `scope: "global"`, and category `agent_behavior`, `workflow`, or `communication`.',
+  '- Decisions, bugs, solutions, and refactors for the current codebase are project memories; save with the correct type and `scope: "project"`. Project memory is available through explicit search, not automatic prompt injection.',
   '- Automatically save only when user intent is unmistakably durable. If intent or durability is ambiguous, do not save; ask one clarifying question.',
   '- If the user asks to put guidance in a skill or document, honor that destination without also creating a duplicate memory unless they separately ask for memory.',
-  '- Before every save, call `memory_search` in the intended scope and avoid duplicating an existing record. When a preference changes, link the new preference to the old one with `relatedTo: [{ id, rel: "supersedes" }]`.',
+  '- Before every save, call `memory_search` in the intended scope and avoid duplicating an existing record. New global preferences require category `agent_behavior`, `workflow`, or `communication`. When a preference changes, link the new preference to the old one with `relatedTo: [{ id, rel: "supersedes" }]`.',
   '- Save a concise, reusable statement, link only real relationships, and do not save ordinary task requests, temporary instructions, inferred personal facts, or sensitive data.',
-  '- Do not capture raw prompts, conversation transcripts, tool inputs, or tool outputs. Global preferences are injected at session start and after context compaction; project memories are task-relevant.',
+  '- Do not capture raw prompts, conversation transcripts, tool inputs, or tool outputs. Only bounded confirmed global preferences are injected at session start and after context compaction; project memories are never injected automatically.',
   '- Report the saved memory type and scope only after the save tool returns success; never claim a failed or unconfirmed save.',
   '',
   '## Guarana automatic skills',
@@ -312,7 +312,7 @@ export const GuaranaMemory = async ({ directory }) => {
     },
     memory_save_decision: {
       description:
-        "Record a decision as a confirmed memory node. Add relatedTo links when a real relationship exists.",
+        "Record a project decision as a confirmed memory node. Add relatedTo links when a real relationship exists.",
       args: {
         intent: { type: "string", description: "what was being done" },
         decision: { type: "string", description: "what was decided and why" },
@@ -323,7 +323,7 @@ export const GuaranaMemory = async ({ directory }) => {
         },
         tags: { type: "array", items: { type: "string" } },
         author: { type: "string", description: "defaults to 'agent'" },
-        scope: { type: "string", enum: ["project", "global"], description: "memory scope (default project)" },
+        scope: { type: "string", enum: ["project"], description: "project scope (default project)" },
         relatedTo: {
           type: "array",
           description: "optional explicit links to existing confirmed nodes",
@@ -341,10 +341,11 @@ export const GuaranaMemory = async ({ directory }) => {
     },
     memory_save_node: {
       description:
-        "Save a confirmed decision, bug, solution, refactor, or standing user preference with its correct type and scope; include explicit relatedTo links when semantically connected.",
+        "Save project knowledge (decision, bug, solution, refactor) or a categorized global standing user preference; include explicit relatedTo links when semantically connected.",
       args: {
         type: { type: "string", enum: ["decision", "bug", "solution", "refactor", "preference"] },
         scope: { type: "string", enum: ["project", "global"], description: "global for standing user preferences; project for current-project knowledge" },
+        category: { type: "string", enum: ["agent_behavior", "workflow", "communication"], description: "required for global preferences; not valid for project knowledge" },
         priority: { type: "string", enum: ["essential", "normal"], description: "optional; valid only for global preference nodes" },
         intent: { type: "string", description: "what was happening" },
         summary: { type: "string", description: "the bug, solution, refactor, or decision and why it matters" },
@@ -378,11 +379,11 @@ export const GuaranaMemory = async ({ directory }) => {
     },
     memory_review_draft: {
       description:
-        "Migrate or discard a legacy draft node: action 'confirm' flips it to confirmed (optional edits), 'discard' removes it.",
+        "Discard a legacy draft, or confirm it only by explicitly converting edits.type to decision, bug, solution, or refactor.",
       args: {
         id: { type: "string", description: "draft node id" },
         action: { type: "string", enum: ["confirm", "discard"] },
-        edits: { type: "object", description: "optional field edits applied on confirm" },
+        edits: { type: "object", description: "for confirm, type is required and must be decision, bug, solution, or refactor; optional content edits may also be supplied" },
       },
       execute: runTool("memoryReviewDraft"),
     },

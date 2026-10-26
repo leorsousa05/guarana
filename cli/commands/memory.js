@@ -99,41 +99,24 @@ async function run(args, context = {}) {
     case 'import': {
       const { file } = parsed;
       if (!fs.existsSync(file)) fail(`file not found: ${file}`);
-      vault.initVault(process.cwd());
       const { nodes, edges } = vault.importVault(vaultDir, file);
+      vault.initVault(process.cwd());
       stdoutLine(context, `imported ${nodes} nodes, ${edges} edges from ${file}`);
       break;
     }
     case 'compact': {
       requireVault(vaultDir);
       const r = compact.compactVault(vaultDir, parsed.options);
-      if (r.removedSupernodes) {
-        stdoutLine(context, `removed ${r.removedSupernodes} metadata-only legacy supernode(s)`);
-      }
-      if (r.compacted === 0) {
-        stdoutLine(context, `nothing to compact (${r.remaining} atom node(s), below threshold)`);
-      } else {
-        stdoutLine(context, `compacted ${r.compacted} atom node(s) into supernode ${r.supernodeId}; ${r.remaining} atom node(s) remaining`);
-      }
+      stdoutLine(context, `legacy memory preserved; no atoms or supernodes changed (${r.remaining} atom node(s))`);
       break;
     }
     case 'prune': {
       requireVault(vaultDir);
       const { keep } = parsed;
-      const p = vault.paths(vaultDir);
       const nodes = graph.listNodes(vaultDir);
       const draftAtoms = nodes
-        .filter((n) => n.type === 'atom' && n.status === 'draft')
-        .sort((a, b) => b.ts - a.ts); // newest first
-      const removed = new Set(draftAtoms.slice(keep).map((n) => n.id));
-      if (!removed.size) {
-        stdoutLine(context, `nothing to prune (${draftAtoms.length} draft atom node(s), keep ${keep})`);
-        break;
-      }
-      vault.writeJsonl(p.nodes, nodes.filter((n) => !removed.has(n.id)));
-      vault.writeJsonl(p.edges, graph.listEdges(vaultDir).filter((e) => !removed.has(e.from) && !removed.has(e.to)));
-      stdoutLine(context, `pruned ${removed.size} draft atom node(s), kept ${Math.min(keep, draftAtoms.length)}:`);
-      for (const id of removed) stdoutLine(context, `  ${id}`);
+        .filter((n) => n.type === 'atom' && n.status === 'draft');
+      stdoutLine(context, `legacy draft atoms preserved; nothing pruned (${draftAtoms.length} draft atom node(s), keep ${keep})`);
       break;
     }
     case 'review': {

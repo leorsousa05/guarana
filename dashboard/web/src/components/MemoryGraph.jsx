@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useProjectFetch } from '../lib/projectApi.js';
 import { fmtTs } from '../lib/format.js';
 import { buildLineage } from '../lib/lineage.js';
 import {
@@ -40,6 +41,15 @@ export function filterMemoryGraph(nodes, edges, filters = {}) {
     (!filters.rel || edge.rel === filters.rel) && ids.has(edge.from) && ids.has(edge.to)
   );
   return { nodes: visibleNodes, edges: visibleEdges };
+}
+
+export function filterGlobalPreferenceGraph(nodes, edges) {
+  const preferences = (Array.isArray(nodes) ? nodes : [])
+    .filter((node) => node && node.scope === 'global' && node.type === 'preference');
+  const ids = new Set(preferences.map((node) => node.id));
+  const relationships = (Array.isArray(edges) ? edges : [])
+    .filter((edge) => edge && edge.scope === 'global' && ids.has(edge.from) && ids.has(edge.to));
+  return { nodes: preferences, edges: relationships };
 }
 
 export function resolveMemorySelection(visibleNodes, selected) {
@@ -143,8 +153,20 @@ export function MemoryDeleteConfirmation({ edge, source, target, onConfirm, onCa
   );
 }
 
-export function MemoryGraph({ nodes, edges, selected, onSelect = noop, onChange = noop }) {
-  const { nodes: graphNodes, edges: graphEdges } = useMemo(() => qualifyMemoryGraph(nodes, edges), [nodes, edges]);
+export function MemoryGraph({ nodes, edges, selected, onSelect = noop, onChange = noop, projectOnly = false, globalPreferencesOnly = false }) {
+  const projectFetch = useProjectFetch();
+  const { nodes: graphNodes, edges: graphEdges } = useMemo(() => {
+    if (globalPreferencesOnly) {
+      const globalPreferences = filterGlobalPreferenceGraph(nodes, edges);
+      return qualifyMemoryGraph(globalPreferences.nodes, globalPreferences.edges);
+    }
+    if (!projectOnly) return qualifyMemoryGraph(nodes, edges);
+    const projectNodes = nodes.filter((node) => (node.scope || 'project') === 'project');
+    const projectIds = new Set(projectNodes.map((node) => node.id));
+    const projectEdges = edges.filter((edge) => (edge.scope || 'project') === 'project'
+      && projectIds.has(edge.from) && projectIds.has(edge.to));
+    return qualifyMemoryGraph(projectNodes, projectEdges);
+  }, [nodes, edges, projectOnly, globalPreferencesOnly]);
   const nodesById = useMemo(() => new Map(graphNodes.map((n) => [n.id, n])), [graphNodes]);
   const projectNodes = useMemo(() => graphNodes.filter((node) => node.scope === 'project'), [graphNodes]);
   const bubbleRefs = useRef(new Map());
@@ -182,8 +204,11 @@ export function MemoryGraph({ nodes, edges, selected, onSelect = noop, onChange 
   }, [selected]);
 
   const visible = useMemo(() => filterMemoryGraph(graphNodes, graphEdges, {
-    query, type: typeFilter, scope: scopeFilter, rel: relFilter,
-  }), [graphNodes, graphEdges, query, typeFilter, scopeFilter, relFilter]);
+    query,
+    type: typeFilter,
+    scope: projectOnly ? 'project' : globalPreferencesOnly ? 'global' : scopeFilter,
+    rel: relFilter,
+  }), [graphNodes, graphEdges, query, typeFilter, scopeFilter, relFilter, projectOnly, globalPreferencesOnly]);
   const effectiveSelected = resolveMemorySelection(visible.nodes, selected);
   useEffect(() => {
     if (selected !== effectiveSelected) onSelect(effectiveSelected);
@@ -281,7 +306,7 @@ export function MemoryGraph({ nodes, edges, selected, onSelect = noop, onChange 
     setSuggestions(null);
     const params = new URLSearchParams({ q: queryText, limit: '20' });
     try {
-      const response = await fetch(`/api/memory/search?${params.toString()}`);
+      const response = await projectFetch(`/api/memory/search?${params.toString()}`);
       if (!response.ok) throw Object.assign(new Error('request failed'), { status: response.status });
       const data = await response.json();
       if (data?.error) throw Object.assign(new Error('request failed'), { status: response.status });
@@ -298,7 +323,7 @@ export function MemoryGraph({ nodes, edges, selected, onSelect = noop, onChange 
     setBusy(true);
     setNotice(null);
     try {
-      await sendMemoryRelationship('POST', createPayload);
+      await sendMemoryRelationship('POST', createPayload, projectFetch);
       setNotice({ kind: 'success', text: 'Project link saved.' });
       setPendingCreate(false);
       setTargetId('');
@@ -318,7 +343,7 @@ export function MemoryGraph({ nodes, edges, selected, onSelect = noop, onChange 
     setBusy(true);
     setNotice(null);
     try {
-      await sendMemoryRelationship('DELETE', payload);
+      await sendMemoryRelationship('DELETE', payload, projectFetch);
       setNotice({ kind: 'success', text: 'Project link removed.' });
       setPendingDelete(null);
       onChange();
@@ -379,38 +404,38 @@ export function MemoryGraph({ nodes, edges, selected, onSelect = noop, onChange 
   };
 
   return (
-    <div className="mem-graph">
+    <div className={`mem-graph${projectOnly ? ' mem-graph--project-only' : ''}${globalPreferencesOnly ? ' mem-graph--global-preferences-only' : ''}`}>
       <fieldset className="mem-graph-filters">
-        <legend>Filter memories and relationships</legend>
-        <label>Text<input type="search" value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Filter memories by text" placeholder="intent or summary" /></label>
-        <label>Type<select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} aria-label="Filter memories by type">
-          <option value="">all types</option>
-          {NODE_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+        <legend>{globalPreferencesOnly ? 'Filter global preferences and relationships' : projectOnly ? 'Filter project memories and relationships' : 'Filter memories and relationships'}</legend>
+        <label>Text<input type="search" value={query} onChange={(event) => setQuery(event.target.value)} aria-label={globalPreferencesOnly ? 'Filter global preferences by text' : 'Filter memories by text'} placeholder="intent or summary" /></label>
+        <label>Type<select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} aria-label={globalPreferencesOnly ? 'Filter global preferences by type' : 'Filter memories by type'}>
+          <option value="">{globalPreferencesOnly ? 'all preferences' : 'all types'}</option>
+          {(globalPreferencesOnly ? ['preference'] : NODE_TYPES).map((type) => <option key={type} value={type}>{type}</option>)}
         </select></label>
-        <label>Scope<select value={scopeFilter} onChange={(event) => setScopeFilter(event.target.value)} aria-label="Filter memories by scope">
+        {!projectOnly && !globalPreferencesOnly && <label>Scope<select value={scopeFilter} onChange={(event) => setScopeFilter(event.target.value)} aria-label="Filter memories by scope">
           <option value="">all scopes</option><option value="project">project</option><option value="global">global</option>
-        </select></label>
+        </select></label>}
         <label>Relationship<select value={relFilter} onChange={(event) => setRelFilter(event.target.value)} aria-label="Filter by relationship type">
           <option value="">all relationships</option>
           {MEMORY_RELATIONS.map((rel) => <option key={rel} value={rel}>{rel} — {RELATION_LABEL[rel]}</option>)}
         </select></label>
       </fieldset>
       <div className="mem-graph-toolbar">
-        <p className="mem-graph-help">Select a memory in the map or index to inspect its connected neighborhood and details.</p>
-        <span className="mem-graph-count" role="status">Showing {visible.nodes.length} of {graphNodes.length} memories · {visible.edges.length} matching links</span>
+        <p className="mem-graph-help">Select a {globalPreferencesOnly ? 'preference' : 'memory'} in the map or index to inspect its connected neighborhood and details.</p>
+        <span className="mem-graph-count" role="status">Showing {visible.nodes.length} of {graphNodes.length} {globalPreferencesOnly ? 'preferences' : 'memories'} · {visible.edges.length} matching links</span>
         <div className="mem-graph-display-modes" role="group" aria-label="Memory display">
-          <button type="button" aria-pressed={displayMode === 'map'} onClick={() => setDisplayMode('map')}>Memory map</button>
-          <button type="button" aria-pressed={displayMode === 'index'} onClick={() => setDisplayMode('index')}>Memory index</button>
+          <button type="button" aria-pressed={displayMode === 'map'} onClick={() => setDisplayMode('map')}>{globalPreferencesOnly ? 'Preference map' : 'Memory map'}</button>
+          <button type="button" aria-pressed={displayMode === 'index'} onClick={() => setDisplayMode('index')}>{globalPreferencesOnly ? 'Preference index' : 'Memory index'}</button>
         </div>
       </div>
       <div className={`mem-graph-explorer mem-graph-explorer--${displayMode}`}>
-        <section className="mem-graph-index" aria-label="Memory index" hidden={displayMode === 'map'}>
+        <section className="mem-graph-index" aria-label={globalPreferencesOnly ? 'Global preference index' : 'Memory index'} hidden={displayMode === 'map'}>
           <div className="mem-graph-index-heading">
-            <h4>Memory index</h4>
+            <h4>{globalPreferencesOnly ? 'Global preference index' : 'Memory index'}</h4>
             <span>{visible.nodes.length} {visible.nodes.length === 1 ? 'record' : 'records'}</span>
           </div>
           {visible.nodes.length ? (
-            <div className="mem-index-scroll" role="region" aria-label="Filtered memory index" tabIndex={0}>
+            <div className="mem-index-scroll" role="region" aria-label={globalPreferencesOnly ? 'Filtered global preference index' : 'Filtered memory index'} tabIndex={0}>
               <ol className="mem-index-list">
                 {visible.nodes.map((node) => (
                   <li key={node.id}>
@@ -433,16 +458,16 @@ export function MemoryGraph({ nodes, edges, selected, onSelect = noop, onChange 
               </ol>
             </div>
           ) : (
-            <p className="mem-graph-empty">No memories match these filters. Adjust the text, type, scope, or relationship filters to continue.</p>
+            <p className="mem-graph-empty">{globalPreferencesOnly ? 'No global preferences match these filters. Adjust the text or relationship filters to continue.' : projectOnly ? 'No project memories match these filters. Adjust the text, type, or relationship filters to continue.' : 'No memories match these filters. Adjust the text, type, scope, or relationship filters to continue.'}</p>
           )}
         </section>
 
         <div className="mem-graph-side">
-          <section className="mem-bubble-section" aria-label="Memory bubble map">
+          <section className="mem-bubble-section" aria-label={globalPreferencesOnly ? 'Global preference bubble map' : 'Memory bubble map'}>
             <header className="mem-bubble-heading">
               <div>
-                <h4>Memory map</h4>
-                <p>Type is color · project has a solid ring · global has a dashed ring</p>
+                <h4>{globalPreferencesOnly ? 'Global preference map' : 'Memory map'}</h4>
+                <p>{globalPreferencesOnly ? 'Confirmed global preferences only. The graph and relationships are read-only.' : projectOnly ? 'Confirmed records from the selected project only.' : 'Type is color · project has a solid ring · global has a dashed ring'}</p>
               </div>
               <div className="mem-bubble-modes" role="group" aria-label="Memory map view">
                 <button type="button" aria-pressed={viewMode === 'network'} onClick={() => setViewMode('network')}>Network</button>
@@ -456,8 +481,8 @@ export function MemoryGraph({ nodes, edges, selected, onSelect = noop, onChange 
               <button type="button" className="mem-graph-action" disabled={!selectedBubble} onClick={focusSelected}>Focus selected</button>
               <span className="mem-map-gestures">Drag empty map to pan · wheel to zoom · use Focus selected to recenter</span>
             </div>
-            <div className="mem-bubble-legend" aria-label="Memory types">
-              {NODE_TYPES.map((type) => <span key={type}><i className={`mem-bubble-key-dot mem-type--${type}`} aria-hidden="true" />{type}</span>)}
+            <div className="mem-bubble-legend" aria-label={globalPreferencesOnly ? 'Global preference type' : 'Memory types'}>
+              {(globalPreferencesOnly ? ['preference'] : NODE_TYPES).map((type) => <span key={type}><i className={`mem-bubble-key-dot mem-type--${type}`} aria-hidden="true" />{type}</span>)}
             </div>
             <div
               ref={bubbleViewportRef}
@@ -547,7 +572,7 @@ export function MemoryGraph({ nodes, edges, selected, onSelect = noop, onChange 
                   ))}
                 </div>
               ) : (
-                <p className="mem-graph-empty">No memories match these filters. Adjust the filters to see bubbles.</p>
+                <p className="mem-graph-empty">{globalPreferencesOnly ? 'No global preferences match these filters. Adjust the filters to see bubbles.' : projectOnly ? 'No project memories match these filters. Adjust the filters to see bubbles.' : 'No memories match these filters. Adjust the filters to see bubbles.'}</p>
               )}
             </div>
             <div className="mem-bubble-labels-wrap">
@@ -570,10 +595,10 @@ export function MemoryGraph({ nodes, edges, selected, onSelect = noop, onChange 
           </section>
 
         {selectedNode ? (
-        <section className="mem-detail mem-map-inspector" aria-label="Selected memory inspector">
+        <section className="mem-detail mem-map-inspector" aria-label={globalPreferencesOnly ? 'Selected global preference inspector' : 'Selected memory inspector'}>
           <div className="mem-detail-heading">
             <div>
-              <p className="mem-focus-label">Selected memory</p>
+              <p className="mem-focus-label">{globalPreferencesOnly ? 'Selected global preference' : 'Selected memory'}</p>
               <h4 className="sub-title"><span className={TYPE_CLASS(selectedNode.type)}>{selectedNode.type}</span> {selectedNode.intent || selectedNode.memoryId}</h4>
               <div className="mem-detail-meta">
                 <span className={`memory-scope memory-scope--${selectedNode.scope}`}>Scope: {selectedNode.scope}</span>{' · '}
@@ -669,13 +694,13 @@ export function MemoryGraph({ nodes, edges, selected, onSelect = noop, onChange 
               </div>
             </section>
           ) : (
-            <p className="mem-graph-muted mem-readonly-note">Global memories are read-only here. Project relationship editing is available only when a project memory is selected.</p>
+            <p className="mem-graph-muted mem-readonly-note">{globalPreferencesOnly ? 'Global preferences and their relationships are read-only here.' : 'Global memories are read-only here. Project relationship editing is available only when a project memory is selected.'}</p>
           )}
           {notice && <p className={notice.kind === 'error' ? 'mem-operation-message mem-operation-message--error' : 'mem-operation-message'} role={notice.kind === 'error' ? 'alert' : 'status'}>{notice.text}</p>}
         </section>
         ) : (
-          <section className="mem-detail mem-map-inspector mem-graph-empty" aria-label="Selected memory inspector" role="status">
-            No memories match these filters. Adjust the filters to select a memory and explore its neighborhood.
+          <section className="mem-detail mem-map-inspector mem-graph-empty" aria-label={globalPreferencesOnly ? 'Selected global preference inspector' : 'Selected memory inspector'} role="status">
+            {globalPreferencesOnly ? 'No global preferences match these filters. Adjust the filters to select a preference and explore its neighborhood.' : projectOnly ? 'No project memories match these filters. Adjust the filters to select a project memory and explore its neighborhood.' : 'No memories match these filters. Adjust the filters to select a memory and explore its neighborhood.'}
           </section>
         )}
         </div>

@@ -9,15 +9,15 @@ const resolvedLineRe = /^\s*-\s*\*\*Resolved/i;
 
 export function createDecisionsRouter({ root }) {
   const router = express.Router();
-  const specsDir = path.join(root, SPECS_DIR);
-  const decisionDirs = [
-    path.join(specsDir, 'decisions'),
-    path.join(specsDir, 'features', 'guarana'),
-  ];
+  const decisionDirs = (req) => {
+    const specsDir = path.join(req.projectRoot || root, SPECS_DIR);
+    return [path.join(specsDir, 'decisions'), path.join(specsDir, 'features', 'guarana')];
+  };
 
-  router.get('/pending', (_req, res) => {
+  router.get('/pending', (req, res) => {
     const decisions = [];
-    for (const dir of decisionDirs) {
+    const selectedRoot = req.projectRoot || root;
+    for (const dir of decisionDirs(req)) {
       let names = [];
       try {
         names = fs.readdirSync(dir).filter((n) => n.endsWith('.md'));
@@ -32,7 +32,7 @@ export function createDecisionsRouter({ root }) {
         } catch {
           continue;
         }
-        const rel = path.relative(root, full);
+        const rel = path.relative(selectedRoot, full);
         const lines = text.split('\n');
         const alreadyResolved = lines.some((l) => resolvedLineRe.test(l));
         for (const line of lines) {
@@ -52,7 +52,7 @@ export function createDecisionsRouter({ root }) {
     if (typeof file !== 'string' || file.length === 0) return res.status(400).end();
     if (typeof statement !== 'string') return res.status(400).end();
 
-    const allowed = resolveAllowed(file, decisionDirs, { requireExt: '.md' });
+    const allowed = resolveAllowed(file, decisionDirs(req), { requireExt: '.md' });
     if (!allowed) return res.status(400).end();
 
     let text;

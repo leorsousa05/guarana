@@ -123,15 +123,24 @@ describe('guarana memory search', () => {
 });
 
 describe('guarana memory review', () => {
-  it('lists drafts, confirms one, then it becomes searchable', () => {
+  it('requires an explicit project type conversion, then the draft becomes searchable', () => {
     writeNode(cwd(), { id: 'mem-c', type: 'atom', status: 'draft', ts: 10, intent: 'pending thing', tags: ['storage'] });
     const list = run(['review', '--list'], cwd());
     assert.ok(list.includes('mem-c'));
     assert.ok(/1 draft node\(s\)/.test(list));
 
-    run(['review', 'mem-c', '--confirm', '--intent', 'confirmed intent'], cwd());
+    const nodesFile = path.join(cwd(), '.guarana', 'memory', 'nodes.jsonl');
+    const before = fs.readFileSync(nodesFile);
+    const implicit = runResult(['review', 'mem-c', '--confirm', '--intent', 'confirmed intent'], cwd());
+    assert.equal(implicit.status, 1);
+    assert.match(implicit.stderr, /explicit project type conversion/);
+    assert.deepEqual(fs.readFileSync(nodesFile), before);
+
+    run(['review', 'mem-c', '--confirm', '--type', 'decision', '--intent', 'confirmed intent'], cwd());
     const n = listNodes(cwd()).find((x) => x.id === 'mem-c');
     assert.equal(n.status, 'confirmed');
+    assert.equal(n.type, 'decision');
+    assert.equal(n.scope, 'project');
     assert.equal(n.intent, 'confirmed intent');
     assert.ok(run(['search', 'storage'], cwd()).includes('mem-c'));
     const list2 = run(['review', '--list'], cwd());
@@ -239,36 +248,71 @@ describe('guarana memory export / import', () => {
     assert.ok(freshNodes.some((x) => x.id === 'mem-1' && x.status === 'confirmed'));
     assert.ok(out2.includes('initialized'));
   });
+
+  it('rejects an invalid archive without initializing or writing the project vault', () => {
+    const uninitialized = path.join(tmp, 'uninitialized-import');
+    fs.mkdirSync(uninitialized);
+    const archive = path.join(tmp, 'invalid-project-archive.json');
+    fs.writeFileSync(archive, JSON.stringify({
+      version: 1,
+      exportedAt: '2026-10-25T00:00:00.000Z',
+      nodes: [{
+        id: 'global-preference',
+        type: 'preference',
+        status: 'confirmed',
+        scope: 'global',
+        category: 'workflow',
+        ts: 1,
+      }],
+      edges: [],
+    }));
+
+    const result = runResult(['import', archive], uninitialized);
+
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /project archive node.scope/);
+    assert.equal(fs.existsSync(path.join(uninitialized, '.guarana')), false);
+    assert.equal(fs.existsSync(path.join(uninitialized, '.gitignore')), false);
+  });
 });
 
 describe('guarana memory compact / prune', () => {
-  it('compacts oldest atoms into a supernode above threshold, preserving lessons', () => {
-    for (let i = 0; i < 5; i++) {
-      writeNode(cwd(), { id: `atom-${i}`, type: 'atom', status: 'confirmed', ts: i, intent: `a${i}`, summary: `lesson ${i}` });
-    }
+  it('compact is a byte-preserving no-op for legacy atoms and supernodes', () => {
+    for (let i = 0; i < 5; i++) writeNode(cwd(), { id: `atom-${i}`, type: 'atom', status: 'confirmed', ts: i, intent: `a${i}`, summary: `lesson ${i}` });
+    writeNode(cwd(), { id: 'legacy-supernode', type: 'supernode', status: 'confirmed', ts: 6, summary: 'supernode summarizing 1 atom node(s) ts range: 1..1' });
+    const edgesFile = path.join(cwd(), '.guarana', 'memory', 'edges.jsonl');
+    fs.writeFileSync(edgesFile, JSON.stringify({ from: 'atom-0', to: 'legacy-supernode', rel: 'summarizes', ts: 7 }) + '\n');
+    const nodesFile = path.join(cwd(), '.guarana', 'memory', 'nodes.jsonl');
+    const beforeNodes = fs.readFileSync(nodesFile);
+    const beforeEdges = fs.readFileSync(edgesFile);
     const out = run(['compact', '--threshold', '2'], cwd());
-    assert.ok(/compacted 3 atom node\(s\) into supernode/.test(out));
+    assert.match(out, /legacy memory preserved; no atoms or supernodes changed/);
+    assert.deepEqual(fs.readFileSync(nodesFile), beforeNodes);
+    assert.deepEqual(fs.readFileSync(edgesFile), beforeEdges);
     const nodes = listNodes(cwd());
-    assert.ok(nodes.some((x) => x.type === 'supernode'));
-    const supernode = nodes.find((x) => x.type === 'supernode');
-    assert.equal(supernode.collapsedIds.length, 3);
-    // atom-0..2 collapsed; atom-3,4 remain
-    for (let i = 0; i < 3; i++) assert.ok(!nodes.some((x) => x.id === `atom-${i}`));
-    for (let i = 3; i < 5; i++) assert.ok(nodes.some((x) => x.id === `atom-${i}`));
+    assert.equal(nodes.filter((x) => x.type === 'atom').length, 5);
+    assert.equal(nodes.filter((x) => x.type === 'supernode').length, 1);
   });
 
-  it('prunes oldest draft atoms beyond --keep, preserving confirmed', () => {
+  it('prune is a byte-preserving no-op for legacy draft atoms and their edges', () => {
     for (let i = 0; i < 4; i++) {
       writeNode(cwd(), { id: `draft-${i}`, type: 'atom', status: 'draft', ts: i, intent: `d${i}` });
     }
     writeNode(cwd(), { id: 'keep', type: 'atom', status: 'confirmed', ts: 100, intent: 'k' });
+    writeNode(cwd(), { id: 'legacy-supernode', type: 'supernode', status: 'confirmed', ts: 101, summary: 'Keep me.' });
+    const edgesFile = path.join(cwd(), '.guarana', 'memory', 'edges.jsonl');
+    fs.writeFileSync(edgesFile, JSON.stringify({ from: 'draft-0', to: 'legacy-supernode', rel: 'summarizes', ts: 102 }) + '\n');
+    const nodesFile = path.join(cwd(), '.guarana', 'memory', 'nodes.jsonl');
+    const beforeNodes = fs.readFileSync(nodesFile);
+    const beforeEdges = fs.readFileSync(edgesFile);
     const out = run(['prune', '--keep', '1'], cwd());
-    assert.ok(/pruned 3 draft atom node/.test(out));
+    assert.match(out, /legacy draft atoms preserved; nothing pruned/);
+    assert.deepEqual(fs.readFileSync(nodesFile), beforeNodes);
+    assert.deepEqual(fs.readFileSync(edgesFile), beforeEdges);
     const nodes = listNodes(cwd());
+    assert.equal(nodes.filter((x) => x.type === 'atom' && x.status === 'draft').length, 4);
     assert.ok(nodes.some((x) => x.id === 'keep'));
-    // newest draft survives (draft-3), oldest three pruned
-    assert.ok(nodes.some((x) => x.id === 'draft-3'));
-    for (let i = 0; i < 3; i++) assert.ok(!nodes.some((x) => x.id === `draft-${i}`));
+    assert.ok(nodes.some((x) => x.id === 'legacy-supernode'));
   });
 });
 

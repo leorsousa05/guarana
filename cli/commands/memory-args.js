@@ -78,11 +78,14 @@ function parseMemoryArgs(args) {
     const action = rest.includes('--confirm') ? 'confirm' : rest.includes('--discard') ? 'discard' : undefined;
     if (!action) fail('specify --confirm or --discard');
     const flags = parseFlags(rest.filter((arg) => arg !== '--confirm' && arg !== '--discard'), {
-      '--intent': 'intent', '--tags': 'tags',
+      '--type': 'type', '--intent': 'intent', '--tags': 'tags',
     });
+    if (action === 'confirm' && flags.type !== undefined && !['decision', 'bug', 'solution', 'refactor'].includes(flags.type))
+      fail('invalid --type value: expected decision, bug, solution, or refactor');
     const result = { command: 'review', mode: 'edit', id, action };
-    if (action === 'confirm' && (flags.intent !== undefined || flags.tags !== undefined)) {
+    if (action === 'confirm' && (flags.type !== undefined || flags.intent !== undefined || flags.tags !== undefined)) {
       result.edits = {};
+      if (flags.type !== undefined) result.edits.type = flags.type;
       if (flags.intent !== undefined) result.edits.intent = flags.intent;
       if (flags.tags !== undefined) {
         result.edits.tags = flags.tags.split(',').map((tag) => tag.trim()).filter(Boolean);

@@ -1,6 +1,6 @@
 import { fmtAge } from '../lib/format.js';
 
-export function Header({ lastEventTs, tickerTick }) {
+export function Header({ lastEventTs, tickerTick, projectSelector }) {
   // tickerTick forces re-render so the "age" text stays fresh
   void tickerTick;
   return (
@@ -12,6 +12,7 @@ export function Header({ lastEventTs, tickerTick }) {
         </h1>
       </div>
       <div className="header-meta">
+        {projectSelector}
         <span className={`pill ${lastEventTs != null && Date.now() - lastEventTs < 15000 ? 'pill--live' : ''}`}>
           last event {fmtAge(lastEventTs)}
         </span>

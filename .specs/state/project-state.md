@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-10-26T15:18:07.857Z
+Last updated: 2026-10-26T19:18:40.217Z
 
 ## Per-skill status
 | Skill | Status |
@@ -83,10 +83,33 @@ Validated before this task: the post-bootstrap-fix release gate, final archive, 
 - Browser proof confirms 375px document/body width, 351px content scroll/client widths for the Models sections and discovery areas, stacked grids, no clipped Models descendants, visible keyboard focus, polite status announcement, and reduced-motion behavior. Global navigation's horizontal scrolling is intentional; page content does not overflow.
 - Detailed proof and check outcomes: `changes/2026-10-09-models-page-overhaul.md`. Shipping was not confirmed; status is VALIDATED, not SHIPPED.
 - Budget: ADR-005 defaults.
-- Pending writes: Commit and push of this validated follow-up remain pending.; No npm publication or tag has occurred; neither is claimed.
+- Pending writes: none.
 
 ## Proofs that exist
 Task-1 proofs for all 7 skills in `.specs/features/guarana/proofs/`; all acceptance criteria mapped; worker-verify PASS on every skill. CLI acceptance: 6/6 checks PASS (recorded in changes/2026-08-21-cli.md). Release readiness evidence is in `changes/2026-10-02-release-readiness.md`; 1.0.0 candidate evidence and revalidation follow-up are in `changes/2026-10-07-release-candidate-1.0.0.md` and `features/release/release-candidate-1.0.0-smoke.jsonl`. Spec lifecycle write proof: `changes/2026-10-03-spec-lifecycle-writes.md`. Automatic skill-creation proof: `changes/2026-10-05-automatic-skill-creation.md`, `changes/2026-10-05-skill-trigger-guidance.md`, and validated routing clarity in `changes/2026-10-07-skill-routing-clarity.md`. Native Task worker dispatch proof is in `changes/2026-10-07-native-task-worker-dispatch.md` and `features/orchestrator/subagent-dispatch-smoke.jsonl`. Dashboard skill-scope count proof: `changes/2026-10-05-dashboard-skill-scope-counts.md`.
 
 ## BLOCKED
 Final 1.0.0 candidate is validated; publishing/tagging remains a separate maintainer action. Budget numbers remain ADR-005 defaults pending human override (deferred Rule-0 item, recorded).
+
+## Browser gate checkpoint — Dashboard project selection and Memory separation — 2026-10-26
+
+Fresh independent `worker-verify` passed project-selection-and-memory-drafts
+criterion 10 and memory/project-knowledge-and-user-preferences-separation
+criterion 12 using synthetic fixtures and real Chromium at 375x812 and
+1440x900. Coverage included project selection and Drafts review, typed
+confirmation, irreversible discard, keyboard/focus/accessibility, and no
+viewport overflow. No real vault or provider data was used. Evidence:
+`/tmp/opencode/guarana-final-browser-gates/verification.md`, `report.json`,
+`request-audit.json`, and report-referenced screenshots including
+`drafts-focused-375.png` and `drafts-focused-1440.png`.
+
+The same verifier reports `npm test` PASS (658/658), production build and CLI
+sync PASS, `check-cli` PASS before and after build, candidate specs validation
+PASS (245 files, 96 feature specs, 44 ADRs, 278 links, 0 issues),
+`npm run specs:validate -- --json` PASS, `npm run audit` PASS (zero
+vulnerabilities), and staged/unstaged/untracked diff-check PASS. Candidate
+HEAD and `origin/main` both equal `d976ddf76a1c7e354b4dbe734ab05caad8e43d85`
+with zero divergence. No commit, push, tag, or npm publication occurred;
+original-checkout byte-preservation evidence remains unresolved. These are
+criterion-level verification results and do not assert an overall release or
+shipping status.

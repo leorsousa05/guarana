@@ -3,7 +3,7 @@
 ## What the suite does
 Guarana installs AI Loop Engineering into OpenCode: a disciplined inner loop (Perceive → Think → Act → Observe) supervised by an outer loop that decides when to run, what state persists, how results are verified, and when to stop. Stopping is mechanical, verification is independent, and memory is on disk.
 
-## The seven skills (fixed, never renamed)
+## The nine Guarana procedures (fixed, never renamed)
 | Skill | Kind | One-liner |
 |---|---|---|
 | [guarana:plan](guarana/plan.md) | core | Meta-skill: restores state, routes intent to exactly one skill, dispatches with condition + budget. |
@@ -11,8 +11,15 @@ Guarana installs AI Loop Engineering into OpenCode: a disciplined inner loop (Pe
 | [guarana:code](guarana/code.md) | core | Implementation: read-before-edit, minimal diffs, diff + stop-reason return contract. |
 | [guarana:verify](guarana/verify.md) | core | Termination: 3 guards, validation gate, structural verification split. |
 | [guarana:remember](guarana/remember.md) | core | Disk-only memory: restore order, write triggers, silent-truncation recovery. |
+| [guarana:memory](memory/memory.md) | core | Search, review, and save durable knowledge in project and private global memory graphs. |
 | [guarana:debug](guarana/debug.md) | optional | Failure-mode matrix + defusals; fires ONLY on failure/misbehavior. |
 | [guarana:measure](guarana/measure.md) | optional | Telemetry: stop-reason logs, budgets, health metrics; fires ONLY for cost tuning/telemetry. |
+| [guarana:specs](orchestrator/spec-record-command.md) | core | Dedicated worker-specs procedure for factual, human-readable `.specs` record updates. |
+
+The suite index at `skills/guarana/SKILL.md` is separate from these nine
+procedures. The CLI mirror under `cli/skills/guarana` is a distribution copy,
+not additional skills; the four project-local `.opencode/skills` developer
+playbooks are a separate inventory.
 
 ## Orchestrator (always-on layer)
 The [orchestrator](orchestrator/orchestrator.md) sits above the skills and makes the loop automatic: an always-on state machine (`idle → planning → building → coding → verifying → debugging → completed`), persisted to `.specs/state/workflow.json`, selects which skill to load each turn, bootstraps missing specs, and supplies relevant confirmed memory. It decides *what*; the skills still do *how*. Explicit `guarana:*` commands remain an escape hatch that force a step. `guarana:plan` is now an internal workflow step, not a required manual entry point.
@@ -23,18 +30,20 @@ The TASKED [blocker-recovery and atomic-kickoff feature](orchestrator/blocker-re
 
 The VALIDATED [native `workflow_tick` caller-identity guard](orchestrator/workflow-tick-caller-identity-guard.md) is a bounded follow-up to [native Task worker dispatch](orchestrator/subagent-dispatch.md). It records fail-closed identity checks and explicitly leaves the unexplained external `unknown action: start_task` mismatch outside scope.
 
-The bounded [intent and provenance safety follow-up](orchestrator/intent-provenance-safety.md) is VALIDATED after independent offline checks and the completed authorized live gate. One live native worker-verify Task preserved project workflow bytes after global plugin deployment and restart confirmation. GitHub push remains pending; the follow-up is not SHIPPED.
+The bounded [intent and provenance safety follow-up](orchestrator/intent-provenance-safety.md) is SHIPPED after independent offline checks, the completed authorized live gate, and normal GitHub push. One live native worker-verify Task preserved project workflow bytes after global plugin deployment and restart confirmation. No npm publication, tag, or version change occurred.
 
-The explicit plugin-ownership adoption decision is recorded in [ADR-039](../decisions/ADR-039-explicit-plugin-ownership-adoption.md); offline implementation proof and exact completed live-gate evidence are in the same orchestrator follow-up. No commit, push, publication, tag, or version change is claimed.
+The explicit plugin-ownership adoption decision is recorded in [ADR-039](../decisions/ADR-039-explicit-plugin-ownership-adoption.md); its offline implementation and completed live-gate proof belong to the shipped intent/provenance follow-up above, not to a separate release.
 
-The TASKED [global `workflow_tick` runtime deployment](orchestrator/global-workflow-tick-runtime-deployment.md) follow-up records the user-authorized all-plugin/engine installation and shared OpenCode service restart before execution. Deployment, restart, and isolated runtime proof remain pending; release actions are excluded.
+The [global `workflow_tick` runtime deployment](orchestrator/global-workflow-tick-runtime-deployment.md) is SHIPPED as a global plugin/engine deployment and isolated runtime proof; it is not a package release, and no package-version or npm-publication action occurred.
 
 The existing [persistent memory feature](memory/memory.md) remains VALIDATED. Its separate [memory hardening follow-up](memory/memory-hardening.md) is now VALIDATED after fresh independent worker-verify returned overall PASS for all eight acceptance criteria. The accepted capture, confirmed-node erasure, retrieval, and bounded-trust context decisions remain recorded in [ADR-038](../decisions/ADR-038-safe-bounded-memory-context.md); no shipping is claimed.
 
-The bounded [global preference context tool groups](memory/global-preference-context-groups.md) follow-up is VALIDATED, not SHIPPED. Explicit `memory_get_context_for_task` results keep direct, active-related, and reached superseded global preferences in separate groups; proof is in the [2026-10-26 change record](../changes/2026-10-26-global-preference-context-tool-groups.md). Push remains pending; no npm publication or tag is claimed.
+The [global preference injection budget](memory/global-preference-injection-budget.md) is source-shipped on origin/main; it injects the complete eligible active preference payload losslessly under a configurable effective token ceiling, or fails closed for the whole payload. Its accepted overflow and UTF-8 estimate contract is in [ADR-044](../decisions/ADR-044-configurable-preference-injection-budget.md), with proof in the [2026-10-25 change record](../changes/2026-10-25-global-preference-injection-budget.md). This is not an npm publication or package tag; no actual vault contents were inspected or changed.
+
+The [Dashboard Memory preference graph and one-hop context groups](dashboard/memory-preference-graph-and-context.md) are also present in shipped source on origin/main. Automatic context keeps direct, related, and reached superseded global preferences distinct and traverses exactly one relationship hop; project context is not injected. No package publication or tag is implied.
 
 ## Release assurance
-The [release-readiness feature](release/release-readiness.md) defines the supported Node/OpenCode contract, reproducible npm packaging, and automated CI matrix. [Smoke-test retirement](release/smoke-test-retirement.md) states that package/release/OpenCode-host smoke tests MUST NOT be run or reintroduced; `npm pack --dry-run --json` remains package-content inspection only. The TASKED [Guarana 1.5.0 version-bump candidate](release/version-bump-1-5-0.md) records the authorized local unpublished version metadata for the validated [blocker-recovery and atomic-kickoff feature](orchestrator/blocker-recovery-and-atomic-kickoff.md); publication, tagging, commit, and push are excluded.
+The [release-readiness feature](release/release-readiness.md) defines the supported Node/OpenCode contract, reproducible npm packaging, and automated CI matrix. [Smoke-test retirement](release/smoke-test-retirement.md) states that package/release/OpenCode-host smoke tests MUST NOT be run or reintroduced; `npm pack --dry-run --json` remains package-content inspection only. [Guarana 1.5.0](release/version-bump-1-5-0.md) is SHIPPED as a Stable GitHub tag (`v1.5.0`); no npm publication or formal LTS/maintenance promise is claimed. The remote annotated tag and CI proof are in the current release record; no GitHub Release page was created.
 
 ## Build order (hard rule)
 plan → build → code → verify → remember → debug → measure. Never start N+1 before N validates and ships. (The orchestrator layers on top of all shipped skills.)

@@ -6,6 +6,7 @@ import os from 'node:os';
 import fs from 'node:fs';
 import { initVault, initUserVault, paths } from '../memory/vault.js';
 import { createNode, createEdge, getNode, listEdges } from '../memory/graph.js';
+import { memoryGetGlobalPreferences } from '../memory/tools.js';
 
 // Slice 3 contract tests (criteria 11/12/13): memory_* tools, called
 // through the plugin's registered `tool` interface (not the engine directly).
@@ -60,12 +61,11 @@ describe('GuaranaMemory tools (slice 3)', () => {
       intent: 'jwt token expiry not refreshed on authentication retry',
       summary: 'users get logged out abruptly',
     });
-    const draft = createNode(vaultDir(), {
-      type: 'atom',
-      status: 'draft',
-      intent: 'captured jwt authentication tool call',
-      output: 'ok',
-    });
+    const draft = {
+      id: 'legacy-draft-atom', type: 'atom', status: 'draft', ts: 4,
+      intent: 'captured jwt authentication tool call', output: 'ok',
+    };
+    fs.appendFileSync(path.join(vaultDir(), 'nodes.jsonl'), `${JSON.stringify(draft)}\n`);
     createEdge(vaultDir(), { from: dec.id, to: old.id, rel: 'supersedes' });
     createEdge(vaultDir(), { from: bug.id, to: dec.id, rel: 'caused-by' });
     return { dec, old, bug, draft };
@@ -162,17 +162,34 @@ describe('GuaranaMemory tools (slice 3)', () => {
   });
 
   describe('memory_review_draft (criterion 12)', () => {
-    it('confirm flips draft -> confirmed (with edits)', async () => {
+    it('rejects implicit confirmation and explicitly converts a legacy draft', async () => {
       const { draft } = seedGraph();
+      const nodesFile = path.join(vaultDir(), 'nodes.jsonl');
+      const edgesFile = path.join(vaultDir(), 'edges.jsonl');
+      const beforeNodes = fs.readFileSync(nodesFile);
+      const beforeEdges = fs.readFileSync(edgesFile);
+      const rejected = await call('memory_review_draft', { id: draft.id, action: 'confirm' });
+      assert.match(rejected.error, /explicit project type conversion/);
+      assert.deepEqual(fs.readFileSync(nodesFile), beforeNodes);
+      assert.deepEqual(fs.readFileSync(edgesFile), beforeEdges);
+
+      const invalid = await call('memory_review_draft', {
+        id: draft.id, action: 'confirm', edits: { type: 'atom' },
+      });
+      assert.match(invalid.error, /edits.type must be one of/);
+
       const res = await call('memory_review_draft', {
         id: draft.id,
         action: 'confirm',
-        edits: { summary: 'reviewed jwt capture' },
+        edits: { type: 'solution', summary: 'reviewed jwt capture' },
       });
       assert.deepEqual({ id: res.id, action: res.action }, { id: draft.id, action: 'confirm' });
       const stored = getNode(vaultDir(), draft.id);
       assert.equal(stored.status, 'confirmed');
+      assert.equal(stored.type, 'solution');
+      assert.equal(stored.scope, 'project');
       assert.equal(stored.summary, 'reviewed jwt capture');
+      assert.deepEqual(fs.readFileSync(edgesFile), beforeEdges, 'conversion leaves project edges unchanged');
     });
 
     it('discard removes the node and its edges', async () => {
@@ -237,6 +254,22 @@ describe('GuaranaMemory tools (slice 3)', () => {
   });
 
   describe('memory_get_context_for_task (criterion 13)', () => {
+    it('complete global preference selection has no direct or total-record cap and keeps superseded records historical', async () => {
+      const { globalVault, secondHop, legacyGlobalNonPreference } = seedPreferenceContextGraph();
+      const selected = await memoryGetGlobalPreferences(globalVault, { complete: true });
+
+      assert.deepEqual(selected.preferences.map(({ id }) => id), [
+        'base-preference', 'base-preference-2', 'base-preference-3', 'base-preference-4',
+        'shared-context-id', 'unmatched-neighbor', secondHop.id,
+      ]);
+      assert.equal(selected.preferences.length, 7);
+      assert.deepEqual(selected.relatedPreferences, [], 'active preferences are all direct selections');
+      assert.deepEqual(selected.relatedSuperseded.map(({ id }) => id), ['reached-superseded']);
+      assert.ok(!selected.preferences.some(({ id }) => id === legacyGlobalNonPreference.id));
+      assert.ok(selected.preferences.concat(selected.relatedSuperseded)
+        .every(({ scope, type }) => scope === 'global' && type === 'preference'));
+    });
+
     it('returns a bounded grouped subgraph via 1-hop expansion', async () => {
       const { dec, old, bug, draft } = seedGraph();
       const res = await call('memory_get_context_for_task', { task: 'jwt authentication' });

@@ -6,13 +6,15 @@ import { isTaskRelevant, searchVault } from "./search.js";
 import {
   MemoryValidationError,
   EDGE_RELS,
+  PROJECT_NODE_TYPES,
+  PREFERENCE_CATEGORIES,
+  confirmDraft,
   createNode,
   createEdge,
   getNode,
   listEdges,
   listNodes,
   removeNode,
-  updateNode,
 } from "./graph.js";
 import { filterSensitiveTags, isSensitive, sanitize } from "./security.js";
 import { projectHashFor } from "./capture.js";
@@ -20,7 +22,8 @@ import path from "node:path";
 
 const CTX_RELS = ["caused-by", "depends-on", "supersedes", "fixes", "relates-to"];
 const DEFAULT_CTX_LIMIT = 10;
-const SAVABLE_TYPES = ["decision", "bug", "solution", "refactor", "preference"];
+const preferenceCategory = (node) =>
+  PREFERENCE_CATEGORIES.includes(node.category) ? node.category : "general";
 
 const requireStr = (v, name) => {
   if (typeof v !== "string" || !v.trim())
@@ -48,9 +51,12 @@ export async function memorySearch(vaultDir, opts = {}) {
     id: n.id,
     type: n.type,
     scope: n.scope || "project",
+    ...(n.type === "preference" && n.scope === "global"
+      ? { category: preferenceCategory(n) }
+      : {}),
     intent: n.intent || "",
     summary: n.summary || "",
-    tags: n.tags || [],
+    tags: filterSensitiveTags(n.tags),
     ts: n.ts,
     score: n.score,
   }));
@@ -60,11 +66,17 @@ export async function memorySearch(vaultDir, opts = {}) {
 // memory_save_node: persists a typed confirmed memory and explicit graph links.
 export async function memorySaveNode(vaultDir, opts = {}) {
   const type = opts.type;
-  if (!SAVABLE_TYPES.includes(type))
-    throw new MemoryValidationError(`type must be one of ${SAVABLE_TYPES.join("|")}`);
-  const scope = opts.scope ?? "project";
+  const scope = opts.scope === undefined ? "project" : opts.scope;
   if (scope !== "project" && scope !== "global")
     throw new MemoryValidationError('scope must be "project" or "global"');
+  if (scope === "project" && !PROJECT_NODE_TYPES.includes(type))
+    throw new MemoryValidationError(`project type must be one of ${PROJECT_NODE_TYPES.join("|")}`);
+  if (scope === "global" && type !== "preference")
+    throw new MemoryValidationError('global scope only allows type "preference"');
+  if (scope === "global" && !PREFERENCE_CATEGORIES.includes(opts.category))
+    throw new MemoryValidationError(`global preference category must be one of ${PREFERENCE_CATEGORIES.join("|")}`);
+  if (scope === "project" && opts.category !== undefined)
+    throw new MemoryValidationError("category is only valid for global preference nodes");
   const intent = requireStr(opts.intent, "intent");
   const summary = requireStr(opts.summary ?? opts.decision, "summary");
   if (opts.priority !== undefined && (type !== "preference" || scope !== "global"))
@@ -94,6 +106,7 @@ export async function memorySaveNode(vaultDir, opts = {}) {
     type,
     status: "confirmed",
     scope,
+    ...(scope === "global" ? { category: opts.category } : {}),
     ...(opts.priority !== undefined ? { priority: opts.priority } : {}),
     intent: sanitize(intent),
     summary: sanitize(summary),
@@ -155,10 +168,13 @@ export async function memoryGetContextForTask(vaultDir, opts = {}) {
     type: n.type,
     intent: n.intent || "",
     summary: n.summary || "",
-    tags: n.tags || [],
+    tags: filterSensitiveTags(n.tags),
     ts: n.ts,
     scope: n.scope || "project",
     rejectedAlternatives: n.rejectedAlternatives || [],
+    ...(n.type === "preference" && n.scope === "global"
+      ? { category: preferenceCategory(n) }
+      : {}),
   });
   for (const { node, viaSupersedes } of picked.values()) {
     if (viaSupersedes) out.superseded.push(brief(node));
@@ -177,8 +193,8 @@ export async function memoryGetContextForTask(vaultDir, opts = {}) {
 
 // Global user preferences are standing instructions, so retrieve them even
 // when their vocabulary does not overlap the current task.
-export async function memoryGetGlobalPreferences(vaultDir, { limit = 3, complete = false } = {}) {
-  const totalLimit = Number.isInteger(limit) ? Math.max(0, limit) : 3;
+export async function memoryGetGlobalPreferences(vaultDir, { limit = 10, complete = false } = {}) {
+  const totalLimit = Number.isInteger(limit) ? Math.max(0, limit) : 10;
   const edges = listEdges(vaultDir);
   const nodes = listNodes(vaultDir)
     .filter((n) => n.status === "confirmed" && n.type === "preference" && n.scope === "global")
@@ -186,9 +202,7 @@ export async function memoryGetGlobalPreferences(vaultDir, { limit = 3, complete
       const priority = (b.priority === "essential" ? 1 : 0) - (a.priority === "essential" ? 1 : 0);
       return priority || b.ts - a.ts || String(a.id).localeCompare(String(b.id));
     });
-  const superseded = new Set(
-    edges.filter((e) => e.rel === "supersedes").map((e) => e.to)
-  );
+  const superseded = new Set(edges.filter((e) => e.rel === "supersedes").map((e) => e.to));
   const selected = nodes
     .filter((n) => !superseded.has(n.id))
     .slice(0, complete ? Number.MAX_SAFE_INTEGER : Math.min(3, totalLimit));
@@ -208,6 +222,7 @@ export async function memoryGetGlobalPreferences(vaultDir, { limit = 3, complete
       type: n.type,
       scope: "global",
       priority: n.priority === "essential" ? "essential" : "normal",
+      category: preferenceCategory(n),
       intent: n.intent || "",
       summary: n.summary || "",
       rejectedAlternatives: n.rejectedAlternatives || [],
@@ -242,8 +257,8 @@ export async function memoryDeleteNode(vaultDir, opts = {}) {
   return { id, deleted: true };
 }
 
-// memory_review_draft: legacy migration only. Confirm (flip status, optional
-// edits) or discard (remove node + edges). Non-draft or unknown id -> error.
+// memory_review_draft: discard a legacy draft or confirm it through an explicit
+// conversion to a supported project-memory type. Non-draft/unknown ids fail.
 export async function memoryReviewDraft(vaultDir, opts = {}) {
   const id = requireStr(opts.id, "id");
   const action = opts.action;
@@ -257,8 +272,12 @@ export async function memoryReviewDraft(vaultDir, opts = {}) {
     removeNode(vaultDir, id);
     return { id, action: "discard", removed: true };
   }
-  const patch = { status: "confirmed" };
-  const edits = opts.edits && typeof opts.edits === "object" ? opts.edits : {};
+  const edits = opts.edits;
+  if (!edits || typeof edits !== "object" || Array.isArray(edits) || !PROJECT_NODE_TYPES.includes(edits.type))
+    throw new MemoryValidationError(`explicit project type conversion is required (edits.type must be one of ${PROJECT_NODE_TYPES.join("|")})`);
+  if (node.scope !== undefined && node.scope !== "project")
+    throw new MemoryValidationError(`draft scope is not project: ${id}`);
+  const patch = {};
   for (const f of ["intent", "summary", "decision", "input", "output"]) {
     if (typeof edits[f] === "string") {
       if (isSensitive(edits[f]))
@@ -267,6 +286,6 @@ export async function memoryReviewDraft(vaultDir, opts = {}) {
     }
   }
   if (edits.tags !== undefined) patch.tags = strArray(edits.tags, "edits.tags").map(String);
-  updateNode(vaultDir, id, patch); // re-validates through graph.js
-  return { id, action: "confirm", node: getNode(vaultDir, id) };
+  const converted = confirmDraft(vaultDir, id, edits.type, patch);
+  return { id, action: "confirm", node: converted };
 }

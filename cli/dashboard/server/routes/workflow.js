@@ -13,19 +13,20 @@ function settingsError(res, error, action) {
 export function createWorkflowRouter({ root }) {
   const router = express.Router();
 
-  router.get('/current', async (_req, res) => {
-    res.json(await current(root));
+  router.get('/current', async (req, res) => {
+    res.json(await current(req.projectRoot || root));
   });
 
-  router.get('/settings', (_req, res) => {
+  router.get('/settings', (req, res) => {
     try {
-      res.json(readWorkflowSettings({ directory: root }));
+      res.json(readWorkflowSettings({ directory: req.projectRoot || root }));
     } catch (error) {
       settingsError(res, error, 'load');
     }
   });
 
   router.put('/settings', (req, res) => {
+    const selectedRoot = req.projectRoot || root;
     const body = req.body;
     if (!body || typeof body !== 'object' || Array.isArray(body)
       || !Object.hasOwn(body, 'settings')
@@ -49,9 +50,9 @@ export function createWorkflowRouter({ root }) {
     try {
       // Validate both scopes before replacing the selected file so corrupt
       // settings cannot be silently overwritten or hidden by the update.
-      readWorkflowSettings({ directory: root });
-      writeWorkflowSettings(scope, settings, { directory: root });
-      res.json({ ok: true, ...readWorkflowSettings({ directory: root }) });
+      readWorkflowSettings({ directory: selectedRoot });
+      writeWorkflowSettings(scope, settings, { directory: selectedRoot });
+      res.json({ ok: true, ...readWorkflowSettings({ directory: selectedRoot }) });
     } catch (error) {
       settingsError(res, error, 'save');
     }

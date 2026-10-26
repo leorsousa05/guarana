@@ -20,6 +20,7 @@ import {
   createNode,
   getNode,
   updateNode,
+  confirmDraft,
   listNodes,
   addEdge,
   createEdge,
@@ -28,7 +29,7 @@ import {
   MemoryValidationError,
 } from "./graph.js";
 import { searchVault } from "./search.js";
-import { isSensitive, sanitize } from "./security.js";
+import { hasSensitiveAssignment, isSensitive, sanitize } from "./security.js";
 import { captureAtom, projectHashFor } from "./capture.js";
 
 let tmpDir;
@@ -109,7 +110,10 @@ describe("graph CRUD", () => {
     });
     assert.match(node.id, /^mem-\d+-[0-9a-f]+$/);
     assert.deepEqual(getNode(vaultDir, node.id), node);
-    const updated = updateNode(vaultDir, node.id, { status: "confirmed" });
+    assert.throws(() => confirmDraft(vaultDir, node.id, "atom"), /project type must be one of/);
+    assert.equal(getNode(vaultDir, node.id).status, "draft");
+    assert.throws(() => updateNode(vaultDir, node.id, { status: "confirmed" }), /explicit draft review conversion/);
+    const updated = confirmDraft(vaultDir, node.id, "decision");
     assert.equal(updated.status, "confirmed");
     // reload from disk
     const reloaded = readJsonl(paths(vaultDir).nodes).find((n) => n.id === node.id);
@@ -137,8 +141,11 @@ describe("graph CRUD", () => {
   });
 
   it("rejects malformed nodes", () => {
-    const base = { id: "mem-1-x", type: "atom", status: "draft", ts: 1 };
+    const base = { id: "mem-1-x", type: "decision", status: "draft", ts: 1 };
     for (const bad of [
+      { ...base, type: "atom" },
+      { ...base, type: "supernode" },
+      { ...base, type: "preference", scope: "project" },
       { ...base, id: undefined },
       { ...base, type: undefined },
       { ...base, ts: undefined },
@@ -153,12 +160,40 @@ describe("graph CRUD", () => {
       assert.throws(() => addNode(vaultDir, bad), MemoryValidationError);
     }
     assert.equal(createNode(vaultDir, {
-      type: "preference", status: "confirmed", scope: "global", priority: "essential", ts: 2,
+      type: "preference", status: "confirmed", scope: "global", category: "agent_behavior", priority: "essential", ts: 2,
     }).priority, "essential");
   });
 
+  it("defaults an omitted scope but rejects explicit null without persisting it", () => {
+    const defaultScope = createNode(vaultDir, {
+      type: "decision", status: "confirmed", ts: 1, intent: "default project scope",
+    });
+    assert.equal(defaultScope.scope, undefined, "graph keeps the omitted-scope representation");
+    assert.throws(() => addNode(vaultDir, {
+      id: "explicit-null-scope", type: "decision", status: "confirmed", scope: null, ts: 2,
+    }), /scope must be/);
+    assert.throws(() => createNode(vaultDir, {
+      type: "decision", status: "confirmed", scope: null, ts: 2,
+    }), /scope must be/);
+    assert.deepEqual(listNodes(vaultDir), [defaultScope]);
+  });
+
+  it("keeps legacy project preferences readable without permitting reclassification", () => {
+    const legacy = {
+      id: "legacy-project-preference", type: "preference", status: "confirmed", scope: "project", ts: 1,
+      intent: "legacy response style", summary: "Keep project answers concise.",
+    };
+    fs.appendFileSync(paths(vaultDir).nodes, JSON.stringify(legacy) + "\n");
+    assert.deepEqual(getNode(vaultDir, legacy.id), legacy);
+    assert.throws(() => updateNode(vaultDir, legacy.id, { type: "decision" }), /immutable after creation/);
+    assert.deepEqual(getNode(vaultDir, legacy.id), legacy);
+    assert.throws(() => createNode(vaultDir, {
+      type: "preference", status: "confirmed", scope: "global", intent: "missing category", ts: 2,
+    }), /category/);
+  });
+
   it("rejects edges referencing unknown node ids", () => {
-    const a = createNode(vaultDir, { type: "atom", status: "draft", ts: 1 });
+    const a = createNode(vaultDir, { type: "decision", status: "draft", ts: 1 });
     assert.throws(
       () => addEdge(vaultDir, { from: a.id, to: "mem-ghost", rel: "depends-on", ts: 2 }),
       MemoryValidationError
@@ -191,14 +226,10 @@ describe("search", () => {
       tags: ["telemetry"],
       projectHash: "other",
     });
-    createNode(vaultDir, {
-      type: "atom",
-      status: "draft",
-      ts: 300,
-      intent: "JSONL draft atom must never surface",
-      tags: ["storage"],
-      projectHash: hash,
-    });
+    fs.appendFileSync(paths(vaultDir).nodes, JSON.stringify({
+      id: "legacy-draft-atom", type: "atom", status: "draft", ts: 300,
+      intent: "JSONL draft atom must never surface", tags: ["storage"], projectHash: hash,
+    }) + "\n");
   });
 
   it("returns only confirmed nodes; drafts never appear", async () => {
@@ -302,6 +333,7 @@ describe("security", () => {
     const preference = await memorySaveNode(globalVault, {
       type: "preference",
       scope: "global",
+      category: "communication",
       intent: "response language",
       summary: "Always answer me in Portuguese.",
       tags: ["style"],
@@ -315,6 +347,7 @@ describe("security", () => {
     const replacement = await memorySaveNode(globalVault, {
       type: "preference",
       scope: "global",
+      category: "communication",
       intent: "response language",
       summary: "Use concise Portuguese answers.",
       relatedTo: [{ id: preference.id, rel: "supersedes" }],
@@ -329,7 +362,7 @@ describe("security", () => {
     const { memoryGetGlobalPreferences } = await import("./tools.js");
     const globalVault = initUserVault(path.join(tmpDir, "priority-home"));
     const add = (id, ts, priority) => createNode(globalVault, {
-      id, type: "preference", status: "confirmed", scope: "global", ts,
+      id, type: "preference", status: "confirmed", scope: "global", category: "workflow", ts,
       ...(priority ? { priority } : {}), intent: id, summary: `Preference ${id}`,
     });
     add("normal-newest", 100);
@@ -346,76 +379,311 @@ describe("security", () => {
     assert.equal(capped.count, 3);
 
     const legacyOnly = initUserVault(path.join(tmpDir, "legacy-priority-home"));
-    const legacy = createNode(legacyOnly, {
-      type: "preference", status: "confirmed", scope: "global", ts: 1,
+    const legacy = {
+      id: "legacy-priority", type: "preference", status: "confirmed", scope: "global", ts: 1,
       intent: "legacy", summary: "No migration needed",
-    });
+    };
+    fs.appendFileSync(paths(legacyOnly).nodes, JSON.stringify(legacy) + "\n");
     const legacyResult = await memoryGetGlobalPreferences(legacyOnly);
     assert.equal(legacyResult.preferences[0].id, legacy.id);
     assert.equal(legacyResult.preferences[0].priority, "normal");
     assert.equal(getNode(legacyOnly, legacy.id).priority, undefined);
   });
 
-  it("selects every eligible active global preference while preserving one-hop historical and eligibility boundaries", async () => {
+  it("selects the complete eligible active global preference set without legacy count caps", async () => {
     const { memoryGetGlobalPreferences } = await import("./tools.js");
     const globalVault = initUserVault(path.join(tmpDir, "complete-preferences-home"));
     const active = Array.from({ length: 12 }, (_, index) => createNode(globalVault, {
       id: `complete-pref-${String(index + 1).padStart(2, "0")}`,
-      type: "preference", status: "confirmed", scope: "global", ts: 200 - index,
+      type: "preference", status: "confirmed", scope: "global", category: "workflow", ts: 200 - index,
       intent: `Synthetic active preference ${index + 1}`,
       summary: `Complete preference ${index + 1} — ${"Preserve all synthetic preference text. ".repeat(35)}`,
-      ...(index === 0 ? { tags: ["ordinary-tag", "api_key=synthetic-fixture-secret-123"] } : {}),
     }));
-    const old = createNode(globalVault, {
-      id: "one-hop-old-pref", type: "preference", status: "confirmed", scope: "global", ts: 10,
+    const historical = createNode(globalVault, {
+      id: "one-hop-old-pref", type: "preference", status: "confirmed", scope: "global", category: "communication", ts: 10,
       intent: "synthetic historical preference", summary: "One-hop historical preference.",
     });
-    const secondHopOld = createNode(globalVault, {
-      id: "second-hop-old-pref", type: "preference", status: "confirmed", scope: "global", ts: 9,
+    const secondHop = createNode(globalVault, {
+      id: "second-hop-old-pref", type: "preference", status: "confirmed", scope: "global", category: "communication", ts: 9,
       intent: "synthetic second-hop historical preference", summary: "Must remain outside the one-hop context.",
     });
     const ineligible = [
-      { id: "global-draft-preference", type: "preference", status: "draft", scope: "global", ts: 8, intent: "draft sentinel", summary: "Must not be selected." },
+      { id: "global-draft-preference", type: "preference", status: "draft", scope: "global", category: "workflow", ts: 8, intent: "draft sentinel", summary: "Must not be selected." },
       { id: "global-decision-not-preference", type: "decision", status: "confirmed", scope: "global", ts: 7, intent: "wrong type sentinel", summary: "Must not be selected." },
       { id: "project-preference-in-global-vault", type: "preference", status: "confirmed", scope: "project", ts: 6, intent: "wrong scope sentinel", summary: "Must not be selected." },
     ];
     fs.appendFileSync(paths(globalVault).nodes, `${ineligible.map((node) => JSON.stringify(node)).join("\n")}\n`);
-    createEdge(globalVault, { from: active[0].id, to: old.id, rel: "supersedes" });
-    createEdge(globalVault, { from: old.id, to: secondHopOld.id, rel: "supersedes" });
-    fs.appendFileSync(paths(globalVault).edges, `${ineligible.map((node) => JSON.stringify({
-      from: active[0].id, to: node.id, rel: "relates-to", ts: 5,
-    })).join("\n")}\n`);
-
+    createEdge(globalVault, { from: active[0].id, to: historical.id, rel: "supersedes" });
+    createEdge(globalVault, { from: historical.id, to: secondHop.id, rel: "supersedes" });
     const files = [paths(globalVault).nodes, paths(globalVault).edges, paths(globalVault).config];
     const before = files.map((file) => fs.readFileSync(file));
+
     const selected = await memoryGetGlobalPreferences(globalVault, { complete: true });
 
     assert.deepEqual(selected.preferences.map(({ id }) => id), active.map(({ id }) => id));
     assert.equal(selected.preferences.length, 12, "complete selection exceeds the former direct-three and total-ten caps");
     assert.deepEqual(selected.relatedPreferences, []);
-    assert.deepEqual(selected.relatedSuperseded.map(({ id }) => id), [old.id]);
-    assert.equal(selected.preferences[0].summary, active[0].summary, "selection retains long preference text in full");
-    assert.deepEqual(selected.preferences[0].tags, ["ordinary-tag"], "sensitive tag-shaped values are excluded");
+    assert.deepEqual(selected.relatedSuperseded.map(({ id }) => id), [historical.id]);
+    assert.equal(selected.preferences[0].summary, active[0].summary, "selection retains full preference text");
     const selectedIds = [...selected.preferences, ...selected.relatedPreferences, ...selected.relatedSuperseded]
       .map(({ id }) => id);
-    for (const node of [...ineligible, secondHopOld]) assert.ok(!selectedIds.includes(node.id));
+    for (const node of [...ineligible, secondHop]) assert.ok(!selectedIds.includes(node.id));
     assert.ok([...selected.preferences, ...selected.relatedSuperseded]
       .every(({ scope, type }) => scope === "global" && type === "preference"));
     assert.deepEqual(files.map((file) => fs.readFileSync(file)), before, "selection reads leave synthetic fixture bytes unchanged");
   });
 
+  it("adds only confirmed global preference neighbors one hop from selected preferences", async () => {
+    const { memoryGetGlobalPreferences } = await import("./tools.js");
+    const globalVault = initUserVault(path.join(tmpDir, "preference-neighbor-home"));
+    const addPreference = (id, ts, status = "confirmed") => createNode(globalVault, {
+      id, type: "preference", status, scope: "global", category: "workflow", ts,
+      intent: `fixture ${id}`, summary: `Synthetic preference ${id}`,
+    });
+    const selected = addPreference("selected-base", 100);
+    const secondSelected = addPreference("selected-base-2", 99);
+    const thirdSelected = addPreference("selected-base-3", 98);
+    const causedBy = addPreference("neighbor-caused-by", 20);
+    const dependsOn = addPreference("neighbor-depends-on", 19);
+    const superseded = addPreference("neighbor-superseded", 18);
+    const fixes = addPreference("neighbor-fixes", 17);
+    const relatesTo = addPreference("neighbor-relates-to", 16);
+    const summarized = addPreference("summarizes-only", 15);
+    const secondHop = addPreference("second-hop-only", 14);
+    const draft = addPreference("draft-neighbor", 13, "draft");
+    const sensitiveTag = "api_key=synthetic-fixture-secret-123";
+    const sensitiveNeighbor = {
+      id: "sensitive-tag-neighbor", type: "preference", status: "confirmed", scope: "global", category: "workflow", ts: 12,
+      intent: "synthetic sensitive tag neighbor", summary: "Synthetic summary stays safe.", tags: ["visible-tag", sensitiveTag],
+    };
+    fs.appendFileSync(paths(globalVault).nodes, `${JSON.stringify(sensitiveNeighbor)}\n`);
+    createEdge(globalVault, { from: selected.id, to: causedBy.id, rel: "caused-by" });
+    createEdge(globalVault, { from: dependsOn.id, to: selected.id, rel: "depends-on" });
+    createEdge(globalVault, { from: selected.id, to: superseded.id, rel: "supersedes" });
+    createEdge(globalVault, { from: fixes.id, to: selected.id, rel: "fixes" });
+    createEdge(globalVault, { from: selected.id, to: relatesTo.id, rel: "relates-to" });
+    createEdge(globalVault, { from: selected.id, to: summarized.id, rel: "summarizes" });
+    createEdge(globalVault, { from: causedBy.id, to: secondHop.id, rel: "relates-to" });
+    createEdge(globalVault, { from: selected.id, to: draft.id, rel: "relates-to" });
+    createEdge(globalVault, { from: sensitiveNeighbor.id, to: selected.id, rel: "relates-to" });
+
+    const legacyGlobalType = {
+      id: "global-legacy-decision", type: "decision", status: "confirmed", scope: "global", ts: 12,
+      intent: "synthetic forbidden global legacy type", summary: "Must not be projected.",
+    };
+    const legacyProjectPreference = {
+      id: "project-pref-in-global-vault", type: "preference", status: "confirmed", scope: "project", ts: 11,
+      intent: "synthetic legacy project preference", summary: "Must not be projected.",
+    };
+    fs.appendFileSync(paths(globalVault).nodes, `${JSON.stringify(legacyGlobalType)}\n${JSON.stringify(legacyProjectPreference)}\n`);
+    const projectOnly = createNode(vaultDir, {
+      id: "project-only-neighbor", type: "decision", status: "confirmed", scope: "project", ts: 10,
+      intent: "project-only sentinel", summary: "Must stay in project vault.",
+    });
+    fs.appendFileSync(paths(globalVault).edges, `${JSON.stringify({ from: selected.id, to: projectOnly.id, rel: "caused-by", ts: 9 })}\n`);
+    fs.appendFileSync(paths(globalVault).edges, `${JSON.stringify({ from: selected.id, to: legacyGlobalType.id, rel: "fixes", ts: 8 })}\n${JSON.stringify({ from: selected.id, to: legacyProjectPreference.id, rel: "relates-to", ts: 7 })}\n`);
+
+    const fixtureFiles = [
+      paths(globalVault).nodes, paths(globalVault).edges, paths(globalVault).config,
+      paths(vaultDir).nodes, paths(vaultDir).edges,
+    ];
+    const before = fixtureFiles.map((file) => fs.readFileSync(file));
+    const result = await memoryGetGlobalPreferences(globalVault);
+
+    assert.deepEqual(result.preferences.map(({ id }) => id), [selected.id, secondSelected.id, thirdSelected.id], "direct selection remains priority ordered and capped at three");
+    assert.deepEqual(result.relatedPreferences.map(({ id }) => id).sort(), [causedBy.id, dependsOn.id, fixes.id, relatesTo.id, sensitiveNeighbor.id].sort());
+    assert.deepEqual(result.relatedPreferences.find(({ id }) => id === sensitiveNeighbor.id).tags, ["visible-tag"]);
+    assert.ok(!JSON.stringify(result).includes(sensitiveTag), "sensitive legacy tags are filtered from expanded preference context");
+    assert.deepEqual(result.relatedSuperseded.map(({ id }) => id), [superseded.id], "a reached superseded preference keeps its separate bucket");
+    const returnedIds = [
+      ...result.preferences, ...result.relatedPreferences, ...result.relatedSuperseded,
+    ].map(({ id }) => id);
+    for (const excluded of [summarized, secondHop, draft, legacyGlobalType, legacyProjectPreference, projectOnly]) {
+      assert.ok(!returnedIds.includes(excluded.id), `excludes ${excluded.id}`);
+    }
+    assert.ok(returnedIds.length <= 10, "default direct and related context uses the existing ten-node bound");
+
+    const tight = await memoryGetGlobalPreferences(globalVault, { limit: 4 });
+    const tightIds = [...tight.preferences, ...tight.relatedPreferences, ...tight.relatedSuperseded].map(({ id }) => id);
+    assert.deepEqual(tight.preferences.map(({ id }) => id), [selected.id, secondSelected.id, thirdSelected.id]);
+    assert.deepEqual(tight.relatedPreferences.map(({ id }) => id), [causedBy.id]);
+    assert.equal(tightIds.length, 4, "related nodes consume the supplied overall context bound after direct preferences");
+    assert.deepEqual(fixtureFiles.map((file) => fs.readFileSync(file)), before, "read-only preference expansion leaves every synthetic fixture byte unchanged");
+  });
+
   it("rejects priority on non-global preferences and unsupported priority values", async () => {
     const { memorySaveNode } = await import("./tools.js");
     for (const options of [
-      { type: "decision", scope: "global", priority: "essential" },
-      { type: "preference", scope: "project", priority: "normal" },
-      { type: "preference", scope: "global", priority: "urgent" },
+      { type: "decision", scope: "project", priority: "essential" },
+      { type: "preference", scope: "global", category: "communication", priority: "urgent" },
     ]) {
       await assert.rejects(() => memorySaveNode(vaultDir, {
         ...options, intent: "priority validation", summary: "must not persist",
       }), /priority/);
     }
     assert.equal(listNodes(vaultDir).length, 0);
+  });
+
+  it("enforces the new scope/type/category matrix across graph and tool writes", async () => {
+    const { memorySaveNode, memorySaveDecision } = await import("./tools.js");
+    const globalVault = initUserVault(path.join(tmpDir, "matrix-home"));
+    const base = { intent: "matrix validation", summary: "must not persist" };
+    for (const invalid of [
+      { type: "preference", scope: "project" },
+      { type: "atom", scope: "project" },
+      { type: "supernode", scope: "project" },
+      { type: "decision", scope: "global" },
+      { type: "decision", scope: null },
+      { type: "preference", scope: "global" },
+      { type: "preference", scope: "global", category: "general" },
+      { type: "preference", scope: "global", category: "unknown" },
+      { type: "decision", scope: "project", category: "workflow" },
+    ]) {
+      await assert.rejects(() => memorySaveNode(vaultDir, { ...base, ...invalid }));
+      assert.throws(() => createNode(vaultDir, {
+        ...base, ...invalid, status: "confirmed", ts: Date.now(),
+      }));
+    }
+    assert.equal(listNodes(vaultDir).length, 0, "invalid scopes and types do not persist graph or tool writes");
+    assert.equal(listNodes(globalVault).length, 0);
+    await assert.rejects(() => memorySaveDecision(vaultDir, { ...base, scope: null }), /scope must be/);
+    await assert.rejects(() => memorySaveDecision(vaultDir, { ...base, scope: "global" }), /global scope/);
+    assert.throws(() => createNode(vaultDir, {
+      type: "atom", status: "draft", scope: "project", intent: "legacy write", ts: 1,
+    }), /project node.type/);
+    for (const type of ["decision", "bug", "solution", "refactor"]) {
+      const saved = await memorySaveNode(vaultDir, { type, ...base });
+      assert.equal(saved.scope, "project");
+    }
+    for (const category of ["agent_behavior", "workflow", "communication"]) {
+      const saved = await memorySaveNode(globalVault, {
+        type: "preference", scope: "global", category, ...base,
+      });
+      assert.equal(saved.category, category);
+    }
+    assert.deepEqual(listNodes(vaultDir).map((node) => node.type), ["decision", "bug", "solution", "refactor"]);
+    assert.equal(listNodes(globalVault).length, 3);
+  });
+
+  it("rejects secret-shaped tags on writes and preserves ordinary tags", async () => {
+    const { memorySaveNode } = await import("./tools.js");
+    const ordinary = await memorySaveNode(vaultDir, {
+      type: "bug", intent: "tag validation", summary: "ordinary tags remain",
+      tags: ["scheduler", "retry"],
+    });
+    assert.deepEqual(ordinary.tags, ["scheduler", "retry"]);
+    const files = [paths(vaultDir).nodes, paths(vaultDir).edges, paths(vaultDir).config];
+    const before = files.map((file) => fs.readFileSync(file));
+    const secretTags = ["sk-abcdefghijklmnop", "api_key=genericsecretvalue123"];
+
+    for (const secretTag of secretTags) {
+      await assert.rejects(() => memorySaveNode(vaultDir, {
+        type: "solution", intent: "sensitive tag", summary: "must not persist",
+        tags: ["ordinary", secretTag],
+      }), /tags contains sensitive content/);
+      assert.throws(() => createNode(vaultDir, {
+        type: "solution", status: "confirmed", ts: 2, tags: [secretTag],
+      }), /tags contains sensitive content/);
+      assert.throws(() => updateNode(vaultDir, ordinary.id, { tags: [secretTag] }), /tags contains sensitive content/);
+    }
+    assert.deepEqual(files.map((file) => fs.readFileSync(file)), before, "rejected tag writes leave fixture bytes unchanged");
+  });
+
+  it("filters sensitive legacy tags from memory API projections without mutating stored records", async () => {
+    const { memoryGetContextForTask, memoryGetGlobalPreferences, memorySearch } = await import("./tools.js");
+    const globalVault = initUserVault(path.join(tmpDir, "legacy-sensitive-tags-home"));
+    const secretTags = ["sk-abcdefghijklmnop", "api_key=genericsecretvalue123"];
+    const legacy = {
+      id: "legacy-sensitive-tag-pref", type: "preference", status: "confirmed", scope: "global", ts: 1,
+      intent: "response language", summary: "Use Portuguese in every response.",
+      tags: ["legacy-style", ...secretTags],
+    };
+    fs.appendFileSync(paths(globalVault).nodes, `${JSON.stringify(legacy)}\n`);
+    const files = [paths(globalVault).nodes, paths(globalVault).edges, paths(globalVault).config];
+    const before = files.map((file) => fs.readFileSync(file));
+
+    assert.deepEqual(getNode(globalVault, legacy.id).tags, legacy.tags, "legacy data remains readable");
+    assert.ok(fs.readFileSync(paths(globalVault).nodes, "utf8").includes(secretTags[1]), "raw legacy bytes remain readable");
+    const preferences = await memoryGetGlobalPreferences(globalVault);
+    assert.deepEqual(preferences.preferences[0].tags, ["legacy-style"]);
+    const search = await memorySearch(globalVault, { query: "response language" });
+    assert.deepEqual(search.results[0].tags, ["legacy-style"]);
+    const context = await memoryGetContextForTask(globalVault, { task: "response language" });
+    assert.deepEqual(context.preferences[0].tags, ["legacy-style"]);
+    for (const projection of [preferences, search, context]) {
+      assert.ok(!JSON.stringify(projection).includes(secretTags[1]), "memory projections omit assignment-shaped tag values");
+    }
+    assert.deepEqual(files.map((file) => fs.readFileSync(file)), before, "legacy projections do not rewrite vault fixture bytes");
+  });
+
+  it("requires explicit conversion to a project type before confirming a legacy draft", async () => {
+    const { memoryReviewDraft } = await import("./tools.js");
+    const legacy = {
+      id: "legacy-review-atom", type: "atom", status: "draft", scope: "project", ts: 1,
+      intent: "pending legacy knowledge", summary: "Review this explicitly.",
+    };
+    fs.appendFileSync(paths(vaultDir).nodes, `${JSON.stringify(legacy)}\n`);
+    const target = createNode(vaultDir, {
+      type: "decision", status: "confirmed", scope: "project", intent: "neighbor", summary: "Keep links intact.",
+    });
+    const edge = createEdge(vaultDir, { from: legacy.id, to: target.id, rel: "relates-to", ts: 2 });
+    const beforeNodes = fs.readFileSync(paths(vaultDir).nodes);
+    const beforeEdges = fs.readFileSync(paths(vaultDir).edges);
+
+    await assert.rejects(() => memoryReviewDraft(vaultDir, { id: legacy.id, action: "confirm" }), /explicit project type conversion/);
+    for (const type of ["atom", "preference", "supernode", "invalid"]) {
+      await assert.rejects(() => memoryReviewDraft(vaultDir, { id: legacy.id, action: "confirm", edits: { type } }));
+    }
+    assert.deepEqual(fs.readFileSync(paths(vaultDir).nodes), beforeNodes);
+    assert.deepEqual(fs.readFileSync(paths(vaultDir).edges), beforeEdges);
+
+    const converted = await memoryReviewDraft(vaultDir, {
+      id: legacy.id,
+      action: "confirm",
+      edits: { type: "solution", summary: "Reviewed project solution." },
+    });
+    assert.equal(converted.node.id, legacy.id);
+    assert.equal(converted.node.type, "solution");
+    assert.equal(converted.node.status, "confirmed");
+    assert.equal(converted.node.scope, "project");
+    assert.equal(converted.node.summary, "Reviewed project solution.");
+    assert.deepEqual(listEdges(vaultDir), [edge], "conversion preserves existing project edges");
+  });
+
+  it("does not confirm a global-scoped draft through the project review path", async () => {
+    const { memoryReviewDraft } = await import("./tools.js");
+    const globalDraft = {
+      id: "legacy-global-draft", type: "atom", status: "draft", scope: "global", ts: 1,
+      intent: "global legacy draft",
+    };
+    fs.appendFileSync(paths(vaultDir).nodes, `${JSON.stringify(globalDraft)}\n`);
+    const beforeNodes = fs.readFileSync(paths(vaultDir).nodes);
+    const beforeEdges = fs.readFileSync(paths(vaultDir).edges);
+    await assert.rejects(() => memoryReviewDraft(vaultDir, {
+      id: globalDraft.id, action: "confirm", edits: { type: "decision" },
+    }), /draft scope is not project/);
+    assert.deepEqual(fs.readFileSync(paths(vaultDir).nodes), beforeNodes);
+    assert.deepEqual(fs.readFileSync(paths(vaultDir).edges), beforeEdges);
+  });
+
+  it("reads category-less global legacy preferences as general without changing vault bytes", async () => {
+    const { memoryGetGlobalPreferences, memorySearch } = await import("./tools.js");
+    const globalVault = initUserVault(path.join(tmpDir, "legacy-read-home"));
+    const legacy = {
+      id: "legacy-categoryless", type: "preference", status: "confirmed", scope: "global", ts: 1,
+      intent: "answer language", summary: "Use Portuguese in every answer.",
+    };
+    fs.appendFileSync(paths(globalVault).nodes, JSON.stringify(legacy) + "\n");
+    const edge = { from: legacy.id, to: legacy.id, rel: "relates-to", ts: 2 };
+    fs.appendFileSync(paths(globalVault).edges, JSON.stringify(edge) + "\n");
+    const files = [paths(globalVault).nodes, paths(globalVault).edges, paths(globalVault).config];
+    const before = files.map((file) => fs.readFileSync(file));
+
+    const preferences = await memoryGetGlobalPreferences(globalVault);
+    assert.equal(preferences.preferences[0].category, "general");
+    const search = await memorySearch(globalVault, { query: "Portuguese" });
+    assert.equal(search.results[0].category, "general");
+    assert.deepEqual(files.map((file) => fs.readFileSync(file)), before);
   });
 
   it("deletes only a confirmed exact-scope node and cleans incident edges", async () => {
@@ -442,9 +710,11 @@ describe("security", () => {
     const confirmed = createNode(vaultDir, {
       type: "decision", status: "confirmed", scope: "project", intent: "keep", summary: "keep",
     });
-    const draft = createNode(vaultDir, {
-      type: "atom", status: "draft", scope: "project", intent: "draft", summary: "draft",
-    });
+    const draft = {
+      id: "legacy-project-draft", type: "atom", status: "draft", scope: "project", ts: 1,
+      intent: "draft", summary: "draft",
+    };
+    fs.appendFileSync(paths(vaultDir).nodes, JSON.stringify(draft) + "\n");
     await assert.rejects(() => memoryDeleteNode(vaultDir, { scope: "project", confirm: true }), /id is required/);
     await assert.rejects(() => memoryDeleteNode(vaultDir, { id: confirmed.id, confirm: true }), /scope is required/);
     await assert.rejects(() => memoryDeleteNode(vaultDir, { id: confirmed.id, scope: "global", confirm: true }), /scope does not match/);
@@ -511,6 +781,8 @@ describe("security", () => {
     assert.ok(isSensitive("-----BEGIN RSA PRIVATE KEY-----\nabc"));
     assert.ok(isSensitive("Authorization: Bearer abcdef1234567890"));
     assert.ok(isSensitive("DB_HOST=x\nDB_PASS=y")); // .env block
+    assert.ok(hasSensitiveAssignment("api_key=genericsecretvalue123"));
+    assert.ok(hasSensitiveAssignment("api_key=genericsecretvalue123"), "assignment detection is stateless across calls");
     assert.ok(!isSensitive("just a normal decision note"));
     assert.ok(!isSensitive("ONE_LINE=value"));
     assert.ok(!isSensitive("please ask-questions and check the desk-top")); // benign lookalikes
@@ -559,21 +831,15 @@ describe("security", () => {
     assert.equal(listNodes(vaultDir).length, 0);
   });
 
-  it("captureAtom sanitizes redactable content and persists draft atom", () => {
-    const secret = "supersecretvalue123";
+  it("captureAtom refuses new legacy atom writes", () => {
     const r = captureAtom(vaultDir, {
       intent: "called api",
-      input: `api_key=${secret}`,
+      input: "ordinary input",
       output: "ok",
       decision: "retry later",
     });
-    assert.equal(r.captured, true);
-    assert.equal(r.node.status, "draft");
-    assert.equal(r.node.type, "atom");
-    assert.equal(r.node.projectHash, projectHashFor(tmpDir));
-    assert.ok(r.node.input.includes("[REDACTED]"));
-    const onDisk = fs.readFileSync(paths(vaultDir).nodes, "utf8");
-    assert.ok(!onDisk.includes(secret));
+    assert.deepEqual(r, { captured: false, reason: "legacy-capture-disabled" });
+    assert.equal(listNodes(vaultDir).length, 0);
   });
 
   it("export after memory_save_decision never contains raw secrets", async () => {
@@ -616,5 +882,89 @@ describe("export/import", () => {
     } finally {
       fs.rmSync(tmp2, { recursive: true, force: true });
     }
+  });
+
+  it("rejects invalid project archives before changing nodes, edges, or config", () => {
+    const targetNode = { id: "target-node", type: "decision", status: "confirmed", scope: "project", ts: 1 };
+    const targetEdge = { from: targetNode.id, to: targetNode.id, rel: "relates-to", ts: 2 };
+    fs.writeFileSync(paths(vaultDir).nodes, `${JSON.stringify(targetNode)}\n`);
+    fs.writeFileSync(paths(vaultDir).edges, `${JSON.stringify(targetEdge)}\n`);
+    fs.writeFileSync(paths(vaultDir).config, '{"embeddingProvider":null,"custom":"keep bytes"}\n');
+    const files = [paths(vaultDir).nodes, paths(vaultDir).edges, paths(vaultDir).config];
+
+    const base = {
+      version: 1,
+      exportedAt: "2026-10-25T00:00:00.000Z",
+      nodes: [{ id: "incoming", type: "decision", status: "confirmed", scope: "project", ts: 3 }],
+      edges: [],
+    };
+    const projectPreference = { id: "incoming", type: "preference", status: "confirmed", scope: "project", ts: 3 };
+    const invalidArchives = [
+      null,
+      [],
+      { exportedAt: base.exportedAt, nodes: [], edges: [] },
+      { version: 1, nodes: [], edges: [] },
+      { version: 1, exportedAt: base.exportedAt, edges: [] },
+      { version: 1, exportedAt: base.exportedAt, nodes: [] },
+      { ...base, version: 2 },
+      { ...base, exportedAt: "not a date" },
+      { ...base, nodes: null },
+      { ...base, edges: null },
+      { ...base, nodes: [projectPreference] },
+      { ...base, nodes: [{ ...projectPreference, scope: "global", category: "workflow" }] },
+      { ...base, nodes: [{ ...base.nodes[0], category: "workflow" }] },
+      { ...base, nodes: [{ ...base.nodes[0], scope: null }] },
+      ...["atom", "supernode", "unknown"].map((type) => ({
+        ...base,
+        nodes: [{ ...base.nodes[0], type }],
+      })),
+      { ...base, nodes: [base.nodes[0], { ...base.nodes[0] }] },
+      { ...base, nodes: [base.nodes[0], { ...base.nodes[0], id: "late-invalid", type: "atom" }] },
+      {
+        ...base,
+        edges: [
+          { from: "incoming", to: "incoming", rel: "relates-to", ts: 4 },
+          { from: "incoming", to: "missing", rel: "relates-to", ts: 5 },
+        ],
+      },
+    ];
+
+    for (const archive of invalidArchives) {
+      const file = path.join(tmpDir, "invalid-archive.json");
+      fs.writeFileSync(file, JSON.stringify(archive));
+      const before = files.map((target) => fs.readFileSync(target));
+      assert.throws(() => importVault(vaultDir, file));
+      assert.deepEqual(files.map((target) => fs.readFileSync(target)), before);
+    }
+
+    const malformedFile = path.join(tmpDir, "malformed-archive.json");
+    fs.writeFileSync(malformedFile, "{invalid json");
+    const beforeMalformed = files.map((target) => fs.readFileSync(target));
+    assert.throws(() => importVault(vaultDir, malformedFile));
+    assert.deepEqual(files.map((target) => fs.readFileSync(target)), beforeMalformed);
+  });
+
+  it("imports only project-matrix types and preserves existing config bytes", () => {
+    const allowedNodes = ["decision", "bug", "solution", "refactor"].map((type, index) => ({
+      id: `allowed-${type}`,
+      type,
+      status: index % 2 ? "draft" : "confirmed",
+      scope: "project",
+      ts: index + 1,
+    }));
+    const archive = {
+      version: 1,
+      exportedAt: "2026-10-25T00:00:00.000Z",
+      nodes: allowedNodes,
+      edges: [{ from: allowedNodes[0].id, to: allowedNodes[1].id, rel: "depends-on", ts: 5 }],
+    };
+    const file = path.join(tmpDir, "valid-archive.json");
+    fs.writeFileSync(file, JSON.stringify(archive));
+    const configBefore = fs.readFileSync(paths(vaultDir).config);
+
+    assert.deepEqual(importVault(vaultDir, file), { nodes: 4, edges: 1 });
+    assert.deepEqual(listNodes(vaultDir), allowedNodes);
+    assert.deepEqual(listEdges(vaultDir), archive.edges);
+    assert.deepEqual(fs.readFileSync(paths(vaultDir).config), configBefore);
   });
 });

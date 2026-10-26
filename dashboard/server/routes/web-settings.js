@@ -12,15 +12,16 @@ function settingsError(res, error, action) {
 export function createWebSettingsRouter({ root }) {
   const router = express.Router();
 
-  router.get('/settings', (_req, res) => {
+  router.get('/settings', (req, res) => {
     try {
-      res.json(webSettings.readWebSettings({ directory: root }));
+      res.json(webSettings.readWebSettings({ directory: req.projectRoot || root }));
     } catch (error) {
       settingsError(res, error, 'load');
     }
   });
 
   router.put('/settings', (req, res) => {
+    const selectedRoot = req.projectRoot || root;
     const body = req.body;
     if (!body || typeof body !== 'object' || Array.isArray(body)
       || Object.keys(body).length !== 2
@@ -41,9 +42,9 @@ export function createWebSettingsRouter({ root }) {
 
     try {
       // Check both scopes first so corrupt config is never hidden by a write.
-      webSettings.readWebSettings({ directory: root });
-      webSettings.writeWebSettings(body.scope, settings, { directory: root });
-      res.json(webSettings.readWebSettings({ directory: root }));
+      webSettings.readWebSettings({ directory: selectedRoot });
+      webSettings.writeWebSettings(body.scope, settings, { directory: selectedRoot });
+      res.json(webSettings.readWebSettings({ directory: selectedRoot }));
     } catch (error) {
       settingsError(res, error, 'save');
     }

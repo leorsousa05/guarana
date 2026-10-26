@@ -50,7 +50,7 @@ describe('GuaranaMemory', () => {
     assert.equal(api['file.edited'], undefined);
   });
 
-  it('injects automatic memory rules distinguishing global preferences from project decisions', async () => {
+  it('injects automatic memory rules separating project knowledge and categorized global preferences', async () => {
     const output = { system: [] };
     await api['experimental.chat.system.transform']({}, output);
     assert.match(output.system.join('\n'), /automatically save only when user intent is unmistakably durable/i);
@@ -63,6 +63,8 @@ describe('GuaranaMemory', () => {
     assert.match(output.system.join('\n'), /Do not capture raw prompts, conversation transcripts, tool inputs, or tool outputs/i);
     assert.match(output.system.join('\n'), /scope: "global"/);
     assert.match(output.system.join('\n'), /scope: "project"/);
+    assert.match(output.system.join('\n'), /category `agent_behavior`, `workflow`, or `communication`/);
+    assert.match(output.system.join('\n'), /Project memory is available through explicit search, not automatic prompt injection/);
     assert.match(output.system.join('\n'), /ordinary task requests/);
     assert.match(output.system.join('\n'), /Guarana automatic skills/);
     assert.match(output.system.join('\n'), /skill_list/);
@@ -165,6 +167,7 @@ describe('GuaranaMemory', () => {
       const result = JSON.parse(await api.tool.memory_save_node.execute({
         type: 'preference',
         scope: 'global',
+        category: 'communication',
         intent: 'response language',
         summary: 'Always answer me in Portuguese.',
       }));
@@ -178,34 +181,45 @@ describe('GuaranaMemory', () => {
       }));
       assert.equal(context.preferences.length, 1);
       assert.equal(context.preferences[0].id, result.id);
+      assert.equal(context.preferences[0].category, 'communication');
       const search = JSON.parse(await api.tool.memory_search.execute({
         query: 'Portuguese',
         scope: 'both',
       }));
       assert.equal(search.results.length, 1);
       assert.equal(search.results[0].scope, 'global');
+      assert.equal(search.results[0].category, 'communication');
     } finally {
       if (oldHome === undefined) delete process.env.HOME;
       else process.env.HOME = oldHome;
     }
   });
 
-  it('accepts essential priority only for a global preference and exposes the optional schema', async () => {
+  it('accepts essential priority only for a categorized global preference and exposes its schema', async () => {
     const oldHome = process.env.HOME;
     const fakeHome = path.join(tmpDir, 'priority-home');
     process.env.HOME = fakeHome;
     try {
       const saved = JSON.parse(await api.tool.memory_save_node.execute({
-        type: 'preference', scope: 'global', priority: 'essential',
+        type: 'preference', scope: 'global', category: 'agent_behavior', priority: 'essential',
         intent: 'response format', summary: 'Use concise numbered steps.',
       }));
       assert.equal(saved.priority, 'essential');
       assert.deepEqual(api.tool.memory_save_node.args.priority.enum, ['essential', 'normal']);
+      assert.deepEqual(api.tool.memory_save_node.args.category.enum, ['agent_behavior', 'workflow', 'communication']);
       const invalid = JSON.parse(await api.tool.memory_save_node.execute({
         type: 'decision', scope: 'project', priority: 'essential',
         intent: 'misuse', summary: 'must fail',
       }));
       assert.match(invalid.error, /priority is only valid/);
+      const missingCategory = JSON.parse(await api.tool.memory_save_node.execute({
+        type: 'preference', scope: 'global', intent: 'missing category', summary: 'must reject',
+      }));
+      assert.match(missingCategory.error, /category/);
+      const crossScope = JSON.parse(await api.tool.memory_save_decision.execute({
+        scope: 'global', intent: 'decision', decision: 'must reject',
+      }));
+      assert.match(crossScope.error, /global scope/);
     } finally {
       if (oldHome === undefined) delete process.env.HOME;
       else process.env.HOME = oldHome;

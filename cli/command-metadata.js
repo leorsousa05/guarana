@@ -18,12 +18,12 @@ const MEMORY = {
     { rows: ['  guarana memory export <file>           Export the vault to a JSON file'] },
     { rows: ['  guarana memory import <file>           Import a vault JSON file (replaces nodes/edges)'] },
     {
-      rows: ['  guarana memory compact [--threshold <n>]  Collapse oldest atom nodes into a supernode (lessons/decisions preserved)'],
-      details: ['    (default threshold from config.json compactionThreshold; atom nodes only — decisions/bugs/etc. never compacted)'],
+      rows: ['  guarana memory compact [--threshold <n>]  Preserve legacy atom/supernode records (safe no-op)'],
+      details: ['    Compaction is disabled; this command does not write, remove, or clean legacy records.'],
     },
-    { rows: ['  guarana memory prune --keep <n>        Drop oldest legacy DRAFT atom nodes beyond n'] },
+    { rows: ['  guarana memory prune --keep <n>        Preserve legacy draft atoms (safe no-op)'] },
     { rows: ['  guarana memory review --list           List legacy draft nodes (id, type, intent, ts), most recent first'] },
-    { rows: ['  guarana memory review <id> --confirm   Migrate a legacy draft (optional edits: --intent "..." --tags a,b)'] },
+    { rows: ['  guarana memory review <id> --confirm --type <decision|bug|solution|refactor>  Convert a draft to project knowledge'] },
     { rows: ['  guarana memory review <id> --discard   Remove a legacy draft node and its edges'] },
     { rows: ['  guarana memory delete <id> --scope <project|global> --confirm  Hard-delete one confirmed node and its edges'] },
     { rows: ['  guarana memory --help                  Show this help'] },
@@ -66,7 +66,7 @@ const WORKFLOW = {
     },
     {
       rows: ['  guarana workflow set <specs|verify> <true|false> [--project]'],
-      details: ['    Set one preference in global settings, or in the project with --project.'],
+      details: ['    Set one automation preference in global settings, or in the project with --project.'],
     },
     {
       rows: ['  guarana workflow set memory.preferenceInjectionBudgetTokens <positive-integer> [--project]'],

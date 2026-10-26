@@ -2,68 +2,29 @@
 import fs from "node:fs";
 import crypto from "node:crypto";
 import { paths, readJsonl, writeJsonl } from "./vault.js";
+import {
+  EDGE_RELS,
+  MemoryValidationError,
+  PROJECT_NODE_TYPES,
+  validateEdge,
+  validateNewNode,
+  validateNewTags,
+  validateNode,
+} from "./schema.js";
 
-export class MemoryValidationError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = "MemoryValidationError";
-  }
-}
-
-export const NODE_TYPES = ["decision", "bug", "solution", "refactor", "preference", "atom", "supernode"];
-export const NODE_STATUSES = ["draft", "confirmed"];
-export const EDGE_RELS = ["caused-by", "depends-on", "supersedes", "summarizes", "fixes", "relates-to"];
+export {
+  EDGE_RELS,
+  MemoryValidationError,
+  NODE_STATUSES,
+  NODE_TYPES,
+  PREFERENCE_CATEGORIES,
+  PROJECT_NODE_TYPES,
+  validateEdge,
+  validateNewNode,
+  validateNode,
+} from "./schema.js";
 
 export const newId = () => `mem-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
-
-const isStr = (v) => typeof v === "string" && v.length > 0;
-
-export function validateNode(node) {
-  if (!node || typeof node !== "object" || Array.isArray(node))
-    throw new MemoryValidationError("node must be an object");
-  if (!isStr(node.id)) throw new MemoryValidationError("node.id is required (string)");
-  if (!NODE_TYPES.includes(node.type))
-    throw new MemoryValidationError(`node.type must be one of ${NODE_TYPES.join("|")}`);
-  if (!NODE_STATUSES.includes(node.status))
-    throw new MemoryValidationError(`node.status must be one of ${NODE_STATUSES.join("|")}`);
-  if (typeof node.ts !== "number" || !Number.isFinite(node.ts))
-    throw new MemoryValidationError("node.ts is required (number)");
-  if (node.priority !== undefined) {
-    if (node.type !== "preference" || node.scope !== "global")
-      throw new MemoryValidationError("node.priority is only valid for global preference nodes");
-    if (node.priority !== "essential" && node.priority !== "normal")
-      throw new MemoryValidationError('node.priority must be "essential" or "normal"');
-  }
-  if (node.tags !== undefined && (!Array.isArray(node.tags) || node.tags.some((t) => typeof t !== "string")))
-    throw new MemoryValidationError("node.tags must be an array of strings");
-  if (
-    node.rejectedAlternatives !== undefined &&
-    (!Array.isArray(node.rejectedAlternatives) || node.rejectedAlternatives.some((t) => typeof t !== "string"))
-  )
-    throw new MemoryValidationError("node.rejectedAlternatives must be an array of strings");
-  if (
-    node.collapsedIds !== undefined &&
-    (!Array.isArray(node.collapsedIds) || node.collapsedIds.some((t) => typeof t !== "string"))
-  )
-    throw new MemoryValidationError("node.collapsedIds must be an array of strings");
-  return node;
-}
-
-export function validateEdge(edge, nodeIds) {
-  if (!edge || typeof edge !== "object" || Array.isArray(edge))
-    throw new MemoryValidationError("edge must be an object");
-  if (!isStr(edge.from) || !isStr(edge.to))
-    throw new MemoryValidationError("edge.from and edge.to are required (strings)");
-  if (!EDGE_RELS.includes(edge.rel))
-    throw new MemoryValidationError(`edge.rel must be one of ${EDGE_RELS.join("|")}`);
-  if (typeof edge.ts !== "number" || !Number.isFinite(edge.ts))
-    throw new MemoryValidationError("edge.ts is required (number)");
-  if (nodeIds) {
-    if (!nodeIds.has(edge.from)) throw new MemoryValidationError(`edge.from unknown node: ${edge.from}`);
-    if (!nodeIds.has(edge.to)) throw new MemoryValidationError(`edge.to unknown node: ${edge.to}`);
-  }
-  return edge;
-}
 
 export function listNodes(vaultDir) {
   return readJsonl(paths(vaultDir).nodes);
@@ -79,7 +40,7 @@ export function getNode(vaultDir, id) {
 
 // Strict insert: node must be fully formed (use createNode for defaults).
 export function addNode(vaultDir, node) {
-  validateNode(node);
+  validateNewNode(node);
   fs.appendFileSync(paths(vaultDir).nodes, JSON.stringify(node) + "\n", "utf8");
   return node;
 }
@@ -96,10 +57,49 @@ export function updateNode(vaultDir, id, patch) {
   const idx = nodes.findIndex((n) => n.id === id);
   if (idx === -1) throw new MemoryValidationError(`node not found: ${id}`);
   const updated = { ...nodes[idx], ...patch, id: nodes[idx].id };
+  for (const field of ["type", "scope", "category"]) {
+    if (updated[field] !== nodes[idx][field])
+      throw new MemoryValidationError(`node.${field} is immutable after creation`);
+  }
+  if (updated.status !== nodes[idx].status)
+    throw new MemoryValidationError("node.status changes require explicit draft review conversion");
   validateNode(updated);
+  if (patch && Object.hasOwn(patch, "tags")) validateNewTags(updated.tags);
   nodes[idx] = updated;
   writeJsonl(p, nodes);
   return updated;
+}
+
+// The only draft-confirmation path requires an explicit conversion target.
+// It preserves node identity (and therefore existing edges) while producing a
+// valid project record under the current write matrix.
+export function confirmDraft(vaultDir, id, targetType, patch = {}) {
+  if (!PROJECT_NODE_TYPES.includes(targetType))
+    throw new MemoryValidationError(`project type must be one of ${PROJECT_NODE_TYPES.join("|")}`);
+  const p = paths(vaultDir).nodes;
+  const nodes = readJsonl(p);
+  const idx = nodes.findIndex((node) => node.id === id);
+  if (idx === -1) throw new MemoryValidationError(`node not found: ${id}`);
+  const original = nodes[idx];
+  if (original.status !== "draft")
+    throw new MemoryValidationError(`node is not a draft: ${id}`);
+  if (original.scope !== undefined && original.scope !== "project")
+    throw new MemoryValidationError(`draft scope is not project: ${id}`);
+
+  const converted = {
+    ...original,
+    ...patch,
+    id: original.id,
+    type: targetType,
+    status: "confirmed",
+    scope: "project",
+  };
+  delete converted.category;
+  delete converted.priority;
+  validateNewNode(converted);
+  nodes[idx] = converted;
+  writeJsonl(p, nodes);
+  return converted;
 }
 
 export function addEdge(vaultDir, edge) {

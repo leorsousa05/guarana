@@ -136,14 +136,20 @@ function projectActiveSubagentWorkers(activePayload, sessionsPayload, events, se
 
 export function createOpenCodeRouter({ root, execFileImpl = nodeExecFile }) {
   const router = express.Router();
-  const selectionKeys = new Map();
-  const telemetryFile = path.join(root, SPECS_DIR, ...TELEMETRY_DIR_SEGMENTS, EVENTS_FILE);
+  const selectionKeysByRoot = new Map();
 
-  router.get('/active-subagents', async (_req, res) => {
+  router.get('/active-subagents', async (req, res) => {
+    const selectedRoot = req.projectRoot || root;
+    let selectionKeys = selectionKeysByRoot.get(selectedRoot);
+    if (!selectionKeys) {
+      selectionKeys = new Map();
+      selectionKeysByRoot.set(selectedRoot, selectionKeys);
+    }
+    const telemetryFile = path.join(selectedRoot, SPECS_DIR, ...TELEMETRY_DIR_SEGMENTS, EVENTS_FILE);
     const executable = process.env.OPENCODE_BIN || 'opencode';
     const run = (args) => new Promise((resolve, reject) => {
       execFileImpl(executable, args, {
-        cwd: root,
+        cwd: selectedRoot,
         shell: false,
         timeout: COMMAND_TIMEOUT_MS,
         maxBuffer: COMMAND_MAX_BUFFER,

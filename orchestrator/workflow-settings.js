@@ -180,6 +180,12 @@ export function setWorkflowPreference(scope, name, enabled, options = {}) {
 
 // Removing a project field restores inheritance from global, then the default.
 export function clearWorkflowPreference(scope, name, options = {}) {
+  if (name === 'memory') {
+    const file = scopeFile(scope, options);
+    const current = readScope(file);
+    delete current.memory;
+    return writeWorkflowSettings(scope, current, options);
+  }
   if (!PREFERENCE_NAMES.includes(name)) {
     throw new TypeError(`Unknown workflow preference: ${name}`);
   }

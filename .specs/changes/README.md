@@ -6,8 +6,11 @@ Entry format: date · feature · what validated / failed / re-opened · proof pa
 
 ## Records
 
-### 2026-10-26 — memory
-- [Global preference context tool groups](2026-10-26-global-preference-context-tool-groups.md) — independent worker-verify overall PASS; focused suite 16/16; VALIDATED, not shipped; follow-up push pending, no npm publication or tag
+### 2026-10-25 — dashboard Memory
+- [Dashboard Memory preference graph, scope labels, and one-hop context groups](2026-10-25-dashboard-memory-preference-graph-scope-labels-one-hop-groups.md) — read-only global graph, explicit scope labels, and exactly-one-hop context groups; source shipped on origin/main; no package publication or tag, and no actual vault access or change
+
+### 2026-10-25 — memory
+- [Global preference injection budget](2026-10-25-global-preference-injection-budget.md) — fresh independent worker-verify overall PASS (criteria 1–7); focused suites and full gates PASS; source shipped on origin/main; no package publication or tag, and no actual vault access or change
 
 ### 2026-10-25 — dashboard Settings
 - [Advisor model variant discovery via model.list](2026-10-25-advisor-variant-discovery-model-list.md) — fresh independent worker-verify PASS (5/5); bounded project-scoped model.list and six sanitized live IDs verified on installed OpenCode v2.1.3 only; VALIDATED, not shipped

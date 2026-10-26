@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import { apply, createWorkflow, load, save, workflowFile } from '../orchestrator/state.js';
 import { createNode, createEdge, listNodes } from '../memory/graph.js';
 import { initUserVault, initVault, paths } from '../memory/vault.js';
+import { GuaranaMemory } from './guarana-memory.js';
 import { serializeMemoryPayload } from '../orchestrator/prompt.js';
 
 describe('GuaranaOrchestrator', () => {
@@ -56,7 +57,7 @@ describe('GuaranaOrchestrator', () => {
   }
 
   function preferencePayloadFrom(injection) {
-    const marker = '### Serialized global preference records (JSON data)\n';
+    const marker = '### Serialized records (JSON data)\n';
     const start = injection.indexOf(marker);
     assert.notEqual(start, -1, 'serialized memory section should exist');
     const from = start + marker.length;
@@ -64,7 +65,7 @@ describe('GuaranaOrchestrator', () => {
     assert.notEqual(end, -1, 'memory section should close');
     const compact = JSON.parse(injection.slice(from, end));
     const fields = [
-      'id', 'type', 'scope', 'priority', 'intent', 'summary', 'tags', 'rejectedAlternatives',
+      'id', 'type', 'scope', 'category', 'priority', 'intent', 'summary', 'tags', 'rejectedAlternatives',
     ];
     assert.deepEqual(compact.fields, fields);
     return Object.fromEntries([
@@ -585,17 +586,47 @@ describe('GuaranaOrchestrator', () => {
     assert.equal(fs.readFileSync(path.join(tmpDir, '.guarana', 'memory', 'nodes.jsonl'), 'utf8').trim(), '');
   });
 
-  it('injects relevant confirmed project memory on the next automatic turn', async () => {
+  it('keeps project knowledge searchable on demand but excludes project and legacy nodes from automatic context', async () => {
     await chat('Implement OAuth authentication');
-    createNode(path.join(tmpDir, '.guarana', 'memory'), {
+    const projectVault = path.join(tmpDir, '.guarana', 'memory');
+    const decision = createNode(projectVault, {
       type: 'decision', status: 'confirmed', scope: 'project',
       intent: 'OAuth authentication uses PKCE', summary: 'Use PKCE for the OAuth flow.',
     });
+    const legacyNodes = [
+      ['legacy-project-preference', 'preference', 'Legacy project preference for OAuth.'],
+      ['legacy-project-atom', 'atom', 'Legacy atom for OAuth.'],
+      ['legacy-project-supernode', 'supernode', 'Legacy supernode for OAuth.'],
+    ];
+    for (const [id, type, summary] of legacyNodes) {
+      fs.appendFileSync(path.join(projectVault, 'nodes.jsonl'), `${JSON.stringify({
+        id, type, status: 'confirmed', scope: 'project', ts: Date.now(),
+        intent: 'OAuth authentication legacy compatibility', summary,
+      })}\n`);
+    }
+    const explicitReader = await GuaranaMemory({ directory: tmpDir });
+    const searched = JSON.parse(await explicitReader.tool.memory_search.execute({
+      query: 'OAuth authentication PKCE', scope: 'project',
+    }));
+    assert.ok(searched.results.some((node) => node.id === decision.id));
+    for (const [id, type] of legacyNodes) {
+      const legacySearch = JSON.parse(await explicitReader.tool.memory_search.execute({
+        query: 'OAuth authentication legacy compatibility', type, scope: 'project',
+      }));
+      assert.ok(legacySearch.results.some((node) => node.id === id), `${type} remains explicitly searchable`);
+    }
+
     await chat('continue');
     const out = { system: [] };
     await api['experimental.chat.system.transform']({}, out);
-    assert.match(out.system[0], /guarana memory \(automatic context\)/);
-    assert.match(out.system[0], /Use PKCE for the OAuth flow/);
+    const injection = out.system.join('\n');
+    assert.doesNotMatch(injection, /guarana memory \(automatic context\)/);
+    for (const text of [
+      'Use PKCE for the OAuth flow.',
+      'Legacy project preference for OAuth.',
+      'Legacy atom for OAuth.',
+      'Legacy supernode for OAuth.',
+    ]) assert.equal(injection.includes(text), false, `${text} must not be automatically injected`);
   });
 
   it('injects global preferences even when their wording does not match the project task', async () => {
@@ -605,6 +636,7 @@ describe('GuaranaOrchestrator', () => {
       type: 'preference',
       status: 'confirmed',
       scope: 'global',
+      category: 'communication',
       intent: 'response language',
       summary: 'Always answer me in Portuguese.',
     });
@@ -616,6 +648,7 @@ describe('GuaranaOrchestrator', () => {
     assert.match(out.system.join('\n'), /saved user-level preferences[\s\S]*may guide behavior unless superseded by the current explicit user request or higher-priority system, developer, or security policy/i);
     const injectedPayload = preferencePayloadFrom(out.system.join('\n'));
     assert.equal(injectedPayload.global_preferences[0].scope, 'global');
+    assert.equal(injectedPayload.global_preferences[0].category, 'communication');
     assert.doesNotMatch(out.system.join('\n'), /project_context/);
     const injected = readEvents().find((event) => event.type === 'memory-injected');
     assert.equal(injected.sessionID, 'session-global-pref');
@@ -633,6 +666,7 @@ describe('GuaranaOrchestrator', () => {
       type: 'preference',
       status: 'confirmed',
       scope: 'global',
+      category: 'workflow',
       intent: 'answer structure',
       summary: 'Use short bullet lists.',
     });
@@ -659,20 +693,20 @@ describe('GuaranaOrchestrator', () => {
     const globalVault = initUserVault();
     const first = createNode(globalVault, {
       id: 'budget-pref-one', type: 'preference', status: 'confirmed', scope: 'global',
-      ts: 20, intent: 'budget fixture', summary: 'FIRST-PREFERENCE-UNICODE-☃',
+      category: 'communication', ts: 20, intent: 'budget fixture', summary: 'FIRST-PREFERENCE-UNICODE-☃',
     });
     const second = createNode(globalVault, {
       id: 'budget-pref-two', type: 'preference', status: 'confirmed', scope: 'global',
-      ts: 19, intent: 'budget fixture', summary: 'SECOND-PREFERENCE-—-“quoted”',
+      category: 'workflow', ts: 19, intent: 'budget fixture', summary: 'SECOND-PREFERENCE-—-“quoted”',
     });
     await chat('Continue the synthetic budget fixture');
     const serialized = serializeMemoryPayload({ global_preferences: [
-      { id: first.id, type: 'preference', scope: 'global', priority: 'normal', intent: first.intent, summary: first.summary },
-      { id: second.id, type: 'preference', scope: 'global', priority: 'normal', intent: second.intent, summary: second.summary },
+      { id: first.id, type: 'preference', scope: 'global', category: 'communication', priority: 'normal', intent: first.intent, summary: first.summary },
+      { id: second.id, type: 'preference', scope: 'global', category: 'workflow', priority: 'normal', intent: second.intent, summary: second.summary },
     ] });
     const byteBudget = Buffer.byteLength(serialized.serialized, 'utf8');
     const firstOnlyBytes = Buffer.byteLength(serializeMemoryPayload({ global_preferences: [
-      { id: first.id, type: 'preference', scope: 'global', priority: 'normal', intent: first.intent, summary: first.summary },
+      { id: first.id, type: 'preference', scope: 'global', category: 'communication', priority: 'normal', intent: first.intent, summary: first.summary },
     ] }).serialized, 'utf8');
     const assertRepairPath = (output) => {
       const injection = output.system.join('\n');
@@ -727,7 +761,7 @@ describe('GuaranaOrchestrator', () => {
     const globalVault = initUserVault();
     const projectVault = initVault(tmpDir);
     const addPreference = (id, ts, summary) => createNode(globalVault, {
-      id, type: 'preference', status: 'confirmed', scope: 'global', ts,
+      id, type: 'preference', status: 'confirmed', scope: 'global', category: 'communication', ts,
       intent: `synthetic ${id}`, summary,
     });
     const direct = Array.from({ length: 12 }, (_, index) => {
@@ -747,7 +781,7 @@ describe('GuaranaOrchestrator', () => {
     const secondHop = addPreference('second-hop-neighbor', 17, 'Every active global preference is selected.');
     const draft = {
       id: 'global-draft-preference', type: 'preference', status: 'draft', scope: 'global',
-      ts: 16, intent: 'draft preference intent sentinel',
+      category: 'communication', ts: 16, intent: 'draft preference intent sentinel',
       summary: 'Draft preference content must remain excluded.',
     };
     fs.appendFileSync(paths(globalVault).nodes, `${JSON.stringify(draft)}\n`);
@@ -842,7 +876,7 @@ describe('GuaranaOrchestrator', () => {
     allowPreferenceInjection();
     const globalVault = initUserVault();
     createNode(globalVault, {
-      type: 'preference', status: 'confirmed', scope: 'global',
+      type: 'preference', status: 'confirmed', scope: 'global', category: 'communication',
       intent: 'response format', summary: 'Use concise bullet points.',
     });
     const duplicate = await GuaranaOrchestrator({ directory: tmpDir });
@@ -866,6 +900,7 @@ describe('GuaranaOrchestrator', () => {
       type: 'preference',
       status: 'confirmed',
       scope: 'global',
+      category: 'agent_behavior',
       intent: 'answer style',
       summary: 'Always use concise answers.',
     });
@@ -875,6 +910,25 @@ describe('GuaranaOrchestrator', () => {
     await api['experimental.chat.system.transform']({}, out);
     assert.match(out.system.join('\n'), /Always use concise answers/);
     assert.equal(preferencePayloadFrom(out.system.join('\n')).global_preferences[0].scope, 'global');
+  });
+
+  it('renders category-less global legacy preferences as general without rewriting them', async () => {
+    allowPreferenceInjection();
+    const globalVault = initUserVault();
+    const legacy = {
+      id: 'legacy-global-general', type: 'preference', status: 'confirmed', scope: 'global', ts: 1,
+      intent: 'answer style', summary: 'Use clear short sentences.',
+    };
+    fs.appendFileSync(path.join(globalVault, 'nodes.jsonl'), `${JSON.stringify(legacy)}\n`);
+    const files = ['nodes.jsonl', 'edges.jsonl', 'config.json'].map((name) => path.join(globalVault, name));
+    const before = files.map((file) => fs.readFileSync(file));
+
+    await chat('Oi, uma pergunta rápida');
+    const out = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID: 'legacy-general' }, out);
+    assert.equal(preferencePayloadFrom(out.system.join('\n')).global_preferences[0].category, 'general');
+    assert.match(out.system.join('\n'), /Use clear short sentences/);
+    assert.deepEqual(files.map((file) => fs.readFileSync(file)), before);
   });
 
   it('explicit guarana:verify forces the verifying state', async () => {

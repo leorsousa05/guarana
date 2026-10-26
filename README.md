@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/leorsousa05/guarana"><img src="https://img.shields.io/github/stars/leorsousa05/guarana?style=for-the-badge&logo=github&logoColor=white&color=f59e0b" alt="GitHub stars"></a>
-  <a href="https://github.com/leorsousa05/guarana/tree/main"><img src="https://img.shields.io/badge/v1.5.1%20source%20candidate-unpublished%2Funtagged-7c3aed?style=for-the-badge&logo=github&logoColor=white" alt="v1.5.1 source candidate, unpublished and untagged"></a>
+  <a href="https://github.com/leorsousa05/guarana/tree/main"><img src="https://img.shields.io/badge/source-v1.5.1%20candidate-f59e0b?style=for-the-badge&logo=github&logoColor=white" alt="GitHub main source candidate v1.5.1, unpublished and untagged"></a>
   <img src="https://img.shields.io/badge/core_dependencies-zero-059669?style=for-the-badge" alt="Zero core runtime dependencies">
   <br>
   <a href="https://opencode.ai/"><img src="https://img.shields.io/badge/runtime-OpenCode-111827?style=for-the-badge" alt="OpenCode runtime"></a>
@@ -24,13 +24,12 @@ Guarana turns an OpenCode agent into a disciplined engineering partner. Natural
 task requests automatically move through planning, implementation, verification,
 and memory, while the important state stays inspectable on disk.
 
-**Current source candidate:** `1.5.1` is unpublished and untagged. The stable
-installation instructions below remain for the `v1.5.0` tag.
-
 <p>
   <img src="https://img.shields.io/badge/released-2026--10--25-7c3aed?style=flat-square" alt="Released October 25, 2026">
   <img src="https://img.shields.io/badge/license-MIT-2563eb?style=flat-square" alt="MIT license">
 </p>
+
+**Current source candidate:** `1.5.1` is unpublished and untagged; its source is on [`main`](https://github.com/leorsousa05/guarana/tree/main). The stable installation instructions below remain for the `v1.5.0` tag.
 
 ## What's New in 1.5.0
 
@@ -60,8 +59,10 @@ restore state -> plan -> build -> code -> verify -> remember
 ```
 
 No `guarana:plan` prefix is required. The orchestrator detects the task,
-creates missing project specs, restores relevant confirmed memory, and injects
-only the active skill into the current turn.
+creates missing project specs, searches project knowledge on demand, and injects
+the active skill plus eligible global user preferences as one complete,
+budget-bounded payload. Direct, one-hop related, and reached superseded
+preferences retain separate trust groups.
 
 ## Why Guarana
 
@@ -71,7 +72,7 @@ only the active skill into the current turn.
 | Long runs lose their context | State, specs, decisions, and failures live on disk |
 | "Done" is confused with "it runs" | Implementation and verification are separate stages |
 | Failed checks lead to repeated mistakes | Verification failures route into debugging and re-verification |
-| Previous decisions disappear between sessions | Relevant confirmed memory is restored automatically |
+| User preferences disappear between sessions | Bounded confirmed global preferences are injected; project knowledge stays on-demand |
 | Prompts become bloated | Progressive disclosure injects only the active skill |
 
 ## Quick Start
@@ -172,29 +173,25 @@ overwrites existing project content.
 │   ├── decisions/                   # append-only ADRs
 │   └── features/<task>/              # task-specific feature spec
 └── .guarana/memory/
-    ├── nodes.jsonl                  # decisions, bugs, solutions, atoms
+    ├── nodes.jsonl                  # decisions, bugs, solutions, refactors
     ├── edges.jsonl                  # graph relationships
     └── config.json
 ```
 
-Project memories live in a gitignored vault; standing user preferences live in
-the private global vault. Guarana Web's memory graph displays both scopes with
-their relationships. Relevant confirmed project memories are injected as
-bounded context; normal tool activity remains telemetry and never becomes a
-memory atom.
-
-Global preference injection preserves the complete eligible active preference
-set and full text. The entire serialized preference payload is injected or
-omitted as a whole, subject to an optional positive-integer
-`memory.preferenceInjectionBudgetTokens` setting in global
-`$XDG_CONFIG_HOME/guarana/workflow.json` (falling back to
-`~/.config/guarana/workflow.json`) or project `.guarana/workflow.json` settings.
-Project values override global values; clearing a project value restores
-inheritance. When unset, the model context limit is used if available. If
-neither source provides a usable limit, preference injection fails closed with
-an explicit notice. UTF-8 serialized byte length is compared with the token
-budget as an estimate, not exact tokenization or remaining conversation
-capacity.
+Project knowledge lives in a gitignored vault and is searched on demand; it is
+never injected into assistant context. Standing user preferences live in the
+private global vault. Every eligible confirmed active global preference is
+included with its full text, together with eligible one-hop related context,
+subject to a single effective budget. Direct, related, and reached superseded
+preferences remain separate groups; related context is exactly one relationship
+hop from the direct group. New preferences use `agent_behavior`, `workflow`, or
+`communication`; legacy category-less global preferences read as `general`.
+If the complete serialized payload cannot fit the configured/model budget—or no
+usable budget exists—the whole preference payload is omitted with an explicit
+notice. UTF-8 serialized bytes compared with the token budget are an estimate,
+not exact tokenization or remaining conversation capacity.
+Guarana Web's memory graph displays both scopes and their relationships. Normal
+tool activity remains telemetry and never becomes a memory atom.
 
 ## Skills
 
@@ -219,37 +216,83 @@ capacity.
 ## CLI Reference
 
 ```text
-guarana install [--project]             Install skills, plugins, and engines
-guarana update [--project]              Reinstall the bundled version
-guarana list [--project]                Show skills and plugin presence
-guarana uninstall [--project]           Remove the installed runtime
+guarana install [--project]
+guarana update [--project]
+guarana list [--project]
+guarana uninstall [--project]
 
-guarana plugin install [--project]       Install plugins, engines, and native profiles
-guarana plugin install --plugins-only [--project]  Install plugins and engines; preserve profiles
-guarana plugin status [--project]        Check plugin and engine health
-guarana plugin uninstall [--project]    Remove plugins, engines, and Guarana-managed profiles
-guarana plugin uninstall --plugins-only [--project]  Remove plugin files and the plugins manifest group; preserve engines and profiles
-guarana plugin adopt <plugin-file> --accept-current [--project]  Explicitly adopt one plugin's current marked bytes
+guarana plugin install [--project]
+guarana plugin install --plugins-only [--project]
+guarana plugin uninstall [--project]
+guarana plugin uninstall --plugins-only [--project]
+guarana plugin adopt <plugin-file> --accept-current [--project]
+guarana plugin status [--project]
 
-guarana memory init                      Initialize a vault manually
-guarana memory status                    Show node, edge, and draft counts
-guarana memory search <term> [--project HASH]  Search confirmed memory
-guarana memory review --list              Inspect legacy draft atoms
-guarana memory export <file>             Export project memory
-guarana memory import <file>             Import project memory
+guarana web [--port N] [--open|--no-open]
 
+guarana advisor models [provider]
+guarana advisor read [--project]
+guarana advisor set <field> <id> [--project]
+guarana advisor clear [field] [--project]
+guarana advisor status [--project]
+
+guarana memory <sub>
+guarana memory init
+guarana memory status
+guarana memory search [term] [flags]
+guarana memory export <file>
+guarana memory import <file>
+guarana memory compact [--threshold <n>]
+guarana memory prune --keep <n>
+guarana memory review --list
+guarana memory review <id> --confirm --type <decision|bug|solution|refactor>
+guarana memory review <id> --discard
+guarana memory delete <id> --scope <project|global> --confirm
+guarana memory --help
+guarana memory -h
+
+guarana specs validate [project-root] [--json]
+guarana specs record --stdin
+guarana specs record --file .specs/state/worker-specs-handoff.json
+guarana specs --help
+guarana specs -h
+
+guarana workflow read [--project]
+guarana workflow set <specs|verify> <true|false> [--project]
 guarana workflow set memory.preferenceInjectionBudgetTokens <positive-integer> [--project]
-                                        Set the global-preference injection budget in tokens
-guarana workflow clear memory.preferenceInjectionBudgetTokens [--project]
-                                        Clear the budget; project clear restores global inheritance
+guarana workflow clear [specs|verify|memory.preferenceInjectionBudgetTokens] [--project]
+guarana workflow --help
+guarana workflow -h
 
-guarana web [--port N] [--no-open]       Open the local dashboard
-guarana specs validate [root] [--json]   Validate a project's .specs
-guarana --help                           Show all commands
+guarana --help
+guarana --version
 ```
 
-The effective preference ceiling is the lower of the configured token budget
-and model context limit when both are available.
+`guarana web` starts the local dashboard. Saved launch preferences can be
+overridden for one run with `--port N`, `--open`, or `--no-open`. Advisor
+commands list available OpenCode models, inspect or update scoped model settings,
+and check managed command/profile health. Workflow settings support `specs` and
+independent `verify` preferences. The `memory.preferenceInjectionBudgetTokens`
+budget can be read, set to a positive integer, or cleared; project values override
+global settings, and clearing a project value restores global inheritance. `--project`
+selects the project settings.
+
+Memory search also accepts `--type <type>`, `--since <date|ms>`,
+`--until <date|ms>`, and `--limit <n>`. `compact` accepts an optional
+`--threshold <n>`. Legacy project preference, atom, and supernode records remain
+available only through explicit legacy read/search paths; compact and prune
+preserve them and neither create nor delete them. Confirming a legacy draft
+requires explicit conversion to `decision`, `bug`, `solution`, or `refactor`;
+the converted record can be edited with `--intent "..."` and/or `--tags a,b`.
+`specs record --stdin` reads a handoff from standard input;
+`--file` reads and removes the fixed handoff file. `--help` and `--version`
+also accept `-h` and `-v`, respectively.
+
+For install, update, list, uninstall, and plugin operations, `--project` selects
+project-local targets under the current working directory's `.opencode/`
+instead of the user-level targets. Plugin `--plugins-only` install refreshes
+plugins and engines while preserving native profiles; `--plugins-only`
+uninstall removes only plugin files and their manifest group.
 
 Memory commands always use `.guarana/memory/` under the current working
 directory. A global `--project` before `memory` does not switch the memory

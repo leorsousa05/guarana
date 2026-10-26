@@ -344,7 +344,7 @@ test('Documents excludes state, retains unknown directories, searches titles/pat
   assert.match(fallbackHtml, /<h3 id="spec-reading-title">guide<\/h3>/);
 
   const specsSource = readSource('Specs.jsx');
-  assert.match(specsSource, /fetch\('\/api\/specs\/tree'\)/);
+  assert.match(specsSource, /projectFetch\('\/api\/specs\/tree'\)/);
   assert.match(specsSource, /\/api\/specs\/file\?path=\$\{encodeURIComponent\(path\)\}/);
   assert.match(specsSource, /text\.match\(\/\^\\s\*#\\s\+\(\.\+\)\$\/m\)/);
   assert.match(specsSource, /setReader\(\{ title: titles\[rel\] \|\| fallbackTitle\(rel\), path: rel \}\)/);
