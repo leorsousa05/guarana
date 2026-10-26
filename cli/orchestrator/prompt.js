@@ -192,7 +192,7 @@ function memoryEntry(node, scope) {
   }
   for (const field of ['tags', 'rejectedAlternatives']) {
     if (Array.isArray(node[field])) {
-      const values = field === 'tags' && scope === 'global' && node.type === 'preference'
+      const values = field === 'tags'
         ? filterSensitiveTags(node[field])
         : node[field].filter((value) => typeof value === 'string' && value);
       if (values.length) entry[field] = values;
