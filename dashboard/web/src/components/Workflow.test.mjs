@@ -93,6 +93,11 @@ test('Workflow SSR preserves phase semantics, selected transition evidence, task
   assert.match(workflowCss, /\.workflow\s*\{\s*min-width:\s*0/s);
   assert.match(workflowCss, /\.wf-current-task\s*\{[^}]*overflow-wrap:\s*anywhere/s);
   assert.match(workflowCss, /\.wf-h-note\s*\{[^}]*overflow-wrap:\s*anywhere/s);
+  assert.match(workflowCss, /\.wf-parallel\s*\{[^}]*min-width:\s*0/s);
+  assert.match(workflowCss, /\.wf-parallel-task-head\s*\{[^}]*flex-wrap:\s*wrap/s);
+  assert.match(workflowCss, /\.wf-parallel-dependency code\s*\{[^}]*overflow-wrap:\s*anywhere/s);
+  assert.match(mediaBlock(workflowCss, 'max-width: 480px'), /\.wf-parallel-run\s*\{\s*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);
+  assert.match(mediaBlock(workflowCss, 'max-width: 700px'), /\.wf-parallel-tasks\s*\{\s*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);
   assert.match(workflowCss, /\.wf-node-button:focus-visible\s*\{[^}]*outline:\s*2px/s);
   assert.match(mediaBlock(workflowCss, 'prefers-reduced-motion: reduce'), /\.workflow/s);
 });
@@ -111,6 +116,53 @@ test('Workflow is a state monitor and does not expose preference editing control
   assert.doesNotMatch(workflowCss, /wf-preferences|wf-setting|wf-inherit/);
   assert.match(workflowCss, /\.workflow\s*\{\s*min-width:\s*0/s);
   assert.match(workflowCss, /\.workflow \*\s*\{\s*min-width:\s*0/s);
+});
+
+test('Workflow renders the current parallel DAG read-only with accessible null and unavailable states', async (t) => {
+  const vite = await createServer({ root: webRoot, server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
+  t.after(() => vite.close());
+  const { Workflow } = await vite.ssrLoadModule('/src/components/Workflow.jsx');
+  const renderWorkflow = (parallelRun) => render(React.createElement(Workflow, {
+    data: { state: 'coding', parallelRun },
+  }));
+
+  const empty = renderWorkflow(null);
+  assert.match(empty, /aria-label="Parallel subtasks"/);
+  assert.match(empty, /role="status">No parallel DAG is bound to this workflow run\./);
+  const unavailable = renderWorkflow({ status: 'unavailable', error: 'PRIVATE_RAW_ERROR_SENTINEL' });
+  assert.match(unavailable, /role="status">Parallel DAG status unavailable\./);
+  assert.doesNotMatch(unavailable, /PRIVATE_RAW_ERROR_SENTINEL/);
+
+  const html = renderWorkflow({
+    status: 'running', updatedAt: 1700000000000,
+    ownedPaths: ['PRIVATE_OWNED_PATH_SENTINEL'], baseCommit: 'PRIVATE_BASE_COMMIT_SENTINEL',
+    worktreePath: 'PRIVATE_WORKTREE_PATH_SENTINEL', evidence: ['PRIVATE_EVIDENCE_SENTINEL'],
+    goal: 'PRIVATE_GOAL_SENTINEL', condition: 'PRIVATE_CONDITION_SENTINEL',
+    prompt: 'PRIVATE_PROMPT_SENTINEL', workerOutput: 'PRIVATE_WORKER_OUTPUT_SENTINEL',
+    tasks: [
+      { id: 'read-root', mode: 'read-only', status: 'completed', dependsOn: [], ownedPaths: ['PRIVATE_TASK_PATH_SENTINEL'] },
+      { id: 'code-child', mode: 'code', status: 'running', dependsOn: ['read-root'], baseCommit: 'PRIVATE_TASK_COMMIT_SENTINEL' },
+    ],
+  });
+  const panelStart = html.indexOf('<section class="wf-parallel"');
+  assert.notEqual(panelStart, -1);
+  const panelEnd = html.indexOf('</section>', panelStart) + '</section>'.length;
+  const panel = html.slice(panelStart, panelEnd);
+  for (const value of [
+    'running', 'read-root', 'code-child', 'read-only', 'completed', 'code', 'Dependencies',
+    'PRIVATE_OWNED_PATH_SENTINEL', 'PRIVATE_BASE_COMMIT_SENTINEL', 'PRIVATE_WORKTREE_PATH_SENTINEL',
+    'PRIVATE_EVIDENCE_SENTINEL', 'PRIVATE_GOAL_SENTINEL', 'PRIVATE_CONDITION_SENTINEL',
+    'PRIVATE_PROMPT_SENTINEL', 'PRIVATE_WORKER_OUTPUT_SENTINEL', 'PRIVATE_TASK_PATH_SENTINEL',
+    'PRIVATE_TASK_COMMIT_SENTINEL',
+  ]) {
+    if (value.startsWith('PRIVATE_')) assert.ok(!panel.includes(value), `panel omits ${value}`);
+    else assert.ok(panel.includes(value), `panel renders ${value}`);
+  }
+  assert.match(panel, /<h3>Parallel subtasks<\/h3>/);
+  assert.match(panel, /<dt>Run status<\/dt>/);
+  assert.match(panel, /<dt>Updated<\/dt>/);
+  assert.match(panel, /<ul aria-label="Dependencies of code-child"><li><code>read-root<\/code><\/li><\/ul>/);
+  assert.doesNotMatch(panel, /<button\b|<input\b|<form\b|retry|cancel|create/i);
 });
 
 test('long task metadata and transition notes are compact by default with full values in keyboard disclosures', async (t) => {

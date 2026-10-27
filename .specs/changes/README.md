@@ -6,6 +6,9 @@ Entry format: date · feature · what validated / failed / re-opened · proof pa
 
 ## Records
 
+### 2026-10-27 — dashboard Workflow
+- [Dashboard Workflow current parallel subtasks](2026-10-27-dashboard-current-parallel-subtasks.md) — fresh independent worker-verify PASS (6/6); current-run read-only projection and root README documentation validated; synthetic-fixture Chromium 375×812 proof and focused/full gates PASS; VALIDATED, not shipped or committed; no Task-host smoke or real project session data
+
 ### 2026-10-26 — dashboard Overview
 - [Dashboard Overview memory scope graphs](2026-10-26-dashboard-overview-memory-scope-graphs.md) — fresh independent worker-verify overall PASS (6/6); synthetic-fixture Chromium proof at 1440x900 and 375x812 with no overflow; source SHIPPED on `origin/main` at `037a315a4fcdf302a8dabcfe08d2e823d35a54d3` by normal push; no API/server/schema changes, tag, npm publication, GitHub Release, or package release
 

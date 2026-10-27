@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import { initVault, initUserVault } from '../../memory/vault.js';
 import { createNode, createEdge, listEdges } from '../../memory/graph.js';
 import { createSkill } from '../../skill-engine/index.js';
+import { createRunManifest } from '../../orchestrator/parallel.js';
 import { resolveSharedAdvisorModule } from './routes/shared-advisor-modules.js';
 
 function seedLegacyNode(vaultDir, node) {
@@ -1450,6 +1451,34 @@ describe('persistent Dashboard project selection', () => {
     });
 
     const selected = `?projectId=${encodeURIComponent(projectB.id)}`;
+    const workflowTs = 1700000000500;
+    const workflowRunId = `workflow-${workflowTs}`;
+    const workflowState = path.join(rootB, '.specs', 'state');
+    const workflowHistory = [
+      { ts: workflowTs - 20, event: 'new_task', from: 'idle', to: 'planning', note: '' },
+      { ts: workflowTs - 10, event: 'plan_complete', from: 'planning', to: 'building', note: '' },
+      { ts: workflowTs, event: 'run_start', from: 'building', to: 'coding', note: '' },
+    ];
+    fs.mkdirSync(workflowState, { recursive: true });
+    fs.writeFileSync(path.join(workflowState, 'workflow.json'), JSON.stringify({
+      version: 1, state: 'coding', activeTask: 'Project B current task', updatedAt: workflowTs, history: workflowHistory,
+    }));
+    const selectedManifest = createRunManifest(workflowRunId, [
+      { id: 'project-b-task', mode: 'read-only', ownedPaths: ['PRIVATE_SELECTED_PROJECT_PATH_SENTINEL'] },
+    ], { now: workflowTs });
+    const manifestFile = path.join(workflowState, 'parallel-runs', `${workflowRunId}.json`);
+    fs.mkdirSync(path.dirname(manifestFile), { recursive: true });
+    fs.writeFileSync(path.join(workflowState, 'parallel-runs', `${workflowRunId}.bound`), JSON.stringify({ version: 1, runId: workflowRunId }));
+    fs.writeFileSync(manifestFile, JSON.stringify(selectedManifest));
+    const defaultWorkflow = await (await fetch(`${baseA}/api/workflow/current`)).json();
+    assert.equal(defaultWorkflow.parallelRun, null);
+    const selectedWorkflow = await (await fetch(`${baseA}/api/workflow/current${selected}`)).json();
+    assert.deepEqual(selectedWorkflow.parallelRun, {
+      status: 'pending', updatedAt: workflowTs,
+      tasks: [{ id: 'project-b-task', mode: 'read-only', status: 'pending', dependsOn: [] }],
+    });
+    assert.doesNotMatch(JSON.stringify(selectedWorkflow.parallelRun), /PRIVATE_SELECTED_PROJECT_PATH_SENTINEL|PRIVATE_WORKTREE_PATH_SENTINEL|\/tmp\//);
+
     const userPreferences = await (await fetch(`${baseA}/api/memory/preferences`)).json();
     const selectedUserPreferences = await (await fetch(`${baseA}/api/memory/preferences${selected}`)).json();
     assert.deepEqual(selectedUserPreferences, userPreferences);

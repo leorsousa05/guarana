@@ -44,6 +44,10 @@ The [global preference injection budget](memory/global-preference-injection-budg
 
 The [Dashboard Memory preference graph and one-hop context groups](dashboard/memory-preference-graph-and-context.md) are also present in shipped source on origin/main. Automatic context keeps direct, related, and reached superseded global preferences distinct and traverses exactly one relationship hop; project context is not injected. No package publication or tag is implied.
 
+The VALIDATED [Dashboard Workflow current parallel-subtasks view](dashboard/current-parallel-subtasks.md) adds a read-only projection of the current run from the primary-owned sidecar, without dispatch or historical browsing. Its API and privacy contract is recorded in [ADR-046](../decisions/ADR-046-dashboard-parallel-subtask-projection.md); the root README documentation is complete. Fresh independent `worker-verify` passed all six criteria; see the [2026-10-27 change record](../changes/2026-10-27-dashboard-current-parallel-subtasks.md). This remains uncommitted and not shipped.
+
+The separate TASKED [Dashboard current-parallel-subtasks source-candidate delivery](release/dashboard-parallel-subtasks-source-candidate.md) is authorized for an unpublished, untagged 1.5.2 source candidate and normal push to `origin/main`, subject to its candidate gates. The implementation record above remains VALIDATED; no package publication, tag, formal release, or smoke test is authorized.
+
 ## Release assurance
 The [release-readiness feature](release/release-readiness.md) defines the supported Node/OpenCode contract, reproducible npm packaging, and automated CI matrix. [Smoke-test retirement](release/smoke-test-retirement.md) states that package/release/OpenCode-host smoke tests MUST NOT be run or reintroduced; `npm pack --dry-run --json` remains package-content inspection only. [Guarana 1.5.0](release/version-bump-1-5-0.md) is SHIPPED as a Stable GitHub tag (`v1.5.0`); no npm publication or formal LTS/maintenance promise is claimed. The remote annotated tag and CI proof are in the current release record; no GitHub Release page was created.
 

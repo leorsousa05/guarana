@@ -4429,6 +4429,139 @@ table.ledger.runs-table {
   padding-left: clamp(0.8rem, 2vw, 1.3rem);
 }
 
+.wf-parallel {
+  min-width: 0;
+  margin-top: clamp(1.2rem, 3vw, 2rem);
+  border-top: 1px solid var(--ink);
+  padding-top: 0.7rem;
+}
+
+.wf-parallel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.wf-parallel-head h3 {
+  margin: 0;
+  font: 600 0.82rem var(--display);
+}
+
+.wf-parallel-head p,
+.wf-parallel-state {
+  margin: 0;
+  font-size: 0.72rem;
+  opacity: 0.72;
+}
+
+.wf-parallel-readonly {
+  color: var(--ink);
+  font: 0.62rem var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.wf-parallel-run {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 0.85rem;
+  margin: 0 0 0.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.wf-parallel-run > div {
+  min-width: 0;
+  border-top: 1px solid var(--hairline);
+  padding: 0.4rem 0;
+}
+
+.wf-parallel-run dt,
+.wf-parallel-dependency h5 {
+  margin: 0 0 0.12rem;
+  font: 500 0.62rem var(--display);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.65;
+}
+
+.wf-parallel-run dd {
+  margin: 0;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.wf-parallel-status {
+  font-family: var(--mono);
+  text-transform: uppercase;
+}
+
+.wf-parallel-tasks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wf-parallel-task {
+  min-width: 0;
+  border-top: 1px solid var(--hairline);
+  padding: 0.55rem 0;
+}
+
+.wf-parallel-task-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.8rem;
+}
+
+.wf-parallel-task-head h4 {
+  flex: 1 1 100%;
+  min-width: 0;
+  margin: 0;
+  font: 600 0.78rem/1.4 var(--display);
+  overflow-wrap: anywhere;
+}
+
+.wf-parallel-task-head span {
+  font: 0.63rem/1.45 var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.wf-parallel-dependency {
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr);
+  gap: 0.25rem 0.6rem;
+  margin-top: 0.4rem;
+  border-top: 1px solid var(--hairline);
+  padding-top: 0.35rem;
+}
+
+.wf-parallel-dependency h5 { margin: 0; }
+
+.wf-parallel-dependency p,
+.wf-parallel-dependency ul {
+  min-width: 0;
+  margin: 0;
+  font-size: 0.7rem;
+  overflow-wrap: anywhere;
+}
+
+.wf-parallel-dependency ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.65rem;
+  padding: 0;
+  list-style: none;
+}
+
+.wf-parallel-dependency code { overflow-wrap: anywhere; }
+
 .wf-history {
   max-width: 100%;
   margin-top: 1rem;
@@ -4515,6 +4648,8 @@ table.ledger.runs-table {
 @media (max-width: 700px) {
   .wf-evidence { grid-template-columns: minmax(0, 1fr); }
 
+  .wf-parallel-tasks { grid-template-columns: minmax(0, 1fr); }
+
   .wf-metadata {
     border-top: 1px solid var(--hairline);
     border-left: 0;
@@ -4535,6 +4670,8 @@ table.ledger.runs-table {
   .wf-history-event { grid-column: 2; grid-row: 1; }
   .wf-h-note { grid-column: 1; grid-row: 2; }
   .wf-h-ts { grid-column: 2; grid-row: 2; }
+  .wf-parallel-run { grid-template-columns: minmax(0, 1fr); }
+  .wf-parallel-dependency { grid-template-columns: minmax(0, 1fr); }
   .spec-state-page {
     grid-template-columns: minmax(0, 1fr);
     gap: 0.25rem;

@@ -139,6 +139,13 @@ separate maintainer action.
 
 ## [Unreleased]
 
+## [1.5.2] - 2026-10-27 (unpublished, untagged candidate)
+
+### Added
+- Dashboard Workflow shows the current parallel-subtask run read-only,
+  including task status, mode, and dependencies; the view does not dispatch
+  tasks or browse run history.
+
 ## [1.5.1] - 2026-10-25 (unpublished candidate)
 
 ### Added

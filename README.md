@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/leorsousa05/guarana"><img src="https://img.shields.io/github/stars/leorsousa05/guarana?style=for-the-badge&logo=github&logoColor=white&color=f59e0b" alt="GitHub stars"></a>
-  <a href="https://github.com/leorsousa05/guarana/tree/main"><img src="https://img.shields.io/badge/source-v1.5.1%20candidate-f59e0b?style=for-the-badge&logo=github&logoColor=white" alt="GitHub main source candidate v1.5.1, unpublished and untagged"></a>
+  <a href="https://github.com/leorsousa05/guarana/tree/main"><img src="https://img.shields.io/badge/source-v1.5.2%20candidate-f59e0b?style=for-the-badge&logo=github&logoColor=white" alt="GitHub main source candidate v1.5.2, unpublished and untagged"></a>
   <img src="https://img.shields.io/badge/core_dependencies-zero-059669?style=for-the-badge" alt="Zero core runtime dependencies">
   <br>
   <a href="https://opencode.ai/"><img src="https://img.shields.io/badge/runtime-OpenCode-111827?style=for-the-badge" alt="OpenCode runtime"></a>
@@ -29,7 +29,7 @@ and memory, while the important state stays inspectable on disk.
   <img src="https://img.shields.io/badge/license-MIT-2563eb?style=flat-square" alt="MIT license">
 </p>
 
-**Current source candidate:** `1.5.1` is unpublished and untagged; its source is on [`main`](https://github.com/leorsousa05/guarana/tree/main). The stable installation instructions below remain for the `v1.5.0` tag.
+**Current source candidate:** `1.5.2` is unpublished and untagged; its source is on [`main`](https://github.com/leorsousa05/guarana/tree/main). The stable installation instructions below remain for the `v1.5.0` tag.
 
 ## What's New in 1.5.0
 
@@ -276,6 +276,13 @@ independent `verify` preferences. The `memory.preferenceInjectionBudgetTokens`
 budget can be read, set to a positive integer, or cleared; project values override
 global settings, and clearing a project value restores global inheritance. `--project`
 selects the project settings.
+
+The Dashboard's **Workflow** screen also shows the current parallel-subtask run,
+when one is bound: its status and update time, plus each task's ID, mode, status,
+and dependencies. This view is read-only, follows the selected project, and may
+continue to show a completed run until a new task or abort starts a new boundary.
+It does not browse run history or expose worktree paths and other private worker
+metadata; task creation and orchestration remain with the primary workflow.
 
 Memory search also accepts `--type <type>`, `--since <date|ms>`,
 `--until <date|ms>`, and `--limit <n>`. `compact` accepts an optional

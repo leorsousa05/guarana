@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-10-27T03:36:42.469Z
+Last updated: 2026-10-27T14:19:43.183Z
 
 ## Per-skill status
 | Skill | Status |
@@ -24,7 +24,7 @@ Last updated: 2026-10-27T03:36:42.469Z
 | Guarana optional model advisor | **VALIDATED** — UI criteria 11–14 and ADR-027 runtime proof |
 
 ## Current step
-Parallel subtask orchestration is SHIPPED as source on main at 9e5267578cfa3234375be05920f8d774edb3d634; ordinary push succeeded and an immediate git ls-remote confirmed origin/main at that commit. Main was clean after the push. No force push, tag, version bump, npm publication, GitHub release, or package release occurred; package version remains 1.5.1. Task path access was proved only for the assigned path, not as a host-wide guarantee or sandbox; cancellation remains unavailable/unverified and request/reconcile-only; no provider-backed or OpenCode-host smoke ran. Full gates and proof are in .specs/changes/2026-10-26-parallel-subtask-orchestration.md.
+The separately authorized 1.5.2 source-candidate delivery is TASKED; the existing Dashboard implementation remains VALIDATED and has not shipped.
 
 ## Bounded feature validation — Dashboard Overview operational workbench — 2026-10-24
 
@@ -83,7 +83,7 @@ Validated before this task: the post-bootstrap-fix release gate, final archive, 
 - Browser proof confirms 375px document/body width, 351px content scroll/client widths for the Models sections and discovery areas, stacked grids, no clipped Models descendants, visible keyboard focus, polite status announcement, and reduced-motion behavior. Global navigation's horizontal scrolling is intentional; page content does not overflow.
 - Detailed proof and check outcomes: `changes/2026-10-09-models-page-overhaul.md`. Shipping was not confirmed; status is VALIDATED, not SHIPPED.
 - Budget: ADR-005 defaults.
-- Pending writes: No further implementation or verification work remains; the feature is VALIDATED, not SHIPPED, and no commit, push, release, tag, or npm publication occurred.
+- Pending writes: Prepare and pass all 1.5.2 candidate gates before source commit/push; after exact remote confirmation, write and validate source-shipment closeout records.
 
 ## Proofs that exist
 Task-1 proofs for all 7 skills in `.specs/features/guarana/proofs/`; all acceptance criteria mapped; worker-verify PASS on every skill. CLI acceptance: 6/6 checks PASS (recorded in changes/2026-08-21-cli.md). Release readiness evidence is in `changes/2026-10-02-release-readiness.md`; 1.0.0 candidate evidence and revalidation follow-up are in `changes/2026-10-07-release-candidate-1.0.0.md` and `features/release/release-candidate-1.0.0-smoke.jsonl`. Spec lifecycle write proof: `changes/2026-10-03-spec-lifecycle-writes.md`. Automatic skill-creation proof: `changes/2026-10-05-automatic-skill-creation.md`, `changes/2026-10-05-skill-trigger-guidance.md`, and validated routing clarity in `changes/2026-10-07-skill-routing-clarity.md`. Native Task worker dispatch proof is in `changes/2026-10-07-native-task-worker-dispatch.md` and `features/orchestrator/subagent-dispatch-smoke.jsonl`. Dashboard skill-scope count proof: `changes/2026-10-05-dashboard-skill-scope-counts.md`.

@@ -42,6 +42,73 @@ function WorkflowText({ text, className }) {
   </details>;
 }
 
+function ParallelSubtasks({ parallelRun }) {
+  const unavailable = parallelRun?.status === 'unavailable'
+    || (parallelRun !== null && parallelRun !== undefined
+      && (!Array.isArray(parallelRun.tasks) || typeof parallelRun.status !== 'string'));
+  const updated = Number.isSafeInteger(parallelRun?.updatedAt)
+    ? new Date(parallelRun.updatedAt)
+    : null;
+  const updatedDateTime = updated && Number.isFinite(updated.getTime()) ? updated.toISOString() : null;
+
+  return (
+    <section className="wf-parallel" aria-label="Parallel subtasks">
+      <header className="wf-parallel-head">
+        <div>
+          <h3>Parallel subtasks</h3>
+          <p>Read-only · current workflow run</p>
+        </div>
+        {parallelRun && !unavailable && (
+          <span className="wf-parallel-readonly">Read-only</span>
+        )}
+      </header>
+      {!parallelRun && (
+        <p className="wf-parallel-state" role="status">No parallel DAG is bound to this workflow run.</p>
+      )}
+      {unavailable && (
+        <p className="wf-parallel-state" role="status">Parallel DAG status unavailable.</p>
+      )}
+      {parallelRun && !unavailable && (
+        <>
+          <dl className="wf-parallel-run" aria-label="Parallel run status">
+            <div>
+              <dt>Run status</dt>
+              <dd><span className="wf-parallel-status">{parallelRun.status}</span></dd>
+            </div>
+            <div>
+              <dt>Updated</dt>
+              <dd>{updatedDateTime ? <time dateTime={updatedDateTime}>{fmtTs(parallelRun.updatedAt)}</time> : 'Unavailable'}</dd>
+            </div>
+          </dl>
+          {parallelRun.tasks.length > 0 ? (
+            <ol className="wf-parallel-tasks" aria-label="Parallel tasks">
+              {parallelRun.tasks.map((task) => (
+                <li className="wf-parallel-task" key={task.id}>
+                  <article aria-labelledby={`wf-parallel-task-${task.id}`}>
+                    <header className="wf-parallel-task-head">
+                      <h4 id={`wf-parallel-task-${task.id}`}><code>{task.id}</code></h4>
+                      <span>Mode: {task.mode}</span>
+                      <span>Status: {task.status}</span>
+                    </header>
+                    <div className="wf-parallel-dependency">
+                      <h5>Dependencies</h5>
+                      {task.dependsOn.length > 0 ? (
+                        <ul aria-label={`Dependencies of ${task.id}`}>
+                          {task.dependsOn.map((dependency) => <li key={dependency}><code>{dependency}</code></li>)}
+                        </ul>
+                      ) : <p>None</p>}
+                    </div>
+                  </article>
+                </li>
+              ))}
+            </ol>
+          ) : <p className="wf-parallel-state" role="status">No subtasks are recorded for this run.</p>}
+        </>
+      )}
+    </section>
+  );
+}
+
 export function Workflow({ data }) {
   const state = data?.state || 'idle';
   const idx = activeIndex(state);
@@ -156,6 +223,7 @@ export function Workflow({ data }) {
               </dl>
             </aside>
           </section>
+          <ParallelSubtasks parallelRun={data?.parallelRun ?? null} />
         </>
       )}
     </section>
