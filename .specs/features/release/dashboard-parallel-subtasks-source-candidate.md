@@ -1,6 +1,6 @@
 # Feature spec: Dashboard current-parallel-subtasks source candidate
 
-**Status: TASKED**
+**Status: SHIPPED**
 
 ## Goal
 Prepare the already-validated Dashboard current-parallel-subtasks feature as an unpublished, untagged Guarana 1.5.2 source candidate and, after all acceptance gates pass, push it normally to `origin/main`.
@@ -30,8 +30,16 @@ Prepare the already-validated Dashboard current-parallel-subtasks feature as an 
 5. After exact remote confirmation, this source-delivery record is marked SHIPPED with exact commit/remote proof, necessary change/overview/tracker/project-state records are closed out, and Specs validation passes after the record write. If record-only closeout changes are separately committed/pushed, remote `origin/main` is confirmed to equal final closeout HEAD.
 6. No Git tag, npm publication/dist-tag, GitHub Release page, formal package release action, retired smoke test, or force push occurs.
 
+## Source shipment addendum — 2026-10-27
+
+The source candidate was committed as `ff10f918c67ecf7c6f85287bde93bc83a9f10655` (`feat(dashboard): add current parallel-subtask view`), parent/base `a742d7cf7459ba1a0f006ba54e309180505b8dda`. Normal push output was `a742d7c..ff10f91 main -> main` to `https://github.com/leorsousa05/guarana.git`. Immediately after push, `git ls-remote origin refs/heads/main` returned exactly `ff10f918c67ecf7c6f85287bde93bc83a9f10655`, equal to local HEAD; the worktree was clean then.
+
+Before commit, primary gates passed: `npm test` 704/704; `npm run build` (60 modules plus CLI sync); `npm run check-cli`; Specs validation (254 Markdown, 100 features, 46 ADRs, 292 links, zero issues); `git diff --check`; and `npm pack --dry-run --json` inventory only (`guarana@1.5.2`, 141 files, LICENSE/CHANGELOG.md/RELEASING.md present, no `node_modules`, canonical Dashboard server and bundle included, no tarball). Fresh candidate `worker-verify` reviewed the exact 30-path source candidate and passed metadata/preservation, path-scope, required pre-push checks, and prohibited-release-action criteria. Its overall lifecycle verdict at that pre-push checkpoint was FAIL/incomplete only because commit/push and record closeout were then pending; it reported no source fix indicated and recommended proceeding with the authorized normal commit/push. This is not an overall worker-verify PASS claim. The Dashboard implementation retains its separate fresh overall worker-verify PASS (6/6), including the existing synthetic Chromium 375×812 proof.
+
+Candidate metadata is Guarana 1.5.2, unpublished and untagged. No Git tag, npm publication/dist-tag, GitHub Release, formal package release, or smoke test occurred; the dry-run created no tarball.
+
 <!-- guarana:record:start -->
-Status: TASKED
-Proof: none
-Change: none
+Status: SHIPPED
+Proof: Source commit ff10f918c67ecf7c6f85287bde93bc83a9f10655 (feat(dashboard): add current parallel-subtask view), parent/base a742d7cf7459ba1a0f006ba54e309180505b8dda, was pushed normally to https://github.com/leorsousa05/guarana.git; push output: a742d7c..ff10f91 main -> main. Immediately after push, git ls-remote origin refs/heads/main returned exactly ff10f918c67ecf7c6f85287bde93bc83a9f10655, equal to local HEAD; worktree was clean then.; Before commit, primary gates passed: npm test 704/704; npm run build (60 modules plus CLI sync); npm run check-cli; Specs validation (254 Markdown, 100 features, 46 ADRs, 292 links, zero issues); git diff --check; npm pack --dry-run --json inventory only for guarana@1.5.2 (141 files; LICENSE, CHANGELOG.md, and RELEASING.md present; no node_modules; canonical Dashboard server and bundle included; no tarball).; Fresh candidate worker-verify reviewed the exact 30-path candidate and passed candidate metadata/preservation, path scope, required pre-push checks, and prohibited release action criteria. Its overall lifecycle verdict at that pre-push checkpoint was FAIL/incomplete only because commit/push and record closeout were pending; it reported no source fix indicated and recommended the authorized normal commit/push. This is not an overall PASS claim for that candidate review.; The separately validated implementation has fresh independent worker-verify overall PASS (6/6), including synthetic Chromium 375x812 evidence at /tmp/opencode/dashboard-workflow-viewport/independent-proof-375.json.; Candidate metadata was Guarana 1.5.2, unpublished and untagged. No Git tag, npm publication/dist-tag, GitHub Release, formal package release, or smoke test occurred; dry-run created no tarball.
+Change: .specs/changes/2026-10-27-dashboard-current-parallel-subtasks.md
 <!-- guarana:record:end -->

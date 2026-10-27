@@ -55,3 +55,15 @@ The current-run projection and root README documentation are complete and
 validated; fresh independent `worker-verify` passed all six criteria. The
 implementation remains uncommitted; no shipment, commit, push, tag,
 publication, or release is claimed. See the [validated change record](../changes/2026-10-27-dashboard-current-parallel-subtasks.md).
+
+## Source shipment addendum — 2026-10-27
+
+The validated implementation was shipped as source commit
+`ff10f918c67ecf7c6f85287bde93bc83a9f10655`
+(`feat(dashboard): add current parallel-subtask view`), parent/base
+`a742d7cf7459ba1a0f006ba54e309180505b8dda`, pushed normally to
+`https://github.com/leorsousa05/guarana.git` (`a742d7c..ff10f91 main -> main`).
+Immediately after push, `git ls-remote origin refs/heads/main` returned the exact
+commit SHA, equal to local HEAD. The existing six-criterion implementation PASS
+remains its validation checkpoint. This was source shipment only: no Git tag,
+npm publication/dist-tag, GitHub Release, or formal package release occurred.

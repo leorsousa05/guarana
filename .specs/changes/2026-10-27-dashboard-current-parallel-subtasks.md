@@ -34,3 +34,11 @@ is intentionally dirty with the TASKED planning records plus this implementation
 and generated CLI/Dashboard assets. No version/release-file diff. No commit,
 push, tag, publication, or release was requested or performed; no shipping is
 claimed.
+
+## Source shipment addendum — 2026-10-27
+
+The implementation validation checkpoint above remains historical: fresh independent `worker-verify` overall PASS, 6/6 criteria, with the synthetic Chromium 375×812 proof at `/tmp/opencode/dashboard-workflow-viewport/independent-proof-375.json`; the recorded focused/full tests, Dashboard build and CLI sync, check-cli, Specs validation, and diff-check were PASS at that checkpoint.
+
+The separately authorized source candidate was Guarana 1.5.2, unpublished and untagged. Before commit, primary reported `npm test` 704/704; `npm run build` (60 modules plus CLI sync); `npm run check-cli`; Specs validation (254 Markdown, 100 features, 46 ADRs, 292 links, zero issues); `git diff --check`; and `npm pack --dry-run --json` inventory only (`guarana@1.5.2`, 141 files, required LICENSE/CHANGELOG.md/RELEASING.md present, no `node_modules`, canonical Dashboard server and bundle included, no tarball). Fresh candidate `worker-verify` reviewed the exact 30-path candidate and passed metadata/preservation, path-scope, required pre-push checks, and prohibited-action criteria. Its overall lifecycle verdict at that checkpoint was FAIL/incomplete only because commit/push and record closeout had not yet occurred; it reported no source fix indicated and recommended the authorized normal push. That verdict is not represented as overall PASS.
+
+Source commit `ff10f918c67ecf7c6f85287bde93bc83a9f10655` (`feat(dashboard): add current parallel-subtask view`), parent/base `a742d7cf7459ba1a0f006ba54e309180505b8dda`, was pushed normally to `https://github.com/leorsousa05/guarana.git`; push output: `a742d7c..ff10f91 main -> main`. Immediately afterward, `git ls-remote origin refs/heads/main` returned exactly `ff10f918c67ecf7c6f85287bde93bc83a9f10655`, equal to local HEAD; the worktree was clean then. This confirms source shipment only. No Git tag, npm publication/dist-tag, GitHub Release, formal package release, or smoke test occurred.

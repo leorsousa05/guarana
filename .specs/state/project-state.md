@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-10-27T14:19:43.183Z
+Last updated: 2026-10-27T14:41:37.083Z
 
 ## Per-skill status
 | Skill | Status |
@@ -24,7 +24,7 @@ Last updated: 2026-10-27T14:19:43.183Z
 | Guarana optional model advisor | **VALIDATED** — UI criteria 11–14 and ADR-027 runtime proof |
 
 ## Current step
-The separately authorized 1.5.2 source-candidate delivery is TASKED; the existing Dashboard implementation remains VALIDATED and has not shipped.
+Dashboard current-parallel-subtasks is SHIPPED as source on origin/main at ff10f918c67ecf7c6f85287bde93bc83a9f10655; 1.5.2 remains unpublished and untagged, with no tag, npm publication/dist-tag, GitHub Release, formal package release, or smoke test.
 
 ## Bounded feature validation — Dashboard Overview operational workbench — 2026-10-24
 
@@ -83,7 +83,7 @@ Validated before this task: the post-bootstrap-fix release gate, final archive, 
 - Browser proof confirms 375px document/body width, 351px content scroll/client widths for the Models sections and discovery areas, stacked grids, no clipped Models descendants, visible keyboard focus, polite status announcement, and reduced-motion behavior. Global navigation's horizontal scrolling is intentional; page content does not overflow.
 - Detailed proof and check outcomes: `changes/2026-10-09-models-page-overhaul.md`. Shipping was not confirmed; status is VALIDATED, not SHIPPED.
 - Budget: ADR-005 defaults.
-- Pending writes: Prepare and pass all 1.5.2 candidate gates before source commit/push; after exact remote confirmation, write and validate source-shipment closeout records.
+- Pending writes: none.
 
 ## Proofs that exist
 Task-1 proofs for all 7 skills in `.specs/features/guarana/proofs/`; all acceptance criteria mapped; worker-verify PASS on every skill. CLI acceptance: 6/6 checks PASS (recorded in changes/2026-08-21-cli.md). Release readiness evidence is in `changes/2026-10-02-release-readiness.md`; 1.0.0 candidate evidence and revalidation follow-up are in `changes/2026-10-07-release-candidate-1.0.0.md` and `features/release/release-candidate-1.0.0-smoke.jsonl`. Spec lifecycle write proof: `changes/2026-10-03-spec-lifecycle-writes.md`. Automatic skill-creation proof: `changes/2026-10-05-automatic-skill-creation.md`, `changes/2026-10-05-skill-trigger-guidance.md`, and validated routing clarity in `changes/2026-10-07-skill-routing-clarity.md`. Native Task worker dispatch proof is in `changes/2026-10-07-native-task-worker-dispatch.md` and `features/orchestrator/subagent-dispatch-smoke.jsonl`. Dashboard skill-scope count proof: `changes/2026-10-05-dashboard-skill-scope-counts.md`.
