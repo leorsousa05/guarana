@@ -10,6 +10,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -21,7 +22,7 @@ const MEMORY_CONTEXT_GROUPS = [
   'related_global_preferences',
   'superseded_global_preferences',
 ];
-const WORKER_AGENT_NAMES = new Set(['worker-code', 'worker-verify', 'worker-debug', 'worker-specs', 'guarana-advisor']);
+const WORKER_AGENT_NAMES = new Set(['worker-code', 'worker-verify', 'worker-debug', 'worker-specs', 'worker-research', 'guarana-advisor']);
 const INJECTION_CACHE_SYMBOL = Symbol.for('guarana.orchestrator.memory-injection-cache');
 const injectedMemoryBySession = globalThis[INJECTION_CACHE_SYMBOL] || new Map();
 globalThis[INJECTION_CACHE_SYMBOL] = injectedMemoryBySession;
@@ -269,6 +270,123 @@ async function loadMemoryEngine() {
   return null;
 }
 
+async function loadParallelEngine() {
+  const candidates = [
+    path.join(pluginDir, '..', 'orchestrator'),
+    path.join(pluginDir, '..', '..', 'orchestrator'),
+  ];
+  for (const dir of candidates) {
+    const coreFile = path.join(dir, 'parallel.js');
+    const storeFile = path.join(dir, 'parallel-store.js');
+    if (!fs.existsSync(coreFile) || !fs.existsSync(storeFile)) continue;
+    const [parallel, store] = await Promise.all([
+      import(pathToFileURL(coreFile).href),
+      import(pathToFileURL(storeFile).href),
+    ]);
+    return { parallel, store };
+  }
+  return null;
+}
+
+function gitOutput(directory, ...args) {
+  return execFileSync('git', ['-C', directory, ...args], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    maxBuffer: 1024 * 1024,
+  }).trim();
+}
+
+function gitIdentity(directory) {
+  const projectRoot = path.resolve(directory);
+  const topLevel = gitOutput(projectRoot, 'rev-parse', '--path-format=absolute', '--show-toplevel');
+  if (path.resolve(topLevel) !== projectRoot) {
+    throw new TypeError('Orchestrator directory must be the exact Git top-level before code worktree preflight');
+  }
+  return {
+    topLevel: path.resolve(topLevel),
+    commonDir: path.resolve(gitOutput(projectRoot, 'rev-parse', '--path-format=absolute', '--git-common-dir')),
+    head: gitOutput(projectRoot, 'rev-parse', 'HEAD'),
+  };
+}
+
+function verifyCodeWorktree(directory, worktreePath, expectedBaseCommit) {
+  if (typeof worktreePath !== 'string' || !path.isAbsolute(worktreePath)
+    || path.resolve(worktreePath) !== worktreePath || worktreePath === path.parse(worktreePath).root) {
+    throw new TypeError('Code worktree path must be a normalized absolute path');
+  }
+  const primary = gitIdentity(directory);
+  const realWorktreePath = fs.realpathSync(worktreePath);
+  if (realWorktreePath !== worktreePath) throw new TypeError('Code worktree path must identify its exact Git top-level without symlink aliases');
+  const topLevel = path.resolve(gitOutput(worktreePath, 'rev-parse', '--path-format=absolute', '--show-toplevel'));
+  if (topLevel !== worktreePath) throw new TypeError('Assigned code worktree path is not its exact Git top-level');
+  if (topLevel === primary.topLevel) throw new TypeError('Code task worktree must be separate from the primary checkout');
+  const commonDir = path.resolve(gitOutput(worktreePath, 'rev-parse', '--path-format=absolute', '--git-common-dir'));
+  if (commonDir !== primary.commonDir) throw new TypeError('Code task worktree must share the primary repository Git common directory');
+  const head = gitOutput(worktreePath, 'rev-parse', 'HEAD');
+  if (head !== expectedBaseCommit) throw new TypeError('Code task worktree HEAD does not match its recorded base commit');
+  if (gitOutput(worktreePath, 'status', '--porcelain', '--untracked-files=all')) {
+    throw new TypeError('Code task worktree must be clean before dispatch');
+  }
+  return { topLevel, commonDir, baseCommit: head };
+}
+
+function shellQuote(value) {
+  return `'${String(value).replaceAll("'", "'\\''")}'`;
+}
+
+function workflowRunId(workflow, { includeCompleted = false } = {}) {
+  const history = Array.isArray(workflow?.history) ? workflow.history : [];
+  let runStartIndex = -1;
+  let boundaryIndex = -1;
+  for (let index = 0; index < history.length; index += 1) {
+    const event = history[index]?.event;
+    if (event === 'run_start' && history[index]?.to === 'coding') runStartIndex = index;
+    if (['new_task', 'abort'].includes(event)) boundaryIndex = index;
+  }
+  if (runStartIndex < 0 || boundaryIndex > runStartIndex
+    || !(includeCompleted
+      ? ['coding', 'verifying', 'debugging', 'completed']
+      : ['coding', 'verifying', 'debugging']).includes(workflow?.state)) return null;
+  const timestamp = history[runStartIndex]?.ts;
+  if (!Number.isSafeInteger(timestamp) || timestamp < 0) return null;
+  return `workflow-${timestamp}`;
+}
+
+function creatableWorkflowRunId(workflow) {
+  const history = Array.isArray(workflow?.history) ? workflow.history : [];
+  const latest = history.at(-1);
+  if (workflow?.state !== 'coding' || latest?.event !== 'run_start' || latest?.to !== 'coding'
+    || !Number.isSafeInteger(latest.ts) || latest.ts < 0) return null;
+  return `workflow-${latest.ts}`;
+}
+
+function parallelRunBindingFiles(directory, runId) {
+  const runDirectory = path.join(directory, '.specs', 'state', 'parallel-runs');
+  return {
+    manifest: path.join(runDirectory, `${runId}.json`),
+    binding: path.join(runDirectory, `${runId}.bound`),
+  };
+}
+
+function recordParallelRunBinding(directory, runId) {
+  const { binding } = parallelRunBindingFiles(directory, runId);
+  fs.mkdirSync(path.dirname(binding), { recursive: true });
+  let fd;
+  try {
+    fd = fs.openSync(binding, 'wx', 0o600);
+    fs.writeFileSync(fd, `${JSON.stringify({ version: 1, runId })}\n`, 'utf8');
+    fs.fsyncSync(fd);
+  } catch (err) {
+    if (err.code === 'EEXIST') return false;
+    throw err;
+  } finally {
+    if (fd !== undefined) {
+      try { fs.closeSync(fd); } catch { /* preserve the original result */ }
+    }
+  }
+  return true;
+}
+
 // Extract the user text from a chat.message event (parts carry text).
 function userText(parts) {
   if (!Array.isArray(parts)) return '';
@@ -402,6 +520,109 @@ export const GuaranaOrchestrator = async ({ directory, client, session, sdkVersi
       return false;
     }
   };
+  let parallelPromise = null;
+  const parallelEngine = async () => {
+    if (!parallelPromise) parallelPromise = loadParallelEngine();
+    return parallelPromise;
+  };
+  const parallelTransitionRejection = async (workflow, nextWorkflow) => {
+    if (!['verifying', 'completed'].includes(nextWorkflow?.state)) return null;
+    // Use the pre-transition workflow so verify_pass retains its run binding.
+    // An imported/legacy completed workflow can also be forced back to verify;
+    // derive that run only for this transition, without widening normal
+    // parallel_run_* active-run access after completion.
+    const completedForceVerify = workflow?.state === 'completed'
+      && nextWorkflow?.state === 'verifying'
+      && nextWorkflow.history?.at(-1)?.event === 'force';
+    const runId = workflowRunId(workflow, { includeCompleted: completedForceVerify });
+    if (!runId) return null;
+
+    const { manifest: manifestPath, binding: bindingPath } = parallelRunBindingFiles(directory, runId);
+    const isBound = (file) => {
+      try {
+        fs.lstatSync(file);
+        return true;
+      } catch (err) {
+        // Only a definite absence means no DAG. Permission and filesystem
+        // errors are uncertainty and therefore fail closed for this run.
+        return err.code !== 'ENOENT';
+      }
+    };
+    if (!isBound(manifestPath) && !isBound(bindingPath)) return null;
+
+    let engine;
+    try { engine = await parallelEngine(); } catch { /* handled as unavailable below */ }
+    if (!engine) {
+      return {
+        ok: false,
+        error: `Parallel DAG ${runId} is unavailable; cannot enter ${nextWorkflow.state}`,
+        state: workflow.state,
+        runStatus: 'unavailable',
+      };
+    }
+
+    let manifest;
+    try { manifest = engine.store.loadRunManifest(directory, runId); } catch {
+      return {
+        ok: false,
+        error: `Parallel DAG ${runId} is unavailable or unreadable; cannot enter ${nextWorkflow.state}`,
+        state: workflow.state,
+        runStatus: 'unavailable',
+      };
+    }
+    if (!manifest) {
+      return {
+        ok: false,
+        error: `Parallel DAG ${runId} is missing; cannot enter ${nextWorkflow.state}`,
+        state: workflow.state,
+        runStatus: 'missing',
+      };
+    }
+    if (manifest.status !== 'completed') {
+      return {
+        ok: false,
+        error: `Parallel DAG ${runId} must be completed and integrated before entering ${nextWorkflow.state}`,
+        state: workflow.state,
+        runStatus: manifest.status,
+      };
+    }
+    return null;
+  };
+  const parallelTool = (handler, { create = false } = {}) => async (args, context = {}) => {
+    if (typeof context?.sessionID !== 'string' || !context.sessionID.trim()
+      || typeof context?.agent !== 'string' || !context.agent.trim()) {
+      return JSON.stringify({ ok: false, error: 'Parallel run tools require nonempty primary sessionID and agent caller identity.' });
+    }
+    if (isWorkerContext(context.sessionID, context.agent)
+      || await isMetadataChildSession(context.sessionID)) {
+      return JSON.stringify({ ok: false, error: 'Task workers cannot inspect or mutate primary-owned parallel runs.' });
+    }
+    try {
+      const allowedArgs = new Set([
+        'runId', 'subtasks', 'taskId', 'worktreePath', 'baseCommit', 'goal', 'condition',
+        'outcome', 'evidence', 'primaryReviewed', 'hostConfirmed', 'expectedToken',
+      ]);
+      for (const key of Object.keys(args || {})) {
+        if (!allowedArgs.has(key)) throw new TypeError(`Unknown parallel tool argument: ${key}`);
+      }
+      const workflowCore = await core();
+      if (!workflowCore) throw new Error('orchestrator core not available');
+      const workflow = workflowCore.state.load(directory);
+      const runId = create ? creatableWorkflowRunId(workflow) : workflowRunId(workflow);
+      if (create) {
+        if (!runId) throw new TypeError('parallel_run_create requires a coding workflow whose latest event is run_start');
+        if (Object.hasOwn(args || {}, 'runId')) throw new TypeError('Parallel run ID is derived from the current workflow and cannot be supplied');
+      } else {
+        if (!runId) throw new TypeError('There is no active workflow run bound to a parallel DAG');
+        if (args?.runId !== runId) throw new TypeError(`Parallel run ID is not bound to the current workflow (expected ${runId})`);
+      }
+      const engine = await parallelEngine();
+      if (!engine) throw new Error('parallel DAG core not available');
+      return JSON.stringify(await handler(engine, args || {}, runId, workflow, workflowCore));
+    } catch (err) {
+      return JSON.stringify({ ok: false, error: String(err && err.message ? err.message : err) });
+    }
+  };
   const sessionCacheKey = (sessionID) => `${path.resolve(directory)}::${sessionID}`;
 
   const handleSessionCreated = async (event) => {
@@ -480,6 +701,8 @@ export const GuaranaOrchestrator = async ({ directory, client, session, sdkVersi
           note: d.note,
         });
         if (applied) {
+          const rejected = await parallelTransitionRejection(wf, applied);
+          if (rejected) return;
           next = applied;
           if ((d.event === 'new_task' || d.event === 'force') && (d.goal || wf.goal || userText)) {
             if (workflowPreferences(c).specs.enabled) {
@@ -592,6 +815,8 @@ export const GuaranaOrchestrator = async ({ directory, client, session, sdkVersi
           if (!applied) {
             return { ok: false, error: `illegal transition ${action} from ${wf.state}`, state: wf.state };
           }
+          const rejected = await parallelTransitionRejection(wf, applied);
+          if (rejected) return rejected;
           c.state.save(directory, applied);
           if (((action === 'new_task' || action === 'start_task') && args.goal) || action === 'force') {
             if (workflowPreferences(c).specs.enabled) {
@@ -623,6 +848,261 @@ export const GuaranaOrchestrator = async ({ directory, client, session, sdkVersi
     },
   };
 
+  const parallelTools = {
+    parallel_run_create: {
+      description: 'Create the one deterministic primary-owned subtask DAG for the current coding workflow, immediately after run_start. Its run ID is derived from workflow history; callers cannot choose one. Supply a nonempty goal and verifiable condition for each task; these are returned only to the caller and are never persisted. This does not spawn Tasks.',
+      args: {
+        subtasks: {
+          type: 'array',
+          description: 'DAG task declarations; every task needs an ephemeral goal and condition',
+          items: { type: 'object', properties: {
+            id: { type: 'string' }, dependsOn: { type: 'array', items: { type: 'string' } },
+            mode: { type: 'string', enum: ['read-only', 'code'] },
+            ownedPaths: { type: 'array', items: { type: 'string' } },
+            goal: { type: 'string' }, condition: { type: 'string' },
+          }, required: ['id', 'mode', 'ownedPaths', 'goal', 'condition'], additionalProperties: false },
+        },
+      },
+      execute: parallelTool(async ({ parallel, store }, args, runId) => {
+        if (!Array.isArray(args.subtasks) || !args.subtasks.length) throw new TypeError('subtasks must be a nonempty array');
+        const ephemeral = [];
+        const declarations = args.subtasks.map((task, index) => {
+          if (!task || typeof task !== 'object' || Array.isArray(task)) throw new TypeError(`Subtask ${index} must be an object`);
+          const allowed = ['id', 'dependsOn', 'mode', 'ownedPaths', 'goal', 'condition'];
+          for (const key of Object.keys(task)) if (!allowed.includes(key)) throw new TypeError(`Unknown subtask ${index} field: ${key}`);
+          if (typeof task.goal !== 'string' || !task.goal.trim()
+            || typeof task.condition !== 'string' || !task.condition.trim()) {
+            throw new TypeError(`Subtask ${task.id ?? index} requires nonempty goal and condition`);
+          }
+          ephemeral.push({ id: task.id, goal: task.goal, condition: task.condition });
+          return {
+            id: task.id,
+            dependsOn: task.dependsOn,
+            mode: task.mode,
+            ownedPaths: task.ownedPaths,
+          };
+        });
+        const manifest = parallel.createRunManifest(runId, declarations);
+        // Keep a durable, tiny binding record so deletion of the run manifest
+        // cannot make an already-bound workflow indistinguishable from an
+        // ordinary no-DAG workflow after plugin restart.
+        const createdBinding = recordParallelRunBinding(directory, runId);
+        try {
+          store.createRunManifestExclusive(directory, manifest);
+        } catch (err) {
+          if (createdBinding) {
+            const { manifest: manifestPath, binding: bindingPath } = parallelRunBindingFiles(directory, runId);
+            try {
+              fs.lstatSync(manifestPath);
+            } catch (missing) {
+              if (missing.code === 'ENOENT') {
+                try { fs.rmSync(bindingPath); } catch { /* preserve the create error */ }
+              }
+            }
+          }
+          throw err;
+        }
+        return { ok: true, runId, run: manifest, ready: parallel.readySubtasks(manifest), taskRequirements: ephemeral };
+      }, { create: true }),
+    },
+    parallel_run_get: {
+      description: 'Inspect one persisted DAG manifest and its currently ready deterministic dispatch batch. Primary context only.',
+      args: { runId: { type: 'string' } },
+      execute: parallelTool(async ({ parallel, store }, args) => {
+        const run = store.loadRunManifest(directory, args.runId);
+        if (!run) throw new TypeError(`Parallel run not found: ${args.runId}`);
+        return { ok: true, run, ready: parallel.readySubtasks(run) };
+      }),
+    },
+    parallel_run_lock_inspect: {
+      description: 'Inspect the bounded lock marker for the current workflow-bound parallel run. Inspection never modifies or steals a lock. Primary context only.',
+      args: { runId: { type: 'string' } },
+      execute: parallelTool(async ({ store }, args) => ({
+        ok: true,
+        marker: store.inspectRunManifestLock(directory, args.runId),
+      })),
+    },
+    parallel_run_lock_recover: {
+      description: 'Explicitly recover a stale same-host lock only after primary review and supplying the exact token returned by lock inspection. The store refuses live, changed, or unprovably stale owners. Primary context only.',
+      args: {
+        runId: { type: 'string' },
+        primaryReviewed: { type: 'boolean' },
+        expectedToken: { type: 'string', description: 'exact token from parallel_run_lock_inspect' },
+      },
+      execute: parallelTool(async ({ store }, args) => {
+        if (args.primaryReviewed !== true) {
+          throw new TypeError('Primary review confirmation is required to recover a stale run lock');
+        }
+        if (typeof args.expectedToken !== 'string') {
+          throw new TypeError('Expected lock token from inspection is required for recovery');
+        }
+        return {
+          ok: true,
+          ...store.recoverRunManifestLock(directory, args.runId, {
+            primaryConfirmed: true,
+            expectedToken: args.expectedToken,
+          }),
+        };
+      }),
+    },
+    parallel_task_preflight: {
+      description: 'Verify and persist the exact separate, clean Git worktree for a ready code task. It must share the project Git common directory and start at the project HEAD; a shared checkout is rejected.',
+      args: {
+        runId: { type: 'string' }, taskId: { type: 'string' },
+        worktreePath: { type: 'string', description: 'exact normalized absolute Git worktree top-level' },
+        baseCommit: { type: 'string', description: 'optional expected project HEAD; when supplied it must match exactly' },
+      },
+      execute: parallelTool(async ({ parallel, store }, args) => {
+        const before = store.loadRunManifest(directory, args.runId);
+        if (!before) throw new TypeError(`Parallel run not found: ${args.runId}`);
+        const primary = gitIdentity(directory);
+        if (args.baseCommit != null && args.baseCommit !== primary.head) {
+          throw new TypeError('Requested base commit does not match the primary checkout HEAD');
+        }
+        const identity = verifyCodeWorktree(directory, args.worktreePath, primary.head);
+        const run = store.updateRunManifest(directory, args.runId, (current) => parallel.recordCodeWorktree(
+          current, args.taskId, { baseCommit: identity.baseCommit, worktreePath: identity.topLevel },
+        ));
+        return { ok: true, run, taskId: args.taskId, worktree: identity };
+      }),
+    },
+    parallel_task_start: {
+      description: 'Start a ready DAG task. Read-only tasks may start directly. Code tasks must first pass worktree preflight and are rechecked against their recorded base immediately before start. Returns a dispatch contract for the primary to use with native Task; this tool never spawns a Task.',
+      args: {
+        runId: { type: 'string' }, taskId: { type: 'string' },
+        goal: { type: 'string', description: 'required nonempty task goal; not persisted' },
+        condition: { type: 'string', description: 'required nonempty verifiable condition; not persisted' },
+      },
+      execute: parallelTool(async ({ parallel, store }, args) => {
+        if (typeof args.goal !== 'string' || !args.goal.trim()
+          || typeof args.condition !== 'string' || !args.condition.trim()) {
+          throw new TypeError('Task start requires nonempty goal and condition');
+        }
+        const before = store.loadRunManifest(directory, args.runId);
+        if (!before) throw new TypeError(`Parallel run not found: ${args.runId}`);
+        const task = before.tasks.find((entry) => entry.id === args.taskId);
+        if (!task) throw new TypeError(`Unknown subtask ID: ${args.taskId}`);
+        if (task.mode === 'code' && (!task.baseCommit || !task.worktreePath)) {
+          throw new TypeError(`Code subtask ${task.id} requires worktree preflight before dispatch`);
+        }
+        const worktree = task.mode === 'code'
+          ? verifyCodeWorktree(directory, task.worktreePath, task.baseCommit)
+          : null;
+        const run = store.updateRunManifest(directory, args.runId, (current) => parallel.transitionSubtask(
+          current, args.taskId, 'running',
+        ));
+        return {
+          ok: true,
+          run,
+          dispatchContract: {
+            runId: args.runId,
+            taskId: args.taskId,
+            mode: task.mode,
+            goal: args.goal,
+            condition: args.condition,
+            ownedPaths: task.ownedPaths,
+            ...(worktree ? {
+              worktreePath: worktree.topLevel,
+              baseCommit: worktree.baseCommit,
+              commonDir: worktree.commonDir,
+              beforeEdits: `Before any edits, verify git -C ${shellQuote(worktree.topLevel)} rev-parse --show-toplevel equals ${worktree.topLevel}, git -C ${shellQuote(worktree.topLevel)} rev-parse --path-format=absolute --git-common-dir equals ${worktree.commonDir}, git -C ${shellQuote(worktree.topLevel)} rev-parse HEAD equals ${worktree.baseCommit}, and git -C ${shellQuote(worktree.topLevel)} status --porcelain --untracked-files=all is empty. Stop without editing if any check differs.`,
+            } : {
+              beforeEdits: 'This task is read-only. Do not edit files.',
+            }),
+          },
+        };
+      }),
+    },
+    parallel_task_outcome: {
+      description: 'Record a worker outcome using bounded evidence IDs only. Code success becomes integration-pending, never integrated; only primary review can integrate it.',
+      args: {
+        runId: { type: 'string' }, taskId: { type: 'string' },
+        outcome: { type: 'string', enum: ['completed', 'integration-pending', 'failed', 'cancel-requested'] },
+        evidence: { type: 'array', items: { type: 'string' } },
+      },
+      execute: parallelTool(async ({ parallel, store }, args) => {
+        const run = store.updateRunManifest(directory, args.runId, (current) => parallel.transitionSubtask(
+          current, args.taskId, args.outcome, { evidence: args.evidence },
+        ));
+        return { ok: true, run, ready: parallel.readySubtasks(run) };
+      }),
+    },
+    parallel_task_integrate: {
+      description: 'Primary-owned integration gate for code tasks. Requires an explicit primaryReviewed=true confirmation after reviewing the isolated worktree.',
+      args: {
+        runId: { type: 'string' }, taskId: { type: 'string' }, primaryReviewed: { type: 'boolean' },
+        evidence: { type: 'array', items: { type: 'string' } },
+      },
+      execute: parallelTool(async ({ parallel, store }, args) => {
+        if (args.primaryReviewed !== true) throw new TypeError('Primary review confirmation is required to integrate code');
+        const run = store.updateRunManifest(directory, args.runId, (current) => parallel.integrateCodeSubtask(
+          current, args.taskId, { primaryReviewed: true, evidence: args.evidence },
+        ));
+        return { ok: true, run, ready: parallel.readySubtasks(run) };
+      }),
+    },
+    parallel_run_cancel: {
+      description: 'Request cancellation of a run. No host cancellation handle is available here: running tasks remain cancel-requested and reserve capacity until host termination is confirmed or a primary reconciles the outcome.',
+      args: { runId: { type: 'string' } },
+      execute: parallelTool(async ({ parallel, store }, args) => {
+        const run = store.updateRunManifest(directory, args.runId, (current) => parallel.cancelRun(current));
+        return { ok: true, run, ready: parallel.readySubtasks(run) };
+      }),
+    },
+    parallel_task_confirm_termination: {
+      description: 'Release a cancel-requested task only after explicit host-confirmed termination. This plugin has no host cancellation handle and cannot itself assert termination.',
+      args: { runId: { type: 'string' }, taskId: { type: 'string' }, hostConfirmed: { type: 'boolean' } },
+      execute: parallelTool(async ({ parallel, store }, args) => {
+        if (args.hostConfirmed !== true) throw new TypeError('Host termination confirmation is required');
+        const run = store.updateRunManifest(directory, args.runId, (current) => parallel.confirmTaskTermination(
+          current, args.taskId, { hostConfirmed: true },
+        ));
+        return { ok: true, run, ready: parallel.readySubtasks(run) };
+      }),
+    },
+    parallel_run_reconcile: {
+      description: 'After restart, mark persisted running tasks needs-reconciliation. This does not claim worker termination; those tasks continue reserving parallel capacity until individually reconciled.',
+      args: { runId: { type: 'string' }, primaryReviewed: { type: 'boolean' } },
+      execute: parallelTool(async ({ parallel, store }, args) => {
+        if (args.primaryReviewed !== true) throw new TypeError('Primary confirmation is required to reconcile a run after restart');
+        const run = store.updateRunManifest(directory, args.runId, (current) => current.tasks
+          .filter((task) => task.status === 'running')
+          .reduce((next, task) => parallel.markNeedsReconciliation(next, task.id, {
+            now: Math.max(Date.now(), next.updatedAt),
+          }), current));
+        return { ok: true, run, ready: parallel.readySubtasks(run) };
+      }),
+    },
+    parallel_task_reconcile: {
+      description: 'Resolve a cancel-requested or needs-reconciliation task after primary review of its actual outcome. This records a reviewed outcome, not host cancellation.',
+      args: {
+        runId: { type: 'string' }, taskId: { type: 'string' }, primaryReviewed: { type: 'boolean' },
+        outcome: { type: 'string', enum: ['completed', 'integration-pending', 'failed', 'cancelled'] },
+        evidence: { type: 'array', items: { type: 'string' } },
+      },
+      execute: parallelTool(async ({ parallel, store }, args) => {
+        if (args.primaryReviewed !== true) throw new TypeError('Primary reconciliation confirmation is required');
+        const run = store.updateRunManifest(directory, args.runId, (current) => parallel.reconcileSubtask(
+          current, args.taskId, {
+            primaryReviewed: true, outcome: args.outcome, evidence: args.evidence,
+          },
+        ));
+        return { ok: true, run, ready: parallel.readySubtasks(run) };
+      }),
+    },
+    parallel_task_retry: {
+      description: 'Retry only a confirmed failed task after explicit primary review. Code tasks must pass a fresh worktree preflight before their next start.',
+      args: { runId: { type: 'string' }, taskId: { type: 'string' }, primaryReviewed: { type: 'boolean' } },
+      execute: parallelTool(async ({ parallel, store }, args) => {
+        if (args.primaryReviewed !== true) throw new TypeError('Primary review confirmation is required to retry a failed task');
+        const run = store.updateRunManifest(directory, args.runId, (current) => parallel.retrySubtask(
+          current, args.taskId, { primaryReviewed: true },
+        ));
+        return { ok: true, run, ready: parallel.readySubtasks(run) };
+      }),
+    },
+  };
+
   return {
     config: async (cfg) => {
       try {
@@ -631,7 +1111,7 @@ export const GuaranaOrchestrator = async ({ directory, client, session, sdkVersi
         if (cfg.default_agent == null || cfg.default_agent === '' || cfg.default_agent === 'build') cfg.default_agent = 'guarana';
       } catch { /* Runtime configuration must remain non-fatal. */ }
     },
-    tool: workflowTools,
+    tool: { ...workflowTools, ...parallelTools },
 
     // Session lifecycle arrives through OpenCode's generic event hook.
     event: async ({ event } = {}) => {

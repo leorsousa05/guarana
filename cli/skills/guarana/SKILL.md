@@ -17,6 +17,7 @@ remain an escape hatch.
 | guarana:build | Run lifecycle Frame/Run/Verify/Record, triggers, budgets, stop reasons | Starting or executing a run; run budgets; stop conditions | [skills/build/SKILL.md](skills/build/SKILL.md) |
 | guarana:code | Implementation: read-before-edit, minimal diff, diff + stop reason | Implementing, editing, writing code | [skills/code/SKILL.md](skills/code/SKILL.md) |
 | guarana:verify | Termination gate: 3 guards, pass/fail + proof, split enforcement | Checking work, acceptance, "is it done" | [skills/verify/SKILL.md](skills/verify/SKILL.md) |
+| guarana:research | Bounded, source-backed investigation without repository changes | Investigating, tracing, or comparing evidence read-only | [skills/research/SKILL.md](skills/research/SKILL.md) |
 | guarana:remember | Restore and record project workflow state and checkpoints | Resuming project work; restoring state after context loss; recording workflow progress | [skills/remember/SKILL.md](skills/remember/SKILL.md) |
 | guarana:memory | Search, review, and save durable knowledge in the memory graph | Searching/reviewing decisions, bugs, or solutions; saving durable project knowledge or standing preferences | [skills/memory/SKILL.md](skills/memory/SKILL.md) |
 | guarana:debug | OPTIONAL — failure-mode matrix + defusals | ONLY when a test fails or a run misbehaves | [skills/debug/SKILL.md](skills/debug/SKILL.md) |

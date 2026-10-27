@@ -6,10 +6,11 @@ module.exports = {
   VERSION: PKG.version,
   STAMP: '.guarana-version',
   SOURCE: path.join(__dirname, 'skills', 'guarana'),
-  SKILLS: ['plan', 'build', 'code', 'verify', 'remember', 'memory', 'debug', 'measure'],
+  SKILLS: ['plan', 'build', 'code', 'verify', 'research', 'remember', 'memory', 'debug', 'measure'],
   WORKER_AGENTS: [
     { name: 'worker-code', skill: 'code', description: 'Implements one Guarana condition and returns a diff plus stop reason.' },
     { name: 'worker-verify', skill: 'verify', description: 'Independently verifies a Guarana condition and returns criterion-level proof.' },
+    { name: 'worker-research', skill: 'research', budget: 4000, description: 'Performs bounded read-only research within a 4k-token dispatch budget and returns cited findings.' },
     { name: 'worker-debug', skill: 'debug', description: 'Diagnoses a confirmed Guarana failure and records its mitigation.' },
     { name: 'worker-specs', skill: 'specs', description: 'Updates human-readable .specs records from factual handoffs and returns changed paths plus validation.' },
   ],

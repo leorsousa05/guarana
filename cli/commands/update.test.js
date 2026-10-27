@@ -42,14 +42,14 @@ it('prints a structured project update summary and refreshes the complete runtim
     assert.match(summary, /Update complete/);
     assert.ok(summary.includes(`0.9.0 → ${VERSION}`));
     assert.match(summary, /Target\s+Project · /);
-    assert.match(summary, /8 skills · 3 plugins · 3 engines · 4 worker profiles/);
+    assert.match(summary, /9 skills · 3 plugins · 3 engines · 5 worker profiles/);
     assert.match(summary, /Restart OpenCode/);
     assert.doesNotMatch(summary, /\u001b\[/);
 
     for (const name of [PLUGIN_NAME, MEMORY_PLUGIN_NAME, ORCHESTRATOR_PLUGIN_NAME]) {
       assert.ok(fs.existsSync(path.join(project, '.opencode', 'plugins', name)));
     }
-    for (const name of ['worker-code', 'worker-verify', 'worker-debug', 'worker-specs']) {
+    for (const name of ['worker-code', 'worker-verify', 'worker-research', 'worker-debug', 'worker-specs']) {
       assert.ok(fs.existsSync(path.join(project, '.opencode', 'agents', `${name}.md`)));
     }
     assert.equal(fs.readFileSync(stamp, 'utf8').trim(), VERSION);
@@ -107,11 +107,11 @@ it('updates the global skill and runtime targets under an isolated home director
     const agents = path.join(home, '.config', 'opencode', 'agents');
     assert.ok(fs.existsSync(path.join(skills, 'SKILL.md')));
     assert.match(output.output().stdout, /Target\s+Global · /);
-    assert.match(output.output().stdout, /4 worker profiles/);
+    assert.match(output.output().stdout, /5 worker profiles/);
     for (const name of [PLUGIN_NAME, MEMORY_PLUGIN_NAME, ORCHESTRATOR_PLUGIN_NAME]) {
       assert.ok(fs.existsSync(path.join(plugins, name)));
     }
-    for (const name of ['worker-code', 'worker-verify', 'worker-debug', 'worker-specs']) {
+    for (const name of ['worker-code', 'worker-verify', 'worker-research', 'worker-debug', 'worker-specs']) {
       assert.ok(fs.existsSync(path.join(agents, `${name}.md`)));
     }
   } finally {

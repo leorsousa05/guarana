@@ -5,7 +5,12 @@ import { GuaranaOrchestrator as BundledOrchestrator } from '../cli/plugin/guaran
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { apply, createWorkflow, load, save, workflowFile } from '../orchestrator/state.js';
+import {
+  createRunManifest as makeRunManifest, integrateCodeSubtask, recordCodeWorktree, transitionSubtask,
+} from '../orchestrator/parallel.js';
+import { runManifestFile, saveRunManifest } from '../orchestrator/parallel-store.js';
 import { createNode, createEdge, listNodes } from '../memory/graph.js';
 import { initUserVault, initVault, paths } from '../memory/vault.js';
 import { GuaranaMemory } from './guarana-memory.js';
@@ -103,6 +108,45 @@ describe('GuaranaOrchestrator', () => {
       : path.join(process.env.XDG_CONFIG_HOME, 'opencode', 'agents', 'guarana.md');
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, '<!-- guarana-managed-advisor-artifact -->');
+  }
+
+  function gitAt(directory, ...args) {
+    return execFileSync('git', ['-C', directory, ...args], { encoding: 'utf8' }).trim();
+  }
+
+  function initGitRepo(directory) {
+    fs.mkdirSync(directory, { recursive: true });
+    gitAt(directory, 'init', '-q');
+    gitAt(directory, 'config', 'user.email', 'parallel-tests@example.invalid');
+    gitAt(directory, 'config', 'user.name', 'Parallel Test');
+    fs.writeFileSync(path.join(directory, 'README.md'), 'fixture\n');
+    gitAt(directory, 'add', 'README.md');
+    gitAt(directory, 'commit', '-q', '-m', 'fixture base');
+    return gitAt(directory, 'rev-parse', 'HEAD');
+  }
+
+  function addGitWorktree(repository, directory) {
+    fs.mkdirSync(path.dirname(directory), { recursive: true });
+    gitAt(repository, 'worktree', 'add', '-q', '--detach', directory, 'HEAD');
+  }
+
+  function setCodingWorkflow(directory, timestamp = 1700000000000) {
+    let current = createWorkflow();
+    for (const [index, event] of ['new_task', 'plan_complete', 'run_start'].entries()) {
+      current = apply(current, event, {
+        goal: 'Parallel lifecycle workflow',
+        condition: 'Parallel lifecycle condition',
+        activeTask: 'Parallel lifecycle workflow',
+        ts: timestamp - 2 + index,
+      });
+      assert.ok(current, `${event} transition should be legal`);
+    }
+    assert.ok(save(directory, current));
+    return { workflow: current, runId: `workflow-${timestamp}` };
+  }
+
+  async function parallelCall(hooks, name, args, context = primaryContext()) {
+    return JSON.parse(await hooks.tool[name].execute(args, context));
   }
 
   it('canonical and bundled plugins leave conflicting session model/variant selections untouched', async () => {
@@ -1382,6 +1426,837 @@ describe('GuaranaOrchestrator', () => {
     assert.equal(resumed.state, 'planning');
     assert.equal(resumed.history.filter((entry) => entry.event === 'new_task').length, 1);
     assert.equal(resumed.goal, 'Implement a project-shared workflow');
+  });
+
+  it('primary parallel tools create and inspect a deterministic DAG without persisting task instructions or changing workflow v1', async () => {
+    const repository = path.join(tmpDir, 'parallel-primary-repo');
+    initGitRepo(repository);
+    const hooks = await GuaranaOrchestrator({ directory: repository });
+    const { runId } = setCodingWorkflow(repository);
+    const workflowPath = workflowFile(repository);
+    const workflowBefore = fs.readFileSync(workflowPath);
+    const secretGoal = 'EPHEMERAL_TASK_GOAL_SECRET';
+    const secretCondition = 'EPHEMERAL_TASK_CONDITION_SECRET';
+    const created = await parallelCall(hooks, 'parallel_run_create', {
+      subtasks: [
+        { id: 'audit', mode: 'read-only', ownedPaths: [], goal: secretGoal, condition: secretCondition },
+        { id: 'code-a', mode: 'code', ownedPaths: ['src/a.js'], goal: 'Implement A', condition: 'A is implemented' },
+        { id: 'code-b', mode: 'code', ownedPaths: ['src/b.js'], goal: 'Implement B', condition: 'B is implemented' },
+        { id: 'after-a', mode: 'code', ownedPaths: ['src/c.js'], dependsOn: ['code-a'], goal: 'Implement C', condition: 'C follows A' },
+      ],
+    });
+    assert.equal(created.ok, true);
+    assert.equal(created.runId, runId);
+    assert.deepEqual(created.ready, ['audit', 'code-a']);
+    assert.deepEqual(created.taskRequirements[0], { id: 'audit', goal: secretGoal, condition: secretCondition });
+    assert.equal(hooks.tool.parallel_run_create.description.includes('does not spawn Tasks'), true);
+
+    const sidecar = path.join(repository, '.specs', 'state', 'parallel-runs', `${runId}.json`);
+    let rawManifest = fs.readFileSync(sidecar, 'utf8');
+    assert.equal(rawManifest.includes(secretGoal), false);
+    assert.equal(rawManifest.includes(secretCondition), false);
+    const originalManifest = fs.readFileSync(sidecar);
+    const duplicate = await parallelCall(hooks, 'parallel_run_create', {
+      subtasks: [{ id: 'different', mode: 'read-only', ownedPaths: [], goal: 'No overwrite', condition: 'Still absent' }],
+    });
+    assert.equal(duplicate.ok, false);
+    assert.match(duplicate.error, /already exists/i);
+    assert.deepEqual(fs.readFileSync(sidecar), originalManifest, 'duplicate create cannot replace the existing manifest');
+    const inspected = await parallelCall(hooks, 'parallel_run_get', { runId });
+    assert.equal(inspected.ok, true);
+    assert.deepEqual(inspected.ready, ['audit', 'code-a']);
+    assert.equal(inspected.run.status, 'pending');
+
+    const missingInstructions = await parallelCall(hooks, 'parallel_task_start', {
+      runId, taskId: 'audit', goal: ' ', condition: 'condition',
+    });
+    assert.equal(missingInstructions.ok, false);
+    const unpreparedCode = await parallelCall(hooks, 'parallel_task_start', {
+      runId, taskId: 'code-a', goal: 'Implement A', condition: 'A is implemented',
+    });
+    assert.equal(unpreparedCode.ok, false);
+    assert.match(unpreparedCode.error, /worktree preflight/i);
+
+    const sharedCheckout = await parallelCall(hooks, 'parallel_task_preflight', {
+      runId, taskId: 'code-a', worktreePath: repository,
+    });
+    assert.equal(sharedCheckout.ok, false);
+    assert.match(sharedCheckout.error, /separate from the primary checkout/i);
+
+    const codeWorktree = path.join(tmpDir, 'parallel-worktrees', 'code-a');
+    addGitWorktree(repository, codeWorktree);
+    fs.mkdirSync(path.join(codeWorktree, 'nested'), { recursive: true });
+    const nonTopLevel = await parallelCall(hooks, 'parallel_task_preflight', {
+      runId, taskId: 'code-a', worktreePath: path.join(codeWorktree, 'nested'),
+    });
+    assert.equal(nonTopLevel.ok, false);
+    assert.match(nonTopLevel.error, /exact Git top-level/i);
+    const foreignRepository = path.join(tmpDir, 'parallel-foreign-repo');
+    initGitRepo(foreignRepository);
+    const wrongCommonDir = await parallelCall(hooks, 'parallel_task_preflight', {
+      runId, taskId: 'code-a', worktreePath: foreignRepository,
+    });
+    assert.equal(wrongCommonDir.ok, false);
+    assert.match(wrongCommonDir.error, /Git common directory/i);
+    fs.writeFileSync(path.join(codeWorktree, 'DIRTY_SENTINEL'), 'dirty');
+    const dirty = await parallelCall(hooks, 'parallel_task_preflight', {
+      runId, taskId: 'code-a', worktreePath: codeWorktree,
+    });
+    assert.equal(dirty.ok, false);
+    assert.match(dirty.error, /must be clean/i);
+    fs.rmSync(path.join(codeWorktree, 'DIRTY_SENTINEL'));
+    const wrongBase = await parallelCall(hooks, 'parallel_task_preflight', {
+      runId, taskId: 'code-a', worktreePath: codeWorktree, baseCommit: '0'.repeat(40),
+    });
+    assert.equal(wrongBase.ok, false);
+    assert.match(wrongBase.error, /does not match the primary checkout HEAD/i);
+
+    const preflight = await parallelCall(hooks, 'parallel_task_preflight', {
+      runId, taskId: 'code-a', worktreePath: codeWorktree,
+    });
+    assert.equal(preflight.ok, true);
+    assert.equal(preflight.run.tasks.find((task) => task.id === 'code-a').worktreePath, codeWorktree);
+    assert.equal(preflight.run.tasks.find((task) => task.id === 'code-a').baseCommit, gitAt(repository, 'rev-parse', 'HEAD'));
+
+    const preflightBase = gitAt(codeWorktree, 'rev-parse', 'HEAD');
+    fs.writeFileSync(path.join(codeWorktree, 'README.md'), 'changed after preflight\n');
+    gitAt(codeWorktree, 'add', 'README.md');
+    gitAt(codeWorktree, 'commit', '-q', '-m', 'unexpected post-preflight commit');
+    const changedBase = await parallelCall(hooks, 'parallel_task_start', {
+      runId, taskId: 'code-a', goal: 'Implement A', condition: 'A is implemented',
+    });
+    assert.equal(changedBase.ok, false);
+    assert.match(changedBase.error, /recorded base commit/i);
+    gitAt(codeWorktree, 'reset', '--hard', preflightBase);
+
+    const auditStart = await parallelCall(hooks, 'parallel_task_start', {
+      runId, taskId: 'audit', goal: 'Read the module', condition: 'Return findings only',
+    });
+    assert.equal(auditStart.ok, true, 'read-only work starts without a worktree');
+    assert.equal(auditStart.dispatchContract.mode, 'read-only');
+    assert.match(auditStart.dispatchContract.beforeEdits, /read-only/i);
+    const codeStart = await parallelCall(hooks, 'parallel_task_start', {
+      runId, taskId: 'code-a', goal: 'Implement A', condition: 'A is implemented',
+    });
+    assert.equal(codeStart.ok, true);
+    assert.equal(codeStart.dispatchContract.worktreePath, codeWorktree);
+    const expectedCommonDir = gitAt(repository, 'rev-parse', '--path-format=absolute', '--git-common-dir');
+    assert.equal(codeStart.dispatchContract.commonDir, expectedCommonDir);
+    assert.ok(codeStart.dispatchContract.beforeEdits.includes(
+      `git -C '${codeWorktree}' rev-parse --path-format=absolute --git-common-dir equals ${expectedCommonDir}`,
+    ));
+    assert.match(codeStart.dispatchContract.beforeEdits, /Before any edits/);
+    assert.match(codeStart.dispatchContract.beforeEdits, new RegExp(codeStart.dispatchContract.baseCommit));
+    assert.match(codeStart.dispatchContract.beforeEdits, /stop without editing/i);
+
+    const beforeRejectedOutput = fs.readFileSync(sidecar);
+    const rejectedOutput = await parallelCall(hooks, 'parallel_task_outcome', {
+      runId, taskId: 'audit', outcome: 'completed',
+      workerOutput: 'RAW_WORKER_OUTPUT_SECRET',
+    });
+    assert.equal(rejectedOutput.ok, false);
+    assert.match(rejectedOutput.error, /Unknown parallel tool argument/i);
+    assert.deepEqual(fs.readFileSync(sidecar), beforeRejectedOutput);
+
+    const auditDone = await parallelCall(hooks, 'parallel_task_outcome', {
+      runId, taskId: 'audit', outcome: 'completed', evidence: ['audit-note'],
+    });
+    assert.equal(auditDone.ok, true);
+    const codeDone = await parallelCall(hooks, 'parallel_task_outcome', {
+      runId, taskId: 'code-a', outcome: 'integration-pending', evidence: ['review-note'],
+    });
+    assert.equal(codeDone.ok, true);
+    const unreviewedIntegration = await parallelCall(hooks, 'parallel_task_integrate', {
+      runId, taskId: 'code-a', primaryReviewed: false,
+    });
+    assert.equal(unreviewedIntegration.ok, false);
+    const integrated = await parallelCall(hooks, 'parallel_task_integrate', {
+      runId, taskId: 'code-a', primaryReviewed: true,
+    });
+    assert.equal(integrated.ok, true);
+    assert.equal(integrated.run.tasks.find((task) => task.id === 'code-a').status, 'integrated');
+    assert.deepEqual(integrated.ready, ['after-a', 'code-b']);
+
+    rawManifest = fs.readFileSync(sidecar, 'utf8');
+    for (const secret of [secretGoal, secretCondition, 'RAW_WORKER_OUTPUT_SECRET']) assert.equal(rawManifest.includes(secret), false);
+    assert.deepEqual(fs.readFileSync(workflowPath), workflowBefore, 'sidecar operations leave workflow.json v1 byte-for-byte unchanged');
+  });
+
+  it('surfaces a real serial integration conflict and keeps its DAG blocked', async () => {
+    const repository = path.join(tmpDir, 'parallel-conflict-repo');
+    initGitRepo(repository);
+    const conflictPath = 'src/conflict.txt';
+    fs.mkdirSync(path.dirname(path.join(repository, conflictPath)), { recursive: true });
+    fs.writeFileSync(path.join(repository, conflictPath), 'before\nbase\nafter\n');
+    gitAt(repository, 'add', conflictPath);
+    gitAt(repository, 'commit', '-q', '-m', 'add shared conflict fixture');
+
+    const codeWorktree = path.join(tmpDir, 'parallel-conflict-worktree');
+    addGitWorktree(repository, codeWorktree);
+    const hooks = await GuaranaOrchestrator({ directory: repository });
+    const { runId } = setCodingWorkflow(repository, 1700000000360);
+    const created = await parallelCall(hooks, 'parallel_run_create', {
+      subtasks: [
+        { id: 'code', mode: 'code', ownedPaths: [conflictPath], goal: 'Edit shared file', condition: 'The edit is integrated' },
+        { id: 'dependent', mode: 'read-only', ownedPaths: [], dependsOn: ['code'], goal: 'Inspect integration', condition: 'Report the result' },
+      ],
+    });
+    assert.deepEqual(created.ready, ['code']);
+    const preflight = await parallelCall(hooks, 'parallel_task_preflight', {
+      runId, taskId: 'code', worktreePath: codeWorktree,
+    });
+    assert.equal(preflight.ok, true);
+    assert.equal((await parallelCall(hooks, 'parallel_task_start', {
+      runId, taskId: 'code', goal: 'Edit shared file', condition: 'The edit is integrated',
+    })).ok, true);
+
+    // The worker diff is deliberately left uncommitted, as it is on worker return.
+    fs.writeFileSync(path.join(codeWorktree, conflictPath), 'before\nworker edit\nafter\n');
+    const patch = execFileSync('git', ['-C', codeWorktree, 'diff', '--binary', 'HEAD', '--', conflictPath], {
+      encoding: 'utf8',
+    });
+    assert.match(patch, /worker edit/);
+
+    // The primary advanced the same file after the code worktree's recorded base.
+    fs.writeFileSync(path.join(repository, conflictPath), 'before\nprimary edit\nafter\n');
+    gitAt(repository, 'add', conflictPath);
+    gitAt(repository, 'commit', '-q', '-m', 'primary edits same line');
+
+    const apply = spawnSync('git', ['-C', repository, 'apply', '--3way', '--index', '-'], {
+      encoding: 'utf8', input: patch,
+    });
+    const applyOutput = `${apply.stdout ?? ''}${apply.stderr ?? ''}`;
+    const unmergedPaths = [...new Set(gitAt(repository, 'ls-files', '-u').split('\n').filter(Boolean)
+      .map((entry) => entry.slice(entry.indexOf('\t') + 1)))];
+    assert.notEqual(apply.status, 0, `3-way apply unexpectedly succeeded: ${applyOutput}`);
+    assert.match(applyOutput, new RegExp(conflictPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.match(applyOutput, /conflict/i);
+    assert.deepEqual(unmergedPaths, [conflictPath], 'surface the exact unresolved path');
+
+    assert.equal((await parallelCall(hooks, 'parallel_task_outcome', {
+      runId, taskId: 'code', outcome: 'integration-pending', evidence: ['worker-diff-reviewed'],
+    })).ok, true);
+    const refusedIntegration = await parallelCall(hooks, 'parallel_task_integrate', {
+      runId, taskId: 'code', primaryReviewed: false,
+    });
+    assert.equal(refusedIntegration.ok, false);
+    assert.match(refusedIntegration.error, /primary review confirmation/i);
+
+    const inspection = await parallelCall(hooks, 'parallel_run_get', { runId });
+    assert.equal(inspection.run.tasks.find((task) => task.id === 'code').status, 'integration-pending');
+    assert.deepEqual(inspection.ready, [], 'the dependent remains blocked by unresolved integration');
+    const completion = await parallelCall(hooks, 'workflow_tick', { action: 'code_complete' });
+    assert.equal(completion.ok, false);
+    assert.equal(completion.runStatus, 'integration-pending');
+    assert.equal(load(repository).state, 'coding');
+  });
+
+  it('exposes primary-only explicit stale-lock inspection and recovery with inspected-token and dead-owner proof', async () => {
+    const directory = path.join(tmpDir, 'parallel-lock-tools-repo');
+    fs.mkdirSync(directory, { recursive: true });
+    const { runId } = setCodingWorkflow(directory, 1700000000350);
+    const hooks = await GuaranaOrchestrator({ directory });
+    const created = await parallelCall(hooks, 'parallel_run_create', {
+      subtasks: [{ id: 'read', mode: 'read-only', ownedPaths: [], goal: 'Read', condition: 'Report' }],
+    });
+    assert.equal(created.ok, true);
+
+    const manifestFile = runManifestFile(directory, runId);
+    const lockFile = `${manifestFile}.lock`;
+    const emptyInspection = await parallelCall(hooks, 'parallel_run_lock_inspect', { runId });
+    assert.deepEqual(emptyInspection, { ok: true, marker: null });
+    const wrongRun = await parallelCall(hooks, 'parallel_run_lock_inspect', { runId: 'workflow-1699999999999' });
+    assert.equal(wrongRun.ok, false);
+    assert.match(wrongRun.error, /not bound to the current workflow/i);
+
+    const liveMarker = {
+      version: 1, token: 'a'.repeat(32), pid: process.pid, host: os.hostname(), createdAt: 1700000000351,
+    };
+    fs.mkdirSync(path.dirname(lockFile), { recursive: true });
+    fs.writeFileSync(lockFile, `${JSON.stringify(liveMarker)}\n`, { mode: 0o600 });
+    const inspected = await parallelCall(hooks, 'parallel_run_lock_inspect', { runId });
+    assert.equal(inspected.ok, true);
+    assert.deepEqual(inspected.marker, liveMarker);
+    assert.deepEqual(Object.keys(inspected.marker).sort(), ['createdAt', 'host', 'pid', 'token', 'version']);
+
+    for (const [tool, args] of [
+      ['parallel_run_lock_inspect', { runId }],
+      ['parallel_run_lock_recover', { runId, primaryReviewed: true, expectedToken: liveMarker.token }],
+    ]) {
+      const worker = await parallelCall(hooks, tool, args, { sessionID: 'worker-lock-tools', agent: 'worker-code' });
+      assert.equal(worker.ok, false);
+      assert.match(worker.error, /Task workers cannot inspect or mutate/i);
+      assert.equal(fs.existsSync(lockFile), true);
+    }
+
+    const missingReview = await parallelCall(hooks, 'parallel_run_lock_recover', {
+      runId, expectedToken: liveMarker.token,
+    });
+    assert.equal(missingReview.ok, false);
+    assert.match(missingReview.error, /primary review confirmation/i);
+    const falseReview = await parallelCall(hooks, 'parallel_run_lock_recover', {
+      runId, primaryReviewed: false, expectedToken: liveMarker.token,
+    });
+    assert.equal(falseReview.ok, false);
+    assert.match(falseReview.error, /primary review confirmation/i);
+    const missingToken = await parallelCall(hooks, 'parallel_run_lock_recover', {
+      runId, primaryReviewed: true,
+    });
+    assert.equal(missingToken.ok, false);
+    assert.match(missingToken.error, /expected lock token/i);
+    const tokenMismatch = await parallelCall(hooks, 'parallel_run_lock_recover', {
+      runId, primaryReviewed: true, expectedToken: 'b'.repeat(32),
+    });
+    assert.equal(tokenMismatch.ok, false);
+    assert.match(tokenMismatch.error, /changed since it was inspected/i);
+    const liveOwner = await parallelCall(hooks, 'parallel_run_lock_recover', {
+      runId, primaryReviewed: true, expectedToken: inspected.marker.token,
+    });
+    assert.equal(liveOwner.ok, false);
+    assert.match(liveOwner.error, /owner is still alive/i);
+    assert.equal(fs.existsSync(lockFile), true, 'live owner refusal leaves the lock intact');
+
+    const deadPid = 2147483647;
+    const staleMarker = {
+      ...liveMarker, token: 'c'.repeat(32), pid: deadPid, createdAt: 1700000000352,
+    };
+    fs.writeFileSync(lockFile, `${JSON.stringify(staleMarker)}\n`, { mode: 0o600 });
+    const staleInspection = await parallelCall(hooks, 'parallel_run_lock_inspect', { runId });
+    assert.deepEqual(staleInspection.marker, staleMarker);
+
+    const originalKill = process.kill;
+    let provenDeadPid;
+    let recovered;
+    process.kill = function killWithDeadFixture(pid, signal) {
+      if (pid === deadPid && signal === 0) {
+        provenDeadPid = pid;
+        const error = new Error('fixture process is terminated');
+        error.code = 'ESRCH';
+        throw error;
+      }
+      return originalKill.call(process, pid, signal);
+    };
+    try {
+      recovered = await parallelCall(hooks, 'parallel_run_lock_recover', {
+        runId, primaryReviewed: true, expectedToken: staleInspection.marker.token,
+      });
+    } finally {
+      process.kill = originalKill;
+    }
+    assert.equal(provenDeadPid, deadPid, 'recovery proceeded only after the dead-owner probe');
+    assert.equal(recovered.ok, true);
+    assert.equal(recovered.recovered, true);
+    assert.equal(recovered.runId, runId);
+    assert.equal(recovered.token, staleInspection.marker.token);
+    assert.equal(fs.existsSync(lockFile), false);
+
+    const operationAfterRecovery = await parallelCall(hooks, 'parallel_task_start', {
+      runId, taskId: 'read', goal: 'Read the code', condition: 'Return findings',
+    });
+    assert.equal(operationAfterRecovery.ok, true);
+    assert.equal(operationAfterRecovery.run.tasks[0].status, 'running');
+  });
+
+  it('binds exactly one DAG to the current run_start workflow and rejects historical or caller-chosen run IDs', async () => {
+    const repository = path.join(tmpDir, 'parallel-binding-repo');
+    fs.mkdirSync(repository, { recursive: true });
+    const hooks = await GuaranaOrchestrator({ directory: repository });
+    const planning = apply(createWorkflow(), 'new_task', { goal: 'Not coding yet', ts: 1699999999990 });
+    assert.ok(save(repository, planning));
+    const outsideCoding = await parallelCall(hooks, 'parallel_run_create', {
+      subtasks: [{ id: 'read', mode: 'read-only', ownedPaths: [], goal: 'Read', condition: 'Report' }],
+    });
+    assert.equal(outsideCoding.ok, false);
+    assert.match(outsideCoding.error, /coding workflow whose latest event is run_start/i);
+
+    setCodingWorkflow(repository, 1700000000400);
+    let notAtRunStart = apply(load(repository), 'code_complete', { ts: 1700000000410 });
+    notAtRunStart = apply(notAtRunStart, 'verify_fail', { ts: 1700000000420 });
+    notAtRunStart = apply(notAtRunStart, 'fix_start', { ts: 1700000000430 });
+    assert.ok(save(repository, notAtRunStart));
+    const lateCreate = await parallelCall(hooks, 'parallel_run_create', {
+      subtasks: [{ id: 'read', mode: 'read-only', ownedPaths: [], goal: 'Read', condition: 'Report' }],
+    });
+    assert.equal(lateCreate.ok, false);
+    assert.match(lateCreate.error, /latest event is run_start/i);
+
+    const { runId } = setCodingWorkflow(repository, 1700000000450);
+    const arbitrary = await parallelCall(hooks, 'parallel_run_create', {
+      runId: 'invented-second-run',
+      subtasks: [{ id: 'read', mode: 'read-only', ownedPaths: [], goal: 'Read', condition: 'Report' }],
+    });
+    assert.equal(arbitrary.ok, false);
+    assert.match(arbitrary.error, /cannot be supplied/i);
+    assert.equal(fs.existsSync(path.join(repository, '.specs', 'state', 'parallel-runs', 'invented-second-run.json')), false);
+
+    const created = await parallelCall(hooks, 'parallel_run_create', {
+      subtasks: [{ id: 'read', mode: 'read-only', ownedPaths: [], goal: 'Read', condition: 'Report' }],
+    });
+    assert.equal(created.ok, true);
+    assert.equal(created.runId, runId);
+    assert.equal(Object.hasOwn(created.run, 'taskRequirements'), false);
+
+    const historicalId = 'workflow-1699999999999';
+    saveRunManifest(repository, makeRunManifest(historicalId, [
+      { id: 'old', mode: 'read-only', ownedPaths: [] },
+    ], { now: 1 }));
+    for (const [tool, args] of [
+      ['parallel_run_get', { runId: historicalId }],
+      ['parallel_run_cancel', { runId: historicalId }],
+      ['parallel_task_retry', { runId: historicalId, taskId: 'old', primaryReviewed: true }],
+    ]) {
+      const rejected = await parallelCall(hooks, tool, args);
+      assert.equal(rejected.ok, false, `${tool} must reject a historical run`);
+      assert.match(rejected.error, /not bound to the current workflow/i);
+    }
+    assert.equal((await parallelCall(hooks, 'parallel_run_get', { runId })).ok, true);
+
+    const oldWorkflowBytes = fs.readFileSync(workflowFile(repository));
+    const nextWorkflow = apply(load(repository), 'new_task', { goal: 'A new primary workflow', ts: 1700000000500 });
+    assert.ok(save(repository, nextWorkflow));
+    const staleAccess = await parallelCall(hooks, 'parallel_run_get', { runId });
+    assert.equal(staleAccess.ok, false);
+    assert.match(staleAccess.error, /no active workflow run bound/i);
+    assert.notDeepEqual(fs.readFileSync(workflowFile(repository)), oldWorkflowBytes);
+  });
+
+  it('blocks workflow code_complete for active, integration-pending, or failed DAGs, but allows completed and non-DAG workflows', async () => {
+    const blockedCases = [
+      {
+        name: 'active',
+        manifest: (runId, timestamp) => transitionSubtask(
+          makeRunManifest(runId, [{ id: 'read', mode: 'read-only', ownedPaths: [] }], { now: timestamp }),
+          'read', 'running', { now: timestamp + 1 },
+        ),
+        expectedStatus: 'running',
+      },
+      {
+        name: 'integration-pending',
+        manifest: (runId, timestamp) => {
+          let current = makeRunManifest(runId, [{ id: 'code', mode: 'code', ownedPaths: ['src/change.js'] }], { now: timestamp });
+          current = recordCodeWorktree(current, 'code', {
+            baseCommit: 'a'.repeat(40), worktreePath: `/tmp/${runId}`, now: timestamp + 1,
+          });
+          current = transitionSubtask(current, 'code', 'running', { now: timestamp + 2 });
+          return transitionSubtask(current, 'code', 'integration-pending', { now: timestamp + 3 });
+        },
+        expectedStatus: 'integration-pending',
+      },
+      {
+        name: 'failed',
+        manifest: (runId, timestamp) => {
+          let current = makeRunManifest(runId, [{ id: 'read', mode: 'read-only', ownedPaths: [] }], { now: timestamp });
+          current = transitionSubtask(current, 'read', 'running', { now: timestamp + 1 });
+          return transitionSubtask(current, 'read', 'failed', { now: timestamp + 2 });
+        },
+        expectedStatus: 'failed',
+      },
+    ];
+
+    for (const [index, scenario] of blockedCases.entries()) {
+      const directory = path.join(tmpDir, `parallel-code-complete-${scenario.name}`);
+      fs.mkdirSync(directory, { recursive: true });
+      const timestamp = 1700000000600 + index * 100;
+      const { runId } = setCodingWorkflow(directory, timestamp);
+      const hooks = await GuaranaOrchestrator({ directory });
+      const manifest = scenario.manifest(runId, timestamp + 10);
+      assert.equal(manifest.status, scenario.expectedStatus);
+      saveRunManifest(directory, manifest);
+      const workflowPath = workflowFile(directory);
+      const before = fs.readFileSync(workflowPath);
+      const result = await parallelCall(hooks, 'workflow_tick', { action: 'code_complete' });
+      assert.equal(result.ok, false, scenario.name);
+      assert.equal(result.runStatus, scenario.expectedStatus);
+      assert.equal(load(directory).state, 'coding');
+      assert.deepEqual(fs.readFileSync(workflowPath), before, `${scenario.name} rejection must not persist workflow changes`);
+    }
+
+    const completedDirectory = path.join(tmpDir, 'parallel-code-complete-success');
+    fs.mkdirSync(completedDirectory, { recursive: true });
+    const completedTimestamp = 1700000001000;
+    const { runId: completedRunId } = setCodingWorkflow(completedDirectory, completedTimestamp);
+    const completedHooks = await GuaranaOrchestrator({ directory: completedDirectory });
+    let completed = makeRunManifest(completedRunId, [
+      { id: 'audit', mode: 'read-only', ownedPaths: [] },
+      { id: 'code', mode: 'code', ownedPaths: ['src/change.js'] },
+    ], { now: completedTimestamp + 10 });
+    completed = recordCodeWorktree(completed, 'code', {
+      baseCommit: 'b'.repeat(40), worktreePath: `/tmp/${completedRunId}`, now: completedTimestamp + 11,
+    });
+    completed = transitionSubtask(completed, 'code', 'running', { now: completedTimestamp + 12 });
+    completed = transitionSubtask(completed, 'code', 'integration-pending', { now: completedTimestamp + 13 });
+    completed = integrateCodeSubtask(completed, 'code', { primaryReviewed: true, now: completedTimestamp + 14 });
+    completed = transitionSubtask(completed, 'audit', 'running', { now: completedTimestamp + 15 });
+    completed = transitionSubtask(completed, 'audit', 'completed', { now: completedTimestamp + 16 });
+    assert.equal(completed.status, 'completed');
+    saveRunManifest(completedDirectory, completed);
+    const success = await parallelCall(completedHooks, 'workflow_tick', { action: 'code_complete' });
+    assert.equal(success.ok, true);
+    assert.equal(success.state, 'verifying');
+
+    const ordinaryDirectory = path.join(tmpDir, 'normal-code-complete-without-dag');
+    fs.mkdirSync(ordinaryDirectory, { recursive: true });
+    setCodingWorkflow(ordinaryDirectory, 1700000001200);
+    const ordinaryHooks = await GuaranaOrchestrator({ directory: ordinaryDirectory });
+    const ordinary = await parallelCall(ordinaryHooks, 'workflow_tick', { action: 'code_complete' });
+    assert.equal(ordinary.ok, true);
+    assert.equal(ordinary.state, 'verifying');
+  });
+
+  it('workflow force events keep code_complete bound to the current incomplete DAG', async () => {
+    const directory = path.join(tmpDir, 'parallel-force-binding');
+    fs.mkdirSync(directory, { recursive: true });
+    const { runId } = setCodingWorkflow(directory, 1700000001300);
+    const hooks = await GuaranaOrchestrator({ directory });
+    assert.equal((await parallelCall(hooks, 'parallel_run_create', {
+      subtasks: [{ id: 'active-read', mode: 'read-only', ownedPaths: [], goal: 'Read', condition: 'Report' }],
+    })).ok, true);
+    assert.equal((await parallelCall(hooks, 'parallel_task_start', {
+      runId, taskId: 'active-read', goal: 'Read', condition: 'Report',
+    })).ok, true);
+
+    const forceVerify = await parallelCall(hooks, 'workflow_tick', { action: 'force', skill: 'verify' });
+    assert.equal(forceVerify.ok, false);
+    assert.equal(forceVerify.runStatus, 'running');
+    assert.equal(load(directory).state, 'coding');
+    const forceCoding = await parallelCall(hooks, 'workflow_tick', { action: 'force', skill: 'code' });
+    assert.equal(forceCoding.ok, true);
+    assert.equal(forceCoding.state, 'coding');
+
+    const before = fs.readFileSync(workflowFile(directory));
+    const completion = await parallelCall(hooks, 'workflow_tick', { action: 'code_complete' });
+    assert.equal(completion.ok, false);
+    assert.equal(completion.runStatus, 'running');
+    assert.equal(load(directory).state, 'coding');
+    assert.deepEqual(fs.readFileSync(workflowFile(directory)), before);
+    assert.equal((await parallelCall(hooks, 'parallel_run_get', { runId })).run.status, 'running');
+  });
+
+  it('blocks every plugin transition into verifying or completed until the bound DAG is completed and integrated', async () => {
+    const cases = [
+      { name: 'code_complete', action: { action: 'code_complete' }, source: 'coding' },
+      { name: 'verify_skip-from-coding', action: { action: 'verify_skip' }, source: 'coding' },
+      { name: 'verify_skip-from-verifying', action: { action: 'verify_skip' }, source: 'verifying' },
+      { name: 'force-verify-from-coding', action: { action: 'force', skill: 'verify' }, source: 'coding' },
+      { name: 'debug_complete', action: { action: 'debug_complete' }, source: 'debugging' },
+      { name: 'verify_pass', action: { action: 'verify_pass' }, source: 'verifying' },
+    ];
+
+    for (const [index, scenario] of cases.entries()) {
+      const directory = path.join(tmpDir, `parallel-transition-barrier-${scenario.name}`);
+      fs.mkdirSync(directory, { recursive: true });
+      const timestamp = 1700000002000 + index * 100;
+      const { runId } = setCodingWorkflow(directory, timestamp);
+      if (scenario.source !== 'coding') {
+        let workflow = apply(load(directory), 'code_complete', { ts: timestamp + 10 });
+        assert.ok(workflow);
+        if (scenario.source === 'debugging') {
+          workflow = apply(workflow, 'verify_fail', { ts: timestamp + 11 });
+          assert.ok(workflow);
+        }
+        assert.equal(workflow.state, scenario.source);
+        assert.ok(save(directory, workflow));
+      }
+
+      const hooks = await GuaranaOrchestrator({ directory });
+      saveRunManifest(directory, makeRunManifest(runId, [
+        { id: 'pending', mode: 'read-only', ownedPaths: [] },
+      ], { now: timestamp + 20 }));
+      const workflowPath = workflowFile(directory);
+      const before = fs.readFileSync(workflowPath);
+      const workflowEventCount = fs.existsSync(path.join(directory, '.specs', 'state', 'telemetry', 'events.jsonl'))
+        ? fs.readFileSync(path.join(directory, '.specs', 'state', 'telemetry', 'events.jsonl'), 'utf8')
+          .split('\n').filter((line) => line && JSON.parse(line).type === 'workflow').length
+        : 0;
+
+      const rejected = await parallelCall(hooks, 'workflow_tick', scenario.action);
+      assert.equal(rejected.ok, false, scenario.name);
+      assert.equal(rejected.runStatus, 'pending', scenario.name);
+      assert.match(rejected.error, /completed and integrated/i, scenario.name);
+      assert.deepEqual(fs.readFileSync(workflowPath), before, `${scenario.name} must not persist workflow state/history`);
+      const afterEvents = fs.existsSync(path.join(directory, '.specs', 'state', 'telemetry', 'events.jsonl'))
+        ? fs.readFileSync(path.join(directory, '.specs', 'state', 'telemetry', 'events.jsonl'), 'utf8')
+          .split('\n').filter((line) => line && JSON.parse(line).type === 'workflow').length
+        : 0;
+      assert.equal(afterEvents, workflowEventCount, `${scenario.name} must not append workflow history telemetry`);
+    }
+
+    // chat.message has its own state-apply path; it must use the same gate.
+    const { runId } = setCodingWorkflow(tmpDir, 1700000002600);
+    saveRunManifest(tmpDir, makeRunManifest(runId, [
+      { id: 'chat-pending', mode: 'read-only', ownedPaths: [] },
+    ], { now: 1700000002610 }));
+    const beforeChat = fs.readFileSync(workflowFile(tmpDir));
+    const beforeWorkflowEvents = readEvents().filter((event) => event.type === 'workflow').length;
+    await api['chat.message'](
+      { sessionID: 'dag-chat-force', messageID: 'dag-chat-force-message', agent: 'guarana' },
+      { parts: parts('guarana:verify') },
+    );
+    assert.deepEqual(fs.readFileSync(workflowFile(tmpDir)), beforeChat);
+    assert.equal(readEvents().filter((event) => event.type === 'workflow').length, beforeWorkflowEvents);
+  });
+
+  it('fails closed for missing or unreadable manifests after a workflow DAG was bound', async () => {
+    for (const [index, mode] of ['missing', 'unreadable'].entries()) {
+      const directory = path.join(tmpDir, `parallel-transition-${mode}`);
+      fs.mkdirSync(directory, { recursive: true });
+      const { runId } = setCodingWorkflow(directory, 1700000002700 + index * 100);
+      const hooks = await GuaranaOrchestrator({ directory });
+      const created = await parallelCall(hooks, 'parallel_run_create', {
+        subtasks: [{ id: 'bound', mode: 'read-only', ownedPaths: [], goal: 'Read', condition: 'Report' }],
+      });
+      assert.equal(created.ok, true);
+      const manifestPath = runManifestFile(directory, runId);
+      if (mode === 'missing') fs.rmSync(manifestPath);
+      else fs.writeFileSync(manifestPath, '{unreadable-json');
+
+      const workflowPath = workflowFile(directory);
+      const before = fs.readFileSync(workflowPath);
+      const afterRestart = await GuaranaOrchestrator({ directory });
+      const rejected = await parallelCall(afterRestart, 'workflow_tick', { action: 'code_complete' });
+      assert.equal(rejected.ok, false, mode);
+      assert.equal(rejected.runStatus, mode === 'missing' ? 'missing' : 'unavailable', mode);
+      assert.match(rejected.error, mode === 'missing' ? /is missing/i : /unreadable/i, mode);
+      assert.deepEqual(fs.readFileSync(workflowPath), before, `${mode} rejection must not persist workflow state/history`);
+    }
+  });
+
+  it('allows final transitions for a completed-and-integrated DAG and for ordinary no-DAG workflows', async () => {
+    const completedDirectory = path.join(tmpDir, 'parallel-transition-completed');
+    fs.mkdirSync(completedDirectory, { recursive: true });
+    const completedTimestamp = 1700000002900;
+    const { runId } = setCodingWorkflow(completedDirectory, completedTimestamp);
+    const completedHooks = await GuaranaOrchestrator({ directory: completedDirectory });
+    let manifest = makeRunManifest(runId, [
+      { id: 'audit', mode: 'read-only', ownedPaths: [] },
+      { id: 'code', mode: 'code', ownedPaths: ['src/change.js'] },
+    ], { now: completedTimestamp + 10 });
+    manifest = recordCodeWorktree(manifest, 'code', {
+      baseCommit: 'c'.repeat(40), worktreePath: `/tmp/${runId}`, now: completedTimestamp + 11,
+    });
+    manifest = transitionSubtask(manifest, 'code', 'running', { now: completedTimestamp + 12 });
+    manifest = transitionSubtask(manifest, 'code', 'integration-pending', { now: completedTimestamp + 13 });
+    manifest = integrateCodeSubtask(manifest, 'code', { primaryReviewed: true, now: completedTimestamp + 14 });
+    manifest = transitionSubtask(manifest, 'audit', 'running', { now: completedTimestamp + 15 });
+    manifest = transitionSubtask(manifest, 'audit', 'completed', { now: completedTimestamp + 16 });
+    assert.equal(manifest.status, 'completed');
+    saveRunManifest(completedDirectory, manifest);
+
+    const enterVerification = await parallelCall(completedHooks, 'workflow_tick', { action: 'code_complete' });
+    assert.equal(enterVerification.ok, true);
+    assert.equal(enterVerification.state, 'verifying');
+    const finishVerification = await parallelCall(completedHooks, 'workflow_tick', { action: 'verify_pass' });
+    assert.equal(finishVerification.ok, true);
+    assert.equal(finishVerification.state, 'completed');
+    assert.equal(load(completedDirectory).history.at(-1).event, 'verify_pass');
+
+    const ordinaryDirectory = path.join(tmpDir, 'ordinary-transition-no-dag');
+    fs.mkdirSync(ordinaryDirectory, { recursive: true });
+    setCodingWorkflow(ordinaryDirectory, 1700000003100);
+    const ordinaryHooks = await GuaranaOrchestrator({ directory: ordinaryDirectory });
+    assert.equal((await parallelCall(ordinaryHooks, 'workflow_tick', { action: 'code_complete' })).state, 'verifying');
+    assert.equal((await parallelCall(ordinaryHooks, 'workflow_tick', { action: 'verify_pass' })).state, 'completed');
+
+    // An old run's sidecar/binding is history, not a DAG for the task started
+    // after new_task; workflowRunId binds only the latest run_start after it.
+    const restartedTaskDirectory = path.join(tmpDir, 'parallel-transition-new-task');
+    fs.mkdirSync(restartedTaskDirectory, { recursive: true });
+    const oldRun = setCodingWorkflow(restartedTaskDirectory, 1700000003200);
+    const restartedHooks = await GuaranaOrchestrator({ directory: restartedTaskDirectory });
+    assert.equal((await parallelCall(restartedHooks, 'parallel_run_create', {
+      subtasks: [{ id: 'old', mode: 'read-only', ownedPaths: [], goal: 'Old', condition: 'Old report' }],
+    })).ok, true);
+    for (const action of ['new_task', 'plan_complete', 'run_start']) {
+      const result = await parallelCall(restartedHooks, 'workflow_tick', {
+        action, ...(action === 'new_task' ? { goal: 'New ordinary task' } : {}),
+      });
+      assert.equal(result.ok, true, action);
+    }
+    assert.ok(fs.existsSync(runManifestFile(restartedTaskDirectory, oldRun.runId)), 'historical DAG remains intact');
+    assert.equal((await parallelCall(restartedHooks, 'workflow_tick', { action: 'code_complete' })).state, 'verifying');
+  });
+
+  it('guards completed-to-verifying force against its incomplete DAG without rebinding it after new_task', async () => {
+    const directory = path.join(tmpDir, 'parallel-completed-force-guard');
+    fs.mkdirSync(directory, { recursive: true });
+    const timestamp = 1700000003300;
+    const { runId } = setCodingWorkflow(directory, timestamp);
+    const hooks = await GuaranaOrchestrator({ directory });
+    const created = await parallelCall(hooks, 'parallel_run_create', {
+      subtasks: [{ id: 'legacy-pending', mode: 'read-only', ownedPaths: [], goal: 'Read', condition: 'Report' }],
+    });
+    assert.equal(created.ok, true);
+
+    // Model an imported/legacy completed workflow whose prior verification
+    // bypassed the still-incomplete DAG.
+    let legacyCompleted = apply(load(directory), 'code_complete', { ts: timestamp + 10 });
+    legacyCompleted = apply(legacyCompleted, 'verify_pass', { ts: timestamp + 11 });
+    assert.equal(legacyCompleted.state, 'completed');
+    assert.ok(save(directory, legacyCompleted));
+    const workflowPath = workflowFile(directory);
+    const eventsPath = path.join(directory, '.specs', 'state', 'telemetry', 'events.jsonl');
+    const workflowEventCount = () => {
+      try {
+        return fs.readFileSync(eventsPath, 'utf8').split('\n')
+          .filter((line) => line && JSON.parse(line).type === 'workflow').length;
+      } catch {
+        return 0;
+      }
+    };
+    const before = fs.readFileSync(workflowPath);
+    const beforeEventCount = workflowEventCount();
+
+    const rejected = await parallelCall(hooks, 'workflow_tick', { action: 'force', skill: 'verify' });
+    assert.equal(rejected.ok, false);
+    assert.equal(rejected.runStatus, 'pending');
+    assert.match(rejected.error, /completed and integrated/i);
+    assert.deepEqual(fs.readFileSync(workflowPath), before, 'rejected force must preserve workflow bytes/history');
+    assert.equal(workflowEventCount(), beforeEventCount,
+    'rejection must not append workflow telemetry');
+    const activeRunInspection = await parallelCall(hooks, 'parallel_run_get', { runId });
+    assert.equal(activeRunInspection.ok, false, 'normal parallel tools remain unavailable after completed');
+    assert.match(activeRunInspection.error, /no active workflow run bound/i);
+
+    for (const [index, action] of ['new_task', 'plan_complete', 'run_start', 'code_complete', 'verify_pass'].entries()) {
+      const result = await parallelCall(hooks, 'workflow_tick', {
+        action, ...(action === 'new_task' ? { goal: 'Start a new ordinary task' } : {}),
+      });
+      assert.equal(result.ok, true, `${action} after new_task`);
+      if (index === 4) assert.equal(result.state, 'completed');
+    }
+    assert.ok(fs.existsSync(runManifestFile(directory, runId)), 'the historical DAG marker remains present');
+    const newTaskForce = await parallelCall(hooks, 'workflow_tick', { action: 'force', skill: 'verify' });
+    assert.equal(newTaskForce.ok, true, 'the later task must not inherit its predecessor DAG binding');
+    assert.equal(newTaskForce.state, 'verifying');
+  });
+
+  it('cancellation, restart reconciliation, and explicit outcome review retain active capacity without claiming host cancellation', async () => {
+    const repository = path.join(tmpDir, 'parallel-cancel-repo');
+    initGitRepo(repository);
+    const hooks = await GuaranaOrchestrator({ directory: repository });
+    const { runId } = setCodingWorkflow(repository, 1700000000100);
+    await parallelCall(hooks, 'parallel_run_create', {
+      subtasks: ['alpha', 'beta', 'queued'].map((id) => ({
+        id, mode: 'read-only', ownedPaths: [], goal: `Goal ${id}`, condition: `Condition ${id}`,
+      })),
+    });
+    for (const taskId of ['alpha', 'beta']) {
+      const started = await parallelCall(hooks, 'parallel_task_start', {
+        runId, taskId, goal: `Goal ${taskId}`, condition: `Condition ${taskId}`,
+      });
+      assert.equal(started.ok, true);
+    }
+    const requested = await parallelCall(hooks, 'parallel_task_outcome', {
+      runId, taskId: 'alpha', outcome: 'cancel-requested',
+    });
+    assert.equal(requested.run.tasks.find((task) => task.id === 'alpha').status, 'cancel-requested');
+    assert.deepEqual(requested.ready, [], 'both running and cancel-requested tasks reserve the two slots');
+    const noHostHandle = await parallelCall(hooks, 'parallel_task_confirm_termination', {
+      runId, taskId: 'alpha', hostConfirmed: false,
+    });
+    assert.equal(noHostHandle.ok, false);
+    assert.match(noHostHandle.error, /host termination confirmation/i);
+    assert.equal((await parallelCall(hooks, 'parallel_run_get', { runId })).run.tasks
+      .find((task) => task.id === 'alpha').status, 'cancel-requested');
+
+    const restarted = await GuaranaOrchestrator({ directory: repository });
+    const noReview = await parallelCall(restarted, 'parallel_run_reconcile', { runId, primaryReviewed: false });
+    assert.equal(noReview.ok, false);
+    const reconciledRun = await parallelCall(restarted, 'parallel_run_reconcile', { runId, primaryReviewed: true });
+    assert.equal(reconciledRun.run.tasks.find((task) => task.id === 'alpha').status, 'cancel-requested');
+    assert.equal(reconciledRun.run.tasks.find((task) => task.id === 'beta').status, 'needs-reconciliation');
+    assert.deepEqual(reconciledRun.ready, [], 'restart reconciliation retains both occupied slots');
+    const resolvedAlpha = await parallelCall(restarted, 'parallel_task_reconcile', {
+      runId, taskId: 'alpha', primaryReviewed: true, outcome: 'cancelled', evidence: ['termination-observed'],
+    });
+    assert.equal(resolvedAlpha.ok, true);
+    const resolvedBeta = await parallelCall(restarted, 'parallel_task_reconcile', {
+      runId, taskId: 'beta', primaryReviewed: true, outcome: 'completed',
+    });
+    assert.deepEqual(resolvedBeta.ready, ['queued']);
+    const canceled = await parallelCall(restarted, 'parallel_run_cancel', { runId });
+    assert.equal(canceled.run.tasks.find((task) => task.id === 'queued').status, 'cancelled');
+  });
+
+  it('code retry requires primary review and a fresh verified worktree before another start', async () => {
+    const repository = path.join(tmpDir, 'parallel-retry-repo');
+    initGitRepo(repository);
+    const worktree = path.join(tmpDir, 'parallel-retry-worktree');
+    addGitWorktree(repository, worktree);
+    const hooks = await GuaranaOrchestrator({ directory: repository });
+    const { runId } = setCodingWorkflow(repository, 1700000000200);
+    await parallelCall(hooks, 'parallel_run_create', {
+      subtasks: [{ id: 'patch', mode: 'code', ownedPaths: ['src/patch.js'], goal: 'Patch it', condition: 'Patch passes' }],
+    });
+    assert.equal((await parallelCall(hooks, 'parallel_task_preflight', {
+      runId, taskId: 'patch', worktreePath: worktree,
+    })).ok, true);
+    assert.equal((await parallelCall(hooks, 'parallel_task_start', {
+      runId, taskId: 'patch', goal: 'Patch it', condition: 'Patch passes',
+    })).ok, true);
+    assert.equal((await parallelCall(hooks, 'parallel_task_outcome', {
+      runId, taskId: 'patch', outcome: 'failed', evidence: ['failed-check'],
+    })).ok, true);
+    assert.equal((await parallelCall(hooks, 'parallel_task_retry', {
+      runId, taskId: 'patch', primaryReviewed: false,
+    })).ok, false);
+    const retried = await parallelCall(hooks, 'parallel_task_retry', {
+      runId, taskId: 'patch', primaryReviewed: true,
+    });
+    assert.equal(retried.ok, true);
+    assert.equal(Object.hasOwn(retried.run.tasks.find((task) => task.id === 'patch'), 'worktreePath'), false);
+    const withoutFreshPreflight = await parallelCall(hooks, 'parallel_task_start', {
+      runId, taskId: 'patch', goal: 'Patch it', condition: 'Patch passes',
+    });
+    assert.equal(withoutFreshPreflight.ok, false);
+    const reusedWorktree = await parallelCall(hooks, 'parallel_task_preflight', {
+      runId, taskId: 'patch', worktreePath: worktree,
+    });
+    assert.equal(reusedWorktree.ok, false);
+    assert.match(reusedWorktree.error, /already used/i);
+    const freshWorktree = path.join(tmpDir, 'parallel-retry-worktree-second-attempt');
+    addGitWorktree(repository, freshWorktree);
+    assert.equal((await parallelCall(hooks, 'parallel_task_preflight', {
+      runId, taskId: 'patch', worktreePath: freshWorktree,
+    })).ok, true);
+    assert.equal((await parallelCall(hooks, 'parallel_task_start', {
+      runId, taskId: 'patch', goal: 'Patch it', condition: 'Patch passes',
+    })).ok, true);
+  });
+
+  it('worker-research is a native worker role and cannot mutate primary-owned parallel sidecars', async () => {
+    const repository = path.join(tmpDir, 'parallel-worker-repo');
+    initGitRepo(repository);
+    const hooks = await GuaranaOrchestrator({ directory: repository });
+    const { runId } = setCodingWorkflow(repository, 1700000000300);
+    const create = await parallelCall(hooks, 'parallel_run_create', {
+      subtasks: [{ id: 'read', mode: 'read-only', ownedPaths: [], goal: 'Read', condition: 'Report' }],
+    });
+    assert.equal(create.ok, true);
+    assert.equal(create.runId, runId);
+    const manifestFile = path.join(repository, '.specs', 'state', 'parallel-runs', `${runId}.json`);
+    const before = fs.readFileSync(manifestFile);
+    for (const [index, agent] of ['worker-code', 'worker-research'].entries()) {
+      const worker = await parallelCall(hooks, 'parallel_task_start', {
+        runId, taskId: 'read', goal: 'Read', condition: 'Report',
+      }, { sessionID: `native-${agent}-${index}`, agent });
+      assert.equal(worker.ok, false);
+      assert.match(worker.error, /Task workers cannot inspect or mutate/i);
+      assert.deepEqual(fs.readFileSync(manifestFile), before);
+    }
+    await hooks.event({ event: { type: 'session.created', properties: {
+      sessionID: 'worker-research-session-2', info: { id: 'worker-research-session-2', parentID: 'primary', agent: 'worker-research' },
+    } } });
+    const workflowBefore = fs.existsSync(workflowFile(repository)) ? fs.readFileSync(workflowFile(repository)) : null;
+    await hooks['chat.message'](
+      { sessionID: 'worker-research-session-2', agent: 'worker-research' },
+      { parts: parts('Do not start another workflow') },
+    );
+    const childSystem = { system: [] };
+    await hooks['experimental.chat.system.transform']({ sessionID: 'worker-research-session-2' }, childSystem);
+    assert.deepEqual(childSystem.system, []);
+    assert.deepEqual(fs.existsSync(workflowFile(repository)) ? fs.readFileSync(workflowFile(repository)) : null, workflowBefore);
+    assert.deepEqual(fs.readFileSync(manifestFile), before);
   });
 
   it('never throws on corrupt persisted state', async () => {

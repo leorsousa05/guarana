@@ -47,3 +47,4 @@ archive-0w9fZ3/
 # Local Guarana settings and operational workflow state
 /.guarana/advisor.json
 /.specs/state/workflow.json
+/.specs/state/parallel-runs/

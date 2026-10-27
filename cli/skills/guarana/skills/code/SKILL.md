@@ -13,6 +13,27 @@ work (ADR-003).
 From guarana:plan's dispatch: ONE verifiable condition, budget (default 8k tokens), state pointers. If the condition is missing or unfalsifiable, return `stop_reason: error` — do not start.
 
 ## Procedure
+### Assigned code-worktree preflight (before any edits)
+
+For a DAG code dispatch, the primary supplies exact `worktreePath`, `baseCommit`,
+and `commonDir` values. Using that path as the repository root (safely quoted as a
+path, never treated as shell code), check all of the following before any edit:
+
+- `git -C <worktreePath> rev-parse --path-format=absolute --show-toplevel`
+  equals the assigned `worktreePath` exactly;
+- `git -C <worktreePath> rev-parse --path-format=absolute --git-common-dir`
+  equals the assigned `commonDir` exactly;
+- `git -C <worktreePath> rev-parse HEAD` equals the assigned `baseCommit`;
+- `git -C <worktreePath> status --porcelain --untracked-files=all` is empty.
+
+If a command fails, a value differs, the path is not the exact worktree root, or
+the checkout is dirty, stop before editing and return `stop_reason: error` with
+the mismatch. Do not clean, repair, switch checkouts, or fall back to the primary
+tree. If no assigned code-worktree path is present, this gate does not apply.
+Prompt-routed worktree paths are **not an OS sandbox**: keep all filesystem, Git,
+and test operations in the assigned worktree, change only declared `ownedPaths`,
+and never edit a sibling task's worktree.
+
 1. **Read before edit.** Never edit a file you haven't read in this context.
 2. **Read the design.** Inspect the relevant neighboring code, interfaces, tests, and project conventions. Identify the responsibilities and dependencies touched by the condition; follow established patterns when they fit.
 3. **Choose patterns by purpose.** Use a design pattern only when it addresses a concrete need in the change, such as a real behavior variation, responsibility boundary, or dependency. Refactor only as needed to implement the condition clearly and safely. Prefer the simplest design that fits; if no pattern solves a real problem, add none. Keep unrelated behavior and structure intact.

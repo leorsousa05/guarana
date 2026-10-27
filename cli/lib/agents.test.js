@@ -6,6 +6,62 @@ const path = require('node:path');
 const agents = require('./agents.js');
 const { workerAgentsTarget } = require('./paths.js');
 
+function parseResearchPermissions(content) {
+  const frontmatter = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
+  assert.ok(frontmatter, 'worker-research must have valid frontmatter boundaries');
+  const lines = frontmatter[1].split(/\r?\n/);
+  assert.equal(lines.some((line) => /^permission\s*:/.test(line)), false, 'V2 profile must not use legacy permission');
+  const policyIndex = lines.indexOf('permissions:');
+  assert.notEqual(policyIndex, -1, 'worker-research must declare V2 permissions');
+  assert.equal(lines.filter((line) => line === 'permissions:').length, 1);
+
+  const scalar = (value) => {
+    if (value.startsWith('"')) {
+      assert.match(value, /^"(?:[^"\\]|\\.)*"$/, 'quoted YAML scalar must be complete');
+      return JSON.parse(value);
+    }
+    assert.match(value, /^[A-Za-z_][A-Za-z0-9_-]*$/, 'plain YAML scalar must be valid');
+    return value;
+  };
+  const permissions = [];
+  for (let index = policyIndex + 1; index < lines.length; index += 3) {
+    const action = lines[index].match(/^  - action: (.+)$/);
+    const resource = lines[index + 1]?.match(/^    resource: (.+)$/);
+    const effect = lines[index + 2]?.match(/^    effect: (allow|deny)$/);
+    assert.ok(action && resource && effect, 'V2 permissions must be an ordered YAML list of action/resource/effect records');
+    permissions.push({
+      action: scalar(action[1]),
+      resource: scalar(resource[1]),
+      effect: effect[1],
+    });
+  }
+  return permissions;
+}
+
+function assertReadOnlyResearchPermissions(content) {
+  const permissions = parseResearchPermissions(content);
+  assert.deepEqual(permissions, [
+    { action: '*', resource: '*', effect: 'deny' },
+    { action: 'external_directory', resource: '*', effect: 'deny' },
+    { action: 'read', resource: '*', effect: 'allow' },
+    { action: 'glob', resource: '*', effect: 'allow' },
+    { action: 'grep', resource: '*', effect: 'allow' },
+  ]);
+  const effectForAction = (action) => permissions
+    .filter((rule) => rule.action === '*' || rule.action === action)
+    .at(-1)?.effect;
+  for (const action of ['read', 'glob', 'grep']) {
+    assert.equal(effectForAction(action), 'allow', `${action} must be allowed`);
+  }
+  for (const action of [
+    'external_directory', 'bash', 'edit', 'write', 'apply_patch', 'patch', 'task',
+    'subagent', 'workflow_tick', 'execute', 'webfetch', 'websearch', 'list',
+    'question', 'skill', 'todowrite', 'lsp', 'doom_loop',
+  ]) {
+    assert.equal(effectForAction(action), 'deny', `${action} must be denied by default or explicitly`);
+  }
+}
+
 function inProject(callback) {
   const cwd = process.cwd();
   const project = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-worker-agents-'));
@@ -20,7 +76,7 @@ function inProject(callback) {
 
 test('worker profiles include canonical skill procedures and distinct permissions', () => {
   const generated = agents.profiles(true);
-  assert.deepEqual(generated.map(({ name }) => name), ['worker-code', 'worker-verify', 'worker-debug', 'worker-specs']);
+  assert.deepEqual(generated.map(({ name }) => name), ['worker-code', 'worker-verify', 'worker-research', 'worker-debug', 'worker-specs']);
   for (const { content } of generated) {
     assert.match(content, /mode: subagent/);
     assert.match(content, /^hidden: false$/m);
@@ -44,13 +100,23 @@ test('worker profiles include canonical skill procedures and distinct permission
   assert.match(verify, /`not checked`, `unavailable in this context`, `contradictory`, or `absent`/);
   assert.match(verify, /Missing proof remains FAIL/i);
 
-  const debug = generated[2].content;
+  const research = generated[2].content;
+  assertReadOnlyResearchPermissions(research);
+  assertReadOnlyResearchPermissions(agents.profiles(false).find(({ name }) => name === 'worker-research').content);
+  assert.match(research, /Default dispatch budget: 4,000 tokens/);
+  assert.match(research, /default budget is \*\*4k tokens per dispatch\*\*/i);
+  assert.match(research, /Do not edit files, run bash\/shell commands, launch nested tasks, or call\s+`workflow_tick`/);
+  assert.match(research, /cite exact paths and line references/i);
+  const skillIndex = fs.readFileSync(path.join(__dirname, '..', 'skills', 'guarana', 'SKILL.md'), 'utf8');
+  assert.match(skillIndex, /guarana:research.*read-only.*\[skills\/research\/SKILL\.md\]/i);
+
+  const debug = generated[3].content;
   assert.match(debug, /"\*": deny/);
   assert.match(debug, /"\.specs\/state\/known-issues\.md": allow/);
   assert.doesNotMatch(debug, /\*\*\//);
   assert.match(debug, /Failure-mode matrix/);
 
-  const specs = generated[3].content;
+  const specs = generated[4].content;
   assert.match(specs, /mode: subagent/);
   assert.match(specs, /task: deny/);
   assert.match(specs, /workflow_tick: deny/);
@@ -140,14 +206,17 @@ test('worker profiles include canonical skill procedures and distinct permission
 test('project install is idempotent, status detects profiles, and uninstall preserves unrelated agents', () => {
   inProject((project) => {
     const installed = agents.installWorkerAgents(true);
-    assert.equal(installed.length, 4);
+    assert.equal(installed.length, 5);
     for (const profile of agents.workerAgentStatus(true)) assert.equal(profile.status, 'ok (up to date)');
     agents.installWorkerAgents(true);
+
+    const research = fs.readFileSync(path.join(workerAgentsTarget(true), 'worker-research.md'), 'utf8');
+    assertReadOnlyResearchPermissions(research);
 
     const other = path.join(workerAgentsTarget(true), 'my-agent.md');
     fs.writeFileSync(other, 'user agent\n');
     const result = agents.uninstallWorkerAgents(true);
-    assert.equal(result.removed.length, 4);
+    assert.equal(result.removed.length, 5);
     assert.deepEqual(result.preserved, []);
     assert.equal(fs.readFileSync(other, 'utf8'), 'user agent\n');
     assert.equal(fs.existsSync(path.join(project, '.opencode', 'agents', 'worker-code.md')), false);
@@ -182,10 +251,12 @@ test('global worker profiles deploy below the OpenCode agents root', () => {
       assert.match(fs.readFileSync(target, 'utf8'), /^hidden: false$/m);
     }
     assert.equal(fs.existsSync(path.join(home, '.config', 'opencode', 'agents', 'worker-verify.md')), true);
+    const research = fs.readFileSync(path.join(home, '.config', 'opencode', 'agents', 'worker-research.md'), 'utf8');
+    assertReadOnlyResearchPermissions(research);
     assert.equal(fs.existsSync(path.join(home, '.config', 'opencode', 'agents', 'worker-specs.md')), true);
     assert.equal(agents.workerAgentStatus(false).find(({ name }) => name === 'worker-specs').status, 'ok (up to date)');
     const result = agents.uninstallWorkerAgents(false);
-    assert.equal(result.removed.length, 4);
+    assert.equal(result.removed.length, 5);
   } finally {
     if (originalHome === undefined) delete process.env.HOME;
     else process.env.HOME = originalHome;

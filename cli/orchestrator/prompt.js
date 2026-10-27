@@ -117,31 +117,46 @@ export function buildSystemBlock(workflow, preferences) {
   const verifyEnabled = verificationEnabled(preferences, workflow.verificationOverride);
   const delegationRule = workflow.state === 'coding'
     ? verifyEnabled
-      ? '- Call `worker-code` in native Task with exact condition, budget, and state pointers; inspect its diff/stop reason, then call `code_complete`.'
-      : '- Call `worker-code` in native Task with exact condition, budget, and state pointers; inspect diff/stop reason, run proportionate direct checks if useful, then call `verify_skip`; do not dispatch `worker-verify`.'
+      ? '- Call `worker-code` in native Task with exact condition, budget, and state pointers; inspect its diff/stop reason; one-condition work stays sequential; then call `code_complete`.'
+      : '- Call `worker-code` in native Task with exact condition, budget, and state pointers; inspect diff/stop reason; one-condition default sequential; checks if useful, then call `verify_skip`; no `worker-verify`.'
     : workflow.state === 'verifying'
       ? verifyEnabled
         ? '- In a fresh native Task, call `worker-verify` with the condition, evidence, and state pointers; inspect criterion verdict/proofs, then call `verify_pass` or `verify_fail`.'
         : '- Do not dispatch `worker-verify`; run proportionate direct checks if useful, then call `verify_skip`, never `verify_pass`.'
       : workflow.state === 'debugging'
         ? '- After a confirmed failure, call `worker-debug` in native Task with the failure and state pointers; inspect its root cause/mitigation, then choose a fix or re-verify.'
-        : '';
+      : '';
+  const parallelDagRules = workflow.state === 'coding' ? [
+    '- DAG for ≥2 independent subtasks: load/follow `guarana:build`; dispatch latest ready IDs only, max 2 active; read-only→`worker-research`, code→preflight distinct worktree, then `worker-code`. Primary integrates serially; reconcile uncertain work. Lock: inspect first; never delete/steal active/unproven; recover only after primary review + exact inspected token + confirmed same-host dead owner; else fail closed/report blocker. `code_complete` only after DAG completed/integrated.',
+  ] : [];
   return [
     '## Guarana workflow',
     'Workflow state on disk is authoritative: `.specs/state/workflow.json`.',
     `Current state: **${workflow.state}**`,
-    'State → skill:',
-    SKILL_LINES,
+    workflow.state === 'coding'
+      ? 'State → skill: planning/plan, building/build, coding/code, verifying/verify, debugging/debug'
+      : ['State → skill:', SKILL_LINES].join('\n'),
     'Rules:',
     delegated
-      ? '- Inspect each Task result before advancing; if Task is unavailable/denied, report the blocker and stop without doing worker work here.'
+      ? workflow.state === 'coding'
+        ? '- Inspect results; if Task unavailable/denied, report blocker and stop; no worker work here.'
+        : '- Inspect each Task result before advancing; if Task is unavailable/denied, report the blocker and stop without doing worker work here.'
       : '- Follow the injected active skill.',
     '- Primary owns requirements, acceptance, transitions, and verification; workers use isolated native Task contexts and never call `workflow_tick`.',
     ...(delegationRule ? [delegationRule] : []),
-    '- Plan only explicit `guarana:<skill>` commands or clear product/doc/config changes; read-only/info requests create no task spec or tracker/project-state writes.',
-    '- Use `worker-debug` only for actionable confirmed failures.',
-    '- Dispatch `worker-specs` only for durable human-readable record changes. Stage/budget/current-step data stays in workflow JSON; validate only after a record write.',
-    '- Follow `guarana:plan` for discovery, worker ownership, records, ADRs, and known-issue policy.',
+    ...parallelDagRules,
+    workflow.state === 'coding'
+      ? '- Read-only/info: no record/project-state writes.'
+      : '- Plan only explicit `guarana:<skill>` commands or clear product/doc/config changes; read-only/info requests create no task spec or tracker/project-state writes.',
+    workflow.state === 'coding'
+      ? '- worker-debug only for actionable confirmed failures.'
+      : '- Use `worker-debug` only for actionable confirmed failures.',
+    workflow.state === 'coding'
+      ? '- Durable records→`worker-specs`; stage/budget in workflow JSON; validate writes.'
+      : '- Dispatch `worker-specs` only for durable human-readable record changes. Stage/budget/current-step data stays in workflow JSON; validate only after a record write.',
+    workflow.state === 'coding'
+      ? '- `guarana:plan` covers discovery and durable records/ADRs.'
+      : '- Follow `guarana:plan` for discovery, worker ownership, records, ADRs, and known-issue policy.',
     '- After each meaningful phase/subtask, tell the user: completed work, changed paths/behavior, next action, remaining/blockers. Phase/planning completion is not task completion.',
     '- After verification/final gates, tell the user exact paths and checks/results.',
     ...(workflow.state === 'planning'
@@ -149,9 +164,13 @@ export function buildSystemBlock(workflow, preferences) {
         '- Use `workflow_tick` action `start_task` only after `guarana:plan` discovery is closed and any required `worker-specs` write is reported complete; pass nonempty `goal` and `condition`. Never skip discovery or required records. If discovery is open, stay in planning; use `plan_complete` only for an intentionally staged transition. Do not ask the user to accept a shortcut.',
       ]
       : [
-        '- When done, use `workflow_tick` with the matching action (e.g. `code_complete`, `verify_pass`, `verify_fail`).',
+        workflow.state === 'coding'
+          ? '- `workflow_tick` completes coding.'
+          : '- When done, use `workflow_tick` with the matching action (e.g. `code_complete`, `verify_pass`, `verify_fail`).',
       ]),
-    '- Use `workflow_get` for latest state. A user typing `guarana:<skill>` forces that step.',
+    workflow.state === 'coding'
+      ? '- `workflow_get` latest; `guarana:<skill>` forces step.'
+      : '- Use `workflow_get` for latest state. A user typing `guarana:<skill>` forces that step.',
     skill
       ? delegated
         ? `Active skill: \`guarana:${skill}\` — use the designated worker profile.`

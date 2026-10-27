@@ -136,13 +136,42 @@ safe inspection or work. Never bypass a denied tool or security/policy boundary.
 
 Ambiguous intent → ASK the human (Rule 0). Never guess a route. Never load debug or measure without their trigger.
 
+## Parallel work planning
+
+Keep the ordinary path sequential: one verifiable condition is one worker dispatch.
+Do not create a DAG just because parallel tools are available. Plan a primary-owned
+DAG only when the work contains at least two separately falsifiable subtasks whose
+dependency edges and non-overlapping repository ownership can be stated in advance.
+The DAG is created during a coding workflow after `run_start`; it does not replace
+requirements discovery or required records.
+
+- Assign `mode: read-only` only to bounded research with no file or state writes;
+  dispatch that condition to `worker-research`, whose canonical procedure is
+  strictly read-only. Assign `mode: code` to implementation conditions and
+  `worker-code` only. Never route a read-only task to a code worker or a code task
+  to a research worker.
+- Give every subtask a stable ID, one nonempty goal, one falsifiable condition,
+  explicit dependency IDs (or none), and owned paths. Read-only research uses an
+  empty `ownedPaths` list; code tasks declare their exact repo-relative paths.
+  Keep code ownership disjoint (including nested paths) across concurrent tasks.
+- Keep worker outputs, instructions, and prose out of the persisted DAG; pass each
+  exact task goal/condition only when dispatching it. The primary retains acceptance,
+  decisions, review, integration, and workflow transitions.
+
 ## 3. Dispatch template (every dispatch, no exceptions)
-- **Worker:** worker-code | worker-verify | worker-debug | worker-specs (only for a durable human-readable record change)
+- **Worker:** worker-code | worker-research | worker-verify | worker-debug | worker-specs (only for a durable human-readable record change)
 - **Mechanism:** invoke that named OpenCode subagent through the native Task tool; do not relabel same-context work as a worker dispatch.
 - **Verifiable condition:** the exact checkable predicate defining done
-- **Budget:** per ADR-005 (code 8k / verify 4k / debug 6k tokens)
+- **Budget:** per ADR-005 (code 8k / research 4k / verify 4k / debug 6k tokens)
 - **State pointers:** relevant record paths and the factual delta; `worker-specs`
   reads/updates human-readable `.specs` records only
+
+Each dispatched worker still receives exactly one condition. For DAG execution,
+the primary separately dispatches each currently-ready task as its own native Task
+using the mode-to-worker mapping above; see `guarana:build` for readiness, worktree,
+integration, retry, restart, and cancellation gates. `worker-research` may inspect
+only provided pointers using `read`, `grep`, and `glob`; it must never edit, run
+bash/shell commands, launch nested tasks, or call `workflow_tick`.
 
 The primary context passes the dispatch contract, waits for the Task return, and
 advances workflow state. If Task is unavailable or denied, report the blocker

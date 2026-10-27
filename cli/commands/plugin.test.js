@@ -343,9 +343,9 @@ it('tracks worker and Advisor profile hashes relative to project and XDG OpenCod
       plugin.install(useProject, { quiet: true });
       const root = openCodeRootTarget(useProject);
       const manifest = JSON.parse(fs.readFileSync(installManifestTarget(useProject), 'utf8'));
-      assert.equal(manifest.workers.length, 4);
+      assert.equal(manifest.workers.length, 5);
       assert.deepEqual(manifest.workers.map(({ path: relative }) => relative).sort(), [
-        'agents/worker-code.md', 'agents/worker-debug.md', 'agents/worker-specs.md', 'agents/worker-verify.md',
+        'agents/worker-code.md', 'agents/worker-debug.md', 'agents/worker-research.md', 'agents/worker-specs.md', 'agents/worker-verify.md',
       ]);
       assert.deepEqual(manifest.advisor.map(({ path: relative }) => relative).sort(), [
         'agents/guarana-advisor.md', 'agents/guarana.md', 'commands/guarana-advisor.md',
@@ -972,7 +972,7 @@ it('deploys Task subagents, reports their health, and removes Guarana-owned prof
   const originalCwd = process.cwd();
   const project = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-plugin-agents-'));
   const agentDir = path.join(project, '.opencode', 'agents');
-  const expectedAgents = ['worker-code', 'worker-verify', 'worker-debug', 'worker-specs'];
+  const expectedAgents = ['worker-code', 'worker-verify', 'worker-research', 'worker-debug', 'worker-specs'];
   try {
     process.chdir(project);
     plugin.install(true, { quiet: true });

@@ -12,8 +12,11 @@ function skillInstructions(skill) {
 }
 
 function profileText(worker, useProject) {
+  const readOnlyResearch = worker.name === 'worker-research';
   const bashPermission = worker.name === 'worker-specs'
       ? '  bash:\n    "*": deny\n    "guarana specs record --file .specs/state/worker-specs-handoff.json": allow\n    "node bin/guarana.js specs record --file .specs/state/worker-specs-handoff.json": allow\n'
+      : readOnlyResearch
+      ? '  bash: deny\n'
       : '  bash: allow\n';
   const editPermission = worker.name === 'worker-code'
       ? '  edit: allow\n'
@@ -21,26 +24,50 @@ function profileText(worker, useProject) {
       ? '  edit:\n    "*": deny\n    ".specs/state/known-issues.md": allow\n'
       : worker.name === 'worker-specs'
        ? '  edit:\n    "*": deny\n    ".specs/README.md": allow\n    ".specs/architecture.md": allow\n    ".specs/conventions.md": allow\n    ".specs/decisions/*.md": allow\n    ".specs/state/*.md": allow\n    ".specs/state/worker-specs-handoff.json": allow\n    ".specs/features/*.md": allow\n    ".specs/changes/*.md": allow\n'
-      : '  edit: deny\n';
+       : '  edit: deny\n';
+  const permissionField = readOnlyResearch ? 'permissions:' : 'permission:';
+  const permissionRules = readOnlyResearch
+    ? [
+      '  - action: "*"',
+      '    resource: "*"',
+      '    effect: deny',
+      '  - action: external_directory',
+      '    resource: "*"',
+      '    effect: deny',
+      '  - action: read',
+      '    resource: "*"',
+      '    effect: allow',
+      '  - action: glob',
+      '    resource: "*"',
+      '    effect: allow',
+      '  - action: grep',
+      '    resource: "*"',
+      '    effect: allow',
+    ]
+    : [
+      '  task: deny',
+      '  workflow_tick: deny',
+      '  read: allow',
+      '  grep: allow',
+      '  glob: allow',
+      bashPermission.trimEnd(),
+      editPermission.trimEnd(),
+    ];
   return [
     '---',
     `description: ${worker.description}`,
     'mode: subagent',
     'hidden: false',
-    'permission:',
-    '  task: deny',
-    '  workflow_tick: deny',
-    '  read: allow',
-    '  grep: allow',
-    '  glob: allow',
-    bashPermission.trimEnd(),
-    editPermission.trimEnd(),
+    permissionField,
+    ...permissionRules,
     '---',
     WORKER_MARKER,
     `# ${worker.name}`,
     '',
     `You are the separate OpenCode Task subagent for ${worker.name}. Perform only the assigned condition. Do not advance the parent workflow state; return your result to the primary agent.`,
     '',
+    ...(worker.budget ? [`Default dispatch budget: ${worker.budget.toLocaleString('en-US')} tokens.`] : []),
+    ...(worker.budget ? [''] : []),
     '## Canonical worker procedure',
     '',
     skillInstructions(worker.skill),
