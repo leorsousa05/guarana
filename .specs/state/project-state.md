@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-10-27T02:24:57.608Z
+Last updated: 2026-10-27T03:36:42.469Z
 
 ## Per-skill status
 | Skill | Status |
@@ -24,7 +24,7 @@ Last updated: 2026-10-27T02:24:57.608Z
 | Guarana optional model advisor | **VALIDATED** — UI criteria 11–14 and ADR-027 runtime proof |
 
 ## Current step
-Parallel subtask orchestration is VALIDATED: assigned native Task access to its explicit worktree path was established; this is assignment-specific, not an OS sandbox or host-wide guarantee. Native cancellation remains unavailable/unverified and request/reconcile-only; .lock.coord contention fails closed with no automatic recovery.
+Parallel subtask orchestration is SHIPPED as source on main at 9e5267578cfa3234375be05920f8d774edb3d634; ordinary push succeeded and an immediate git ls-remote confirmed origin/main at that commit. Main was clean after the push. No force push, tag, version bump, npm publication, GitHub release, or package release occurred; package version remains 1.5.1. Task path access was proved only for the assigned path, not as a host-wide guarantee or sandbox; cancellation remains unavailable/unverified and request/reconcile-only; no provider-backed or OpenCode-host smoke ran. Full gates and proof are in .specs/changes/2026-10-26-parallel-subtask-orchestration.md.
 
 ## Bounded feature validation — Dashboard Overview operational workbench — 2026-10-24
 

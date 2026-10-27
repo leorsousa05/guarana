@@ -1,6 +1,6 @@
 # Feature spec: Parallel subtask orchestration
 
-**Status: VALIDATED**
+**Status: SHIPPED**
 
 ## Goal
 Implement safe parallel subtask orchestration for Guarana workers within one primary workflow, including parallel read-only and isolated code tasks.
@@ -36,10 +36,10 @@ Implement safe parallel subtask orchestration for Guarana workers within one pri
 
 ## Validation and residual limitations
 
-Fresh independent `worker-verify` returned PASS for all eight acceptance criteria. A native Task code worker accessed its exact assigned worktree path and read `orchestrator/prompt.js`; this establishes access for that assignment only, not a host-wide guarantee or OS sandbox. Task-host cancellation remains unavailable/unverified, so in-flight cancellation is request/reconcile-only. `.lock.coord` contention fails closed; a marker left by process death has no automatic recovery, its exact path is surfaced, and blind deletion is forbidden. The feature is VALIDATED, not SHIPPED; no commit, push, release, tag, or npm publication occurred. See the dated change record for proof details.
+Validation snapshot before source shipment: fresh independent `worker-verify` returned PASS for all eight acceptance criteria. A native Task code worker accessed its exact assigned worktree path and read `orchestrator/prompt.js`; this establishes access for that assignment only, not a host-wide guarantee or OS sandbox. Task-host cancellation remains unavailable/unverified, so in-flight cancellation is request/reconcile-only. `.lock.coord` contention fails closed; a marker left by process death has no automatic recovery, its exact path is surfaced, and blind deletion is forbidden. At that point, the feature was VALIDATED, not SHIPPED; no commit, push, release, tag, or npm publication had occurred. See the dated change record for the validation snapshot and subsequent source-shipment proof.
 
 <!-- guarana:record:start -->
-Status: VALIDATED
-Proof: Fresh independent worker-verify overall PASS for criteria 1–8; npm test PASS 700/700; focused deterministic parallel/prompt/workflow/plugin/CLI suite PASS 198/198; npm run build and npm run check-cli PASS; pre-record node bin/guarana.js specs validate . --json PASS (249 files, 98 feature specs, 45 ADRs, 282 links, zero issues); git diff --check clean; deterministic conflict, multi-process lock, and assigned native Task worktree-path-access proofs; see dated change record.
+Status: SHIPPED
+Proof: Source commit 9e5267578cfa3234375be05920f8d774edb3d634 (feat(orchestrator): add parallel subtask orchestration), parent dc154f2e64c2ae8a764a2bcd552d508c1fea56cd; ordinary git push origin main succeeded (dc154f2..9e52675 main -> main), immediate git ls-remote origin refs/heads/main returned the exact pushed commit, and main was clean after push.; Before push on integrated main, npm test passed 700/700; npm run build passed; npm run check-cli passed with CLI bundle matching canonical; node bin/guarana.js specs validate . --json passed with 250 files, 98 feature specs, 45 ADRs, 284 links, 0 issues; git diff --check was clean.; Fresh independent worker-verify returned overall PASS on all eight feature criteria; tests, check-cli, and diff-check were independently rerun and passed. The verifier did not rerun build because it writes generated artifacts.; Task path access was proved only for that assignment, not as a host-wide guarantee or sandbox; host cancellation remains unavailable/unverified and request/reconcile-only; no provider-backed or OpenCode-host smoke ran.; Source shipment only: no force push, tag, version bump, npm publication, GitHub release, or package release occurred; package version remains 1.5.1.
 Change: .specs/changes/2026-10-26-parallel-subtask-orchestration.md
 <!-- guarana:record:end -->
