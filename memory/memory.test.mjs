@@ -190,6 +190,15 @@ describe("graph CRUD", () => {
     assert.throws(() => createNode(vaultDir, {
       type: "preference", status: "confirmed", scope: "global", intent: "missing category", ts: 2,
     }), /category/);
+    assert.throws(() => createNode(vaultDir, {
+      type: "preference", status: "confirmed", scope: "project", intent: "missing category", ts: 3,
+    }), /category/);
+    assert.throws(() => createNode(vaultDir, {
+      type: "preference", status: "confirmed", category: "workflow", intent: "missing scope", ts: 4,
+    }), /scope must be "project"/);
+    assert.throws(() => createNode(vaultDir, {
+      type: "decision", status: "confirmed", scope: "project", category: "workflow", ts: 4,
+    }), /category/);
   });
 
   it("rejects edges referencing unknown node ids", () => {
@@ -356,6 +365,79 @@ describe("security", () => {
     assert.equal(current.count, 1);
     assert.equal(current.preferences[0].id, replacement.id);
     assert.equal(current.preferences[0].priority, "normal");
+  });
+
+  it("writes categorized project preferences and selects only current-vault confirmed preferences without graph expansion", async () => {
+    const { memorySaveNode, memoryGetProjectPreferences } = await import("./tools.js");
+    const otherProject = initVault(path.join(tmpDir, "other-project"));
+    const base = { type: "preference", scope: "project", intent: "repository style", summary: "Use synthetic project conventions." };
+    for (const category of ["agent_behavior", "workflow", "communication"]) {
+      const saved = await memorySaveNode(vaultDir, { ...base, category });
+      assert.equal(saved.type, "preference");
+      assert.equal(saved.scope, "project");
+      assert.equal(saved.category, category);
+      assert.equal(saved.projectHash, projectHashFor(path.resolve(vaultDir, "..", "..")));
+    }
+    await assert.rejects(() => memorySaveNode(vaultDir, { ...base }), /category/);
+    await assert.rejects(() => memorySaveNode(vaultDir, { ...base, category: "general" }), /category/);
+    await assert.rejects(() => memorySaveNode(vaultDir, { ...base, category: "unsupported" }), /category/);
+    for (const invalid of [
+      { type: "decision", scope: "project", category: "workflow" },
+      { type: "preference", scope: "project", category: "workflow", priority: "essential" },
+    ]) {
+      await assert.rejects(() => memorySaveNode(vaultDir, { ...base, ...invalid }), /category|priority/);
+    }
+
+    const direct = listNodes(vaultDir).filter((node) => node.type === "preference");
+    const neighbor = createNode(vaultDir, {
+      id: "project-preference-neighbor", type: "preference", status: "confirmed", scope: "project",
+      category: "workflow", ts: 500, intent: "linked only", summary: "Graph neighbors are not expanded.",
+    });
+    createEdge(vaultDir, { from: direct[0].id, to: neighbor.id, rel: "relates-to" });
+    const legacy = {
+      id: "legacy-project-preference", type: "preference", status: "confirmed", scope: "project", ts: 900,
+      intent: "legacy searchable", summary: "Uncategorized legacy project preference.",
+    };
+    const invalidCategory = {
+      id: "invalid-category-project-preference", type: "preference", status: "confirmed", scope: "project", category: "general", ts: 901,
+      intent: "invalid legacy category", summary: "Must remain ineligible.",
+    };
+    const draft = {
+      id: "draft-project-preference", type: "preference", status: "draft", scope: "project", category: "workflow", ts: 902,
+      intent: "draft preference", summary: "Must remain ineligible.",
+    };
+    const wrongTypes = ["decision", "bug", "solution", "refactor"].map((type, index) => ({
+      id: `project-${type}-not-preference`, type, status: "confirmed", scope: "project", ts: 903 + index,
+      intent: "not a preference", summary: `${type} memory must remain ineligible.`,
+    }));
+    const wrongScope = {
+      id: "global-preference-in-project-vault", type: "preference", status: "confirmed", scope: "global", category: "workflow", ts: 904,
+      intent: "wrong scope", summary: "Must remain ineligible.",
+    };
+    fs.appendFileSync(paths(vaultDir).nodes, `${[legacy, invalidCategory, draft, ...wrongTypes, wrongScope].map((node) => JSON.stringify(node)).join("\n")}\n`);
+    fs.appendFileSync(paths(vaultDir).edges, `${wrongTypes.map((node, index) => JSON.stringify({
+      from: direct[0].id, to: node.id, rel: "relates-to", ts: index + 1,
+    })).join("\n")}\n`);
+    const otherOnly = createNode(otherProject, {
+      id: "other-project-preference", type: "preference", status: "confirmed", scope: "project", category: "communication", ts: 1000,
+      intent: "other project", summary: "Must not leak across project vaults.",
+    });
+    const fixtureFiles = [paths(vaultDir).nodes, paths(vaultDir).edges, paths(otherProject).nodes];
+    const before = fixtureFiles.map((file) => fs.readFileSync(file));
+
+    const selected = await memoryGetProjectPreferences(vaultDir);
+    const selectedIds = selected.preferences.map(({ id }) => id);
+    assert.equal(selected.count, selected.preferences.length);
+    assert.deepEqual(selectedIds, direct.concat(neighbor)
+      .sort((a, b) => b.ts - a.ts || String(a.id).localeCompare(String(b.id)))
+      .map(({ id }) => id));
+    for (const excluded of [legacy, invalidCategory, draft, ...wrongTypes, wrongScope, otherOnly]) {
+      assert.ok(!selectedIds.includes(excluded.id), `excludes ${excluded.id}`);
+    }
+    assert.ok(selected.preferences.every(({ scope, type, category }) =>
+      scope === "project" && type === "preference" && ["agent_behavior", "workflow", "communication"].includes(category)));
+    assert.deepEqual(Object.keys(selected).sort(), ["count", "preferences"], "project selection returns only direct candidates, without graph groups");
+    assert.deepEqual(fixtureFiles.map((file) => fs.readFileSync(file)), before, "selection reads leave synthetic vault bytes unchanged");
   });
 
   it("prioritizes the three newest essential global preferences and treats legacy priority as normal", async () => {
@@ -530,6 +612,8 @@ describe("security", () => {
     const base = { intent: "matrix validation", summary: "must not persist" };
     for (const invalid of [
       { type: "preference", scope: "project" },
+      { type: "preference", scope: "project", category: "general" },
+      { type: "preference", scope: "project", category: "unknown" },
       { type: "atom", scope: "project" },
       { type: "supernode", scope: "project" },
       { type: "decision", scope: "global" },
@@ -537,7 +621,9 @@ describe("security", () => {
       { type: "preference", scope: "global" },
       { type: "preference", scope: "global", category: "general" },
       { type: "preference", scope: "global", category: "unknown" },
-      { type: "decision", scope: "project", category: "workflow" },
+      ...["decision", "bug", "solution", "refactor"].map((type) => ({
+        type, scope: "project", category: "workflow",
+      })),
     ]) {
       await assert.rejects(() => memorySaveNode(vaultDir, { ...base, ...invalid }));
       assert.throws(() => createNode(vaultDir, {
@@ -560,8 +646,14 @@ describe("security", () => {
         type: "preference", scope: "global", category, ...base,
       });
       assert.equal(saved.category, category);
+      const projectPreference = await memorySaveNode(vaultDir, {
+        type: "preference", scope: "project", category, ...base,
+      });
+      assert.equal(projectPreference.category, category);
     }
-    assert.deepEqual(listNodes(vaultDir).map((node) => node.type), ["decision", "bug", "solution", "refactor"]);
+    assert.deepEqual(listNodes(vaultDir).map((node) => node.type), [
+      "decision", "bug", "solution", "refactor", "preference", "preference", "preference",
+    ]);
     assert.equal(listNodes(globalVault).length, 3);
   });
 
@@ -648,6 +740,25 @@ describe("security", () => {
     assert.equal(converted.node.scope, "project");
     assert.equal(converted.node.summary, "Reviewed project solution.");
     assert.deepEqual(listEdges(vaultDir), [edge], "conversion preserves existing project edges");
+
+    const preferenceDraft = {
+      id: "legacy-project-preference-draft", type: "atom", status: "draft", scope: "project", ts: 3,
+      intent: "pending preference", summary: "Review this project preference.",
+    };
+    fs.appendFileSync(paths(vaultDir).nodes, `${JSON.stringify(preferenceDraft)}\n`);
+    await assert.rejects(() => memoryReviewDraft(vaultDir, {
+      id: preferenceDraft.id, action: "confirm", edits: { type: "preference" },
+    }), /category/);
+    await assert.rejects(() => memoryReviewDraft(vaultDir, {
+      id: preferenceDraft.id, action: "confirm", edits: { type: "solution", category: "workflow" },
+    }), /category is only valid/);
+    const confirmedPreference = await memoryReviewDraft(vaultDir, {
+      id: preferenceDraft.id, action: "confirm",
+      edits: { type: "preference", category: "communication" },
+    });
+    assert.equal(confirmedPreference.node.type, "preference");
+    assert.equal(confirmedPreference.node.scope, "project");
+    assert.equal(confirmedPreference.node.category, "communication");
   });
 
   it("does not confirm a global-scoped draft through the project review path", async () => {
@@ -782,7 +893,17 @@ describe("security", () => {
     assert.ok(isSensitive("Authorization: Bearer abcdef1234567890"));
     assert.ok(isSensitive("DB_HOST=x\nDB_PASS=y")); // .env block
     assert.ok(hasSensitiveAssignment("api_key=genericsecretvalue123"));
+    assert.ok(hasSensitiveAssignment("OPENAI_API_KEY=genericsecretvalue123"));
+    assert.ok(hasSensitiveAssignment("AWS_SECRET_ACCESS_KEY=genericsecretvalue123"));
+    assert.ok(hasSensitiveAssignment('OPENAI_API_KEY="synthetic secret with spaces"'));
+    assert.ok(!isSensitive("ONE_LINE=value"));
+    assert.ok(isSensitive(`AWS_SECRET_ACCESS_KEY=genericsecretvalue123
+OPENAI_API_KEY=anothersecretvalue123`));
     assert.ok(hasSensitiveAssignment("api_key=genericsecretvalue123"), "assignment detection is stateless across calls");
+    assert.ok(!hasSensitiveAssignment("api_key=[REDACTED]"), "a redacted assignment contains no secret value");
+    assert.ok(!hasSensitiveAssignment('api_key: "[REDACTED]"'), "a quoted redaction placeholder contains no secret value");
+    assert.ok(hasSensitiveAssignment("password=[REDACTED]secret-value-123"), "a redaction-like prefix must not hide an appended secret");
+    assert.ok(hasSensitiveAssignment('password="[REDACTED]secret-value-123"'), "quoted redaction-like prefixes must not hide an appended secret");
     assert.ok(!isSensitive("just a normal decision note"));
     assert.ok(!isSensitive("ONE_LINE=value"));
     assert.ok(!isSensitive("please ask-questions and check the desk-top")); // benign lookalikes
@@ -817,6 +938,26 @@ describe("security", () => {
 
   it("sanitize redacts secrets", () => {
     assert.equal(sanitize("api_key=supersecretvalue123"), "api_key=[REDACTED]");
+    assert.equal(sanitize("OPENAI_API_KEY=synthetic-openai-secret"), "OPENAI_API_KEY=[REDACTED]");
+    assert.equal(sanitize("DB_PASS=synthetic-db-password"), "DB_PASS=[REDACTED]");
+    assert.equal(sanitize("DB_PWD=synthetic-db-password"), "DB_PWD=[REDACTED]");
+    assert.equal(sanitize("PGPASSWORD=synthetic-postgres-password"), "PGPASSWORD=[REDACTED]");
+    assert.equal(sanitize("PASSPHRASE=synthetic-passphrase"), "PASSPHRASE=[REDACTED]");
+    assert.equal(sanitize("PG_PASSPHRASE=synthetic-passphrase"), "PG_PASSPHRASE=[REDACTED]");
+    assert.ok(hasSensitiveAssignment("DB_PASS=synthetic-db-password"));
+    assert.ok(hasSensitiveAssignment("DB_PWD=synthetic-db-password"));
+    assert.equal(sanitize("AWS_SECRET_ACCESS_KEY=synthetic-aws-secret"), "AWS_SECRET_ACCESS_KEY=[REDACTED]");
+    assert.equal(sanitize('OPENAI_API_KEY="synthetic secret with spaces"'), "OPENAI_API_KEY=[REDACTED]");
+    const escapedDoubleQuoteSecret = `OPENAI_API_KEY=${JSON.stringify('synthetic"secret-suffix')}`;
+    const escapedSingleQuoteSecret = `ANTHROPIC_API_KEY='synthetic${String.fromCharCode(92)}'secret-suffix'`;
+    assert.equal(sanitize(escapedDoubleQuoteSecret), 'OPENAI_API_KEY=[REDACTED]');
+    assert.equal(sanitize(escapedSingleQuoteSecret), 'ANTHROPIC_API_KEY=[REDACTED]');
+    const escapedDelimiter = String.fromCharCode(92);
+    const escapedDelimitedSecret = `OPENAI_API_KEY=${escapedDelimiter}"synthetic-escaped-delimiter-secret${escapedDelimiter}"`;
+    assert.equal(sanitize(escapedDelimitedSecret), 'OPENAI_API_KEY=[REDACTED]');
+    assert.equal(sanitize(`OPENAI_API_KEY=${JSON.stringify('synthetic-quoted-secret')}suffix`), 'OPENAI_API_KEY=[REDACTED]');
+    assert.equal(sanitize(`DB_PWD=${escapedDelimiter}"synthetic-pwd-secret${escapedDelimiter}"tail`), 'DB_PWD=[REDACTED]');
+    assert.equal(sanitize('SecretBodyMarker: keep this test marker'), 'SecretBodyMarker: keep this test marker');
     assert.ok(sanitize("token: abcdef123456").includes("[REDACTED]"));
     assert.ok(!sanitize("sk-abcdefghijklmnopqrstuvwxyz").includes("sk-abc"));
     assert.ok(
@@ -914,6 +1055,23 @@ describe("export/import", () => {
       { ...base, nodes: [{ ...projectPreference, scope: "global", category: "workflow" }] },
       { ...base, nodes: [{ ...base.nodes[0], category: "workflow" }] },
       { ...base, nodes: [{ ...base.nodes[0], scope: null }] },
+      ...[
+        { intent: "workflow preference", summary: "api_key=synthetic-import-secret-12345" },
+        { intent: "workflow preference", summary: "ordinary summary", rejectedAlternatives: ["Bearer syntheticImportToken123456789"] },
+        { intent: "workflow preference", summary: "ordinary summary", author: "api_key=synthetic-import-author-secret-123" },
+        { intent: "DB_USER=synthetic-user", summary: "DB_PASS=synthetic-password" },
+        { intent: "workflow preference", summary: "ordinary summary", metadata: { note: "api_key=synthetic-nested-secret-123" } },
+        { intent: "workflow preference", summary: "ordinary summary", metadata: { api_key: "synthetic-nested-value-123" } },
+        { intent: "workflow preference", summary: "ordinary summary", metadata: { DB_USER: "synthetic-user", DB_PASS: "synthetic-password" } },
+      ].map((text, index) => ({
+        ...base,
+        nodes: [{
+          ...projectPreference,
+          id: `sensitive-import-${index}`,
+          category: "workflow",
+          ...text,
+        }],
+      })),
       ...["atom", "supernode", "unknown"].map((type) => ({
         ...base,
         nodes: [{ ...base.nodes[0], type }],

@@ -6,7 +6,7 @@ import os from 'node:os';
 import fs from 'node:fs';
 import { initVault, initUserVault, paths } from '../memory/vault.js';
 import { createNode, createEdge, getNode, listEdges } from '../memory/graph.js';
-import { memoryGetGlobalPreferences } from '../memory/tools.js';
+import { memoryGetGlobalPreferences, memoryGetProjectPreferences } from '../memory/tools.js';
 
 // Slice 3 contract tests (criteria 11/12/13): memory_* tools, called
 // through the plugin's registered `tool` interface (not the engine directly).
@@ -158,6 +158,58 @@ describe('GuaranaMemory tools (slice 3)', () => {
       assert.ok(node.summary.includes('[REDACTED]'));
       const raw = fs.readFileSync(path.join(vaultDir(), 'nodes.jsonl'), 'utf8');
       assert.ok(!raw.includes('supersecretvalue123'));
+    });
+  });
+
+  describe('memory_save_node project preferences', () => {
+    it('requires supported categories for project preferences and keeps legacy uncategorized records searchable but ineligible', async () => {
+      const tool = api.tool.memory_save_node;
+      assert.deepEqual(tool.args.type.enum, ['decision', 'bug', 'solution', 'refactor', 'preference']);
+      assert.match(tool.args.category.description, /required for project or global preference nodes/i);
+      const saved = [];
+      for (const category of ['agent_behavior', 'workflow', 'communication']) {
+        const result = await call('memory_save_node', {
+          type: 'preference', ...(category === 'agent_behavior' ? {} : { scope: 'project' }), category,
+          intent: 'synthetic project preference', summary: `Keep ${category} conventions clear.`,
+        });
+        assert.equal(result.type, 'preference');
+        assert.equal(result.scope, 'project');
+        assert.equal(result.category, category);
+        saved.push(result);
+      }
+      for (const invalid of [
+        { type: 'preference', scope: 'project' },
+        { type: 'preference', scope: 'project', category: 'general' },
+        { type: 'decision', scope: 'project', category: 'workflow' },
+      ]) {
+        const result = await call('memory_save_node', {
+          ...invalid, intent: 'invalid project preference', summary: 'Must not persist.',
+        });
+        assert.match(result.error, /category/);
+      }
+
+      const legacy = {
+        id: 'legacy-uncategorized-project-pref', type: 'preference', status: 'confirmed', scope: 'project', ts: 1,
+        intent: 'synthetic legacy marker', summary: 'Legacy project preference stays searchable.',
+      };
+      fs.appendFileSync(path.join(vaultDir(), 'nodes.jsonl'), `${JSON.stringify(legacy)}\n`);
+      const search = await call('memory_search', {
+        query: 'synthetic legacy marker', type: 'preference', scope: 'project',
+      });
+      assert.ok(search.results.some(({ id }) => id === legacy.id));
+      const selected = await memoryGetProjectPreferences(vaultDir());
+      assert.deepEqual(selected.preferences.map(({ id }) => id), saved.slice()
+        .sort((left, right) => right.ts - left.ts || left.id.localeCompare(right.id))
+        .map(({ id }) => id));
+      assert.ok(!selected.preferences.some(({ id }) => id === legacy.id));
+      const categorizedSearch = await call('memory_search', {
+        query: 'synthetic project preference', type: 'preference', scope: 'project',
+      });
+      assert.equal(categorizedSearch.results.find(({ id }) => id === legacy.id).category, undefined,
+        'legacy uncategorized preference remains searchable without a synthetic category');
+      assert.deepEqual(categorizedSearch.results.filter(({ id }) => saved.some((node) => node.id === id))
+        .map(({ category }) => category).sort(),
+        ['agent_behavior', 'communication', 'workflow']);
     });
   });
 
@@ -383,6 +435,37 @@ describe('GuaranaMemory tools (slice 3)', () => {
       assert.equal(bounded.relatedSuperseded.length, 0);
       assert.deepEqual(fixtureFiles.map((file) => fs.readFileSync(file)), before,
         'global context reads leave every synthetic project/global fixture byte unchanged');
+    });
+  });
+
+  describe('automatic learning review', () => {
+    it('rejects global skill proposals so project knowledge cannot enter the cross-project catalog', async () => {
+      const reviewApi = await GuaranaMemory({
+        directory: tmpDir,
+        reviewRunner: async () => ({
+          ok: true,
+          proposal: {
+            action: 'create_skill',
+            reason: 'Reusable project workflow.',
+            skill: {
+              name: 'cross-project-guidance',
+              description: 'A workflow learned from the current repository.',
+              category: 'development',
+              scope: 'global',
+              content: '# Project workflow\n\nUse this repository-specific procedure.',
+            },
+          },
+        }),
+      });
+
+      const result = JSON.parse(await reviewApi.tool.guarana_learning_review.execute({
+        summary: 'Implemented a repository-specific workflow.',
+        changedPaths: ['src/workflow.js'],
+      }, { sessionID: 'global-scope-rejection-session' }));
+
+      assert.equal(result.status, 'failed');
+      assert.match(result.reason, /project scope/i);
+      assert.equal(fs.existsSync(path.join(process.env.HOME, '.agents', 'skills', 'cross-project-guidance', 'SKILL.md')), false);
     });
   });
 

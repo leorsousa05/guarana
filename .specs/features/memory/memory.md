@@ -130,7 +130,7 @@ only explicit durable knowledge is persisted in the memory graph.
 23. The memory plugin continues exposing the compatible decision tool and adds
     the typed-node tool; graph viewers label `fixes` and `relates-to` edges.
 
-## Amendment: automatic intent capture and global preferences (2026-09-28)
+## Historical amendment: automatic intent capture and global preferences (2026-09-28)
 
 The memory plugin injects instructions for the model to detect durable user
 intent. Standing assistant-behavior preferences are saved as `preference` nodes
@@ -139,14 +139,28 @@ once per session, then again after compaction, independent of task wording.
 Project decisions and knowledge use the project vault and task-relevant retrieval.
 When a preference changes, the new node supersedes its previous version.
 
+## Current injection contract (2026-11-03)
+
+Eligible confirmed preferences from the selected project require a valid
+`agent_behavior`, `workflow`, or `communication` category and are injected as a
+separate lower-trust group before eligible Global candidates. Project preferences
+do not expand through graph edges; other project knowledge remains on-demand.
+Both scopes share the bounded complete-record budget. Automatic injection is
+controlled by `memory.autoInject` (enabled by default, with project/global
+overrides); disabling it leaves explicit memory search available. See the
+[project-scoped preference injection feature](project-scoped-preference-injection.md)
+and the master tracker for current validation scope. Its tests used synthetic
+fixtures only; no real project or Global vault was accessed or changed.
+
 ## Amendment: project knowledge and user preference separation (TASKED)
 
-The accepted [memory-domain separation follow-up](project-knowledge-and-user-preferences-separation.md),
+The broader [memory-domain separation follow-up](project-knowledge-and-user-preferences-separation.md),
 recorded in [ADR-042](../../decisions/ADR-042-project-knowledge-and-user-preference-separation.md),
-supersedes the prior automatic project-context injection behavior when
-implemented. This amendment records an accepted, planned follow-up only; the
-historical VALIDATED status and evidence above are unchanged, and no
-implementation or proof is claimed here.
+remains TASKED as shown in the master tracker; its historical checkpoint below
+does not claim completion. The separately scoped injection of eligible project
+preferences is VALIDATED as recorded above and in its dedicated feature spec.
+This distinction supersedes the older global-only injection description without
+claiming completion of the broader follow-up.
 
 ### Strict legacy-lifecycle clarification (2026-10-25; implementation TASKED)
 

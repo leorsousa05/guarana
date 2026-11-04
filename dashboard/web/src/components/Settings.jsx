@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Models } from './Models.jsx';
 import { useProjectFetch } from '../lib/projectApi.js';
+import { usePoll } from '../hooks/usePoll.js';
 
 const WEB_DEFAULTS = {
   appearance: { theme: 'light', startPage: 'overview' },
@@ -19,6 +20,13 @@ const WORKFLOW_FIELDS = [
   { name: 'verify', label: 'Independent verification' },
 ];
 const PREFERENCE_BUDGET_FIELD = 'preferenceInjectionBudgetTokens';
+const MEMORY_AUTO_INJECT_FIELD = 'autoInject';
+const PREFERENCE_BUDGET_PRESETS = [
+  ['', 'Automatic (unset)'],
+  [8192, 'Less (8192)'],
+  [32768, 'Medium (32768)'],
+  [65536, 'More (65536)'],
+];
 
 function copySettings(settings) {
   return Object.fromEntries(Object.entries(settings || {}).map(([key, value]) => [key, { ...value }]));
@@ -71,8 +79,37 @@ export function setWorkflowBudgetField(settings, value) {
   return next;
 }
 
+export function workflowBudgetUpdate(event) {
+  const value = event.currentTarget.value === '' ? '' : Number(event.currentTarget.value);
+  return (current) => setWorkflowBudgetField(current, value);
+}
+
 export function clearWorkflowBudgetField(settings) {
   return setWorkflowBudgetField(settings, '');
+}
+
+export function setWorkflowMemoryAutoInject(settings, enabled) {
+  return { ...settings, memory: { ...(settings?.memory || {}), [MEMORY_AUTO_INJECT_FIELD]: enabled } };
+}
+
+export function workflowMemoryAutoInjectUpdate(event) {
+  const enabled = event.currentTarget.checked;
+  return (current) => setWorkflowMemoryAutoInject(current, enabled);
+}
+
+export function clearWorkflowMemoryAutoInject(settings) {
+  const next = copySettings(settings);
+  if (next.memory) {
+    delete next.memory[MEMORY_AUTO_INJECT_FIELD];
+    if (!Object.keys(next.memory).length) delete next.memory;
+  }
+  return next;
+}
+
+function workflowMemoryAutoInjectValue(scope, draft, global) {
+  if (Object.hasOwn(draft?.memory || {}, MEMORY_AUTO_INJECT_FIELD)) return draft.memory[MEMORY_AUTO_INJECT_FIELD];
+  if (scope === 'project' && Object.hasOwn(global?.memory || {}, MEMORY_AUTO_INJECT_FIELD)) return global.memory[MEMORY_AUTO_INJECT_FIELD];
+  return true;
 }
 
 export async function putScopedSettings(endpoint, scope, settings, request = fetch) {
@@ -116,6 +153,27 @@ function workflowBudgetValue(scope, draft, global) {
   return '';
 }
 
+function workflowBudgetOptions(value) {
+  const options = [...PREFERENCE_BUDGET_PRESETS];
+  if (Number.isInteger(value) && !options.some(([preset]) => preset === value)) {
+    options.push([value, `Custom (${value})`]);
+  }
+  return options;
+}
+
+function preferenceEstimateStatus(data, error) {
+  if (error) return { text: 'Preference injection estimate is unavailable right now.', role: 'alert' };
+  if (data && Number.isSafeInteger(data.candidateCount) && data.candidateCount >= 0
+    && Number.isSafeInteger(data.serializedBytes) && data.serializedBytes >= 0) {
+    return {
+      text: `Full injectable current-project + Global candidate set (before budget fitting or session dedup): approximately ${data.serializedBytes.toLocaleString()} UTF-8 bytes across ${data.candidateCount.toLocaleString()} records (byte estimate; not exact model tokenization).`,
+      role: 'status',
+    };
+  }
+  if (data) return { text: 'Preference injection estimate is unavailable right now.', role: 'status' };
+  return { text: 'Loading preference injection estimate…', role: 'status' };
+}
+
 function webValueLabel(field, value) {
   if (field === 'theme') return value === 'dark' ? 'Dark' : 'Light';
   if (field === 'startPage') return value === 'now' ? 'Activity' : `${String(value).charAt(0).toUpperCase()}${String(value).slice(1)}`;
@@ -145,6 +203,8 @@ export function Settings({
   refreshWorkflowSettings,
 }) {
   const projectFetch = useProjectFetch();
+  const preferenceEstimate = usePoll('/api/memory/preference-estimate', 15000);
+  const preferenceEstimateLine = preferenceEstimateStatus(preferenceEstimate.data, preferenceEstimate.error);
   const [webState, setWebState] = useState(webSettings || null);
   const [workflowState, setWorkflowState] = useState(workflowSettings || null);
   const [webScope, setWebScope] = useState('project');
@@ -230,7 +290,7 @@ export function Settings({
                     />
                   </label>
                   <p className="settings-source" id={`settings-workflow-source-${name}`}>
-                    Effective: {effective ? 'enabled' : 'disabled'} · Source: {sourceLabel(source)}
+                    Effective for selected project: {effective ? 'enabled' : 'disabled'} · Source: {sourceLabel(source)}
                   </p>
                   {canClear && <button className="settings-clear" type="button" aria-label={`Clear project override for ${label}`} onClick={() => {
                     const next = clearWorkflowField(workflowDraft, name);
@@ -241,6 +301,36 @@ export function Settings({
               );
             })}
             {(() => {
+              const field = MEMORY_AUTO_INJECT_FIELD;
+              const id = `settings-workflow-memory-${field}`;
+              const effective = workflow.effective?.memory?.[field] !== false;
+              const source = workflow.sources?.memory?.[field] || 'default';
+              const value = workflowMemoryAutoInjectValue(workflowScope, workflowDraft, workflow.global);
+              const canClear = workflowScope === 'project' && Object.hasOwn(workflowDraft?.memory || {}, field);
+              return (
+                <div className="settings-row" key={id}>
+                  <label className="settings-toggle" htmlFor={id}>
+                    <span>Automatically inject saved memory preferences</span>
+                    <input
+                      id={id}
+                      type="checkbox"
+                      checked={value}
+                      aria-describedby={`${id}-source settings-workflow-memory-note`}
+                      onChange={(event) => setWorkflowDraft(workflowMemoryAutoInjectUpdate(event))}
+                    />
+                  </label>
+                  <p className="settings-source" id={`${id}-source`}>
+                    Effective for selected project: {effective ? 'enabled' : 'disabled'} · Source: {sourceLabel(source)}
+                  </p>
+                  {canClear && <button className="settings-clear" type="button" aria-label="Clear project override for automatic memory preference injection" onClick={() => {
+                    const next = clearWorkflowMemoryAutoInject(workflowDraft);
+                    setWorkflowDraft(next);
+                    saveWorkflow('project', next);
+                  }}>Clear project override</button>}
+                </div>
+              );
+            })()}
+            {(() => {
               const field = PREFERENCE_BUDGET_FIELD;
               const id = `settings-workflow-memory-${field}`;
               const effective = workflow.effective?.memory?.[field];
@@ -250,22 +340,23 @@ export function Settings({
               return (
                 <div className="settings-row" key={id}>
                   <label className="settings-control" htmlFor={id}>
-                    <span>Global preference injection budget (tokens)</span>
-                    <input
+                    <span>Current-project + Global preference injection budget (tokens)</span>
+                    <select
                       id={id}
-                      type="number"
-                      min="1"
-                      step="1"
                       value={value}
                       aria-describedby={`${id}-source settings-workflow-budget-note`}
-                      onChange={(event) => setWorkflowDraft((current) => setWorkflowBudgetField(
-                        current,
-                        event.currentTarget.value === '' ? '' : Number(event.currentTarget.value),
+                      onChange={(event) => setWorkflowDraft(workflowBudgetUpdate(event))}
+                    >
+                      {workflowBudgetOptions(value).map(([optionValue, optionLabel]) => (
+                        <option key={optionValue === '' ? 'automatic' : optionValue} value={optionValue}>{optionLabel}</option>
                       ))}
-                    />
+                    </select>
                   </label>
                   <p className="settings-source" id={`${id}-source`}>
-                    Effective: {effective == null ? 'model context when available' : `${effective} tokens`} · Source: {sourceLabel(source)}
+                    Effective for selected project: {effective == null ? 'model context when available' : `${effective} tokens`} · Source: {sourceLabel(source)}
+                  </p>
+                  <p className="settings-source" id={`${id}-estimate`} role={preferenceEstimateLine.role}>
+                    {preferenceEstimateLine.text}
                   </p>
                   {canClear && <button className="settings-clear" type="button" aria-label="Clear project override for preference injection budget" onClick={() => {
                     const next = clearWorkflowBudgetField(workflowDraft);
@@ -282,7 +373,10 @@ export function Settings({
           </p>
         )}
         <p className="settings-scope-note" id="settings-workflow-budget-note">
-          The complete preference set is injected or omitted as a whole. UTF-8 serialized byte length is compared with the token budget as an estimate, not exact tokenization or remaining conversation capacity. When unset, model context is used.
+          Complete preference records are injected in trust and priority order when they fit the budget; records that do not fit are omitted without truncation. UTF-8 serialized byte length is compared with the token budget as an estimate, not exact tokenization or remaining conversation capacity. When unset, model context is used.
+        </p>
+        <p className="settings-scope-note" id="settings-workflow-memory-note">
+          When disabled, saved preferences are not automatically injected into the prompt. Explicit on-demand memory search remains available. Spec files are not automatically injected either; consult only relevant records when needed. This setting does not affect those on-demand reads.
         </p>
         {workflowSettingsError && workflow && <p className="settings-feedback settings-feedback--error" role="alert">Unable to refresh workflow preferences: {workflowSettingsError}</p>}
         {workflowFeedback && <p className={`settings-feedback settings-feedback--${workflowFeedback.type}`} role={workflowFeedback.type === 'error' ? 'alert' : 'status'}>{workflowFeedback.text}</p>}

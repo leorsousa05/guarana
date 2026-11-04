@@ -58,11 +58,12 @@ restore state -> plan -> build -> code -> verify -> remember
                   +--------- fix and retry <-----+
 ```
 
-No `guarana:plan` prefix is required. The orchestrator detects the task,
-creates missing project specs, searches project knowledge on demand, and injects
-the active skill plus eligible global user preferences as one complete,
-budget-bounded payload. Direct, one-hop related, and reached superseded
-preferences retain separate trust groups.
+No `guarana:plan` prefix is required. The orchestrator detects the task and does
+not create human-readable project specs just because work starts. It searches
+project knowledge on demand and injects the active skill plus only eligible
+current-project and Global preferences as a complete, budget-bounded payload;
+specs are consulted selectively when relevant. Direct, one-hop related, and
+reached superseded preferences retain separate trust groups.
 
 ## Why Guarana
 
@@ -72,7 +73,7 @@ preferences retain separate trust groups.
 | Long runs lose their context | State, specs, decisions, and failures live on disk |
 | "Done" is confused with "it runs" | Implementation and verification are separate stages |
 | Failed checks lead to repeated mistakes | Verification failures route into debugging and re-verification |
-| User preferences disappear between sessions | Bounded confirmed global preferences are injected; project knowledge stays on-demand |
+| User preferences disappear between sessions | Categorized confirmed preferences from the current project and bounded global preferences are injected; other project knowledge stays on-demand |
 | Prompts become bloated | Progressive disclosure injects only the active skill |
 
 ## Quick Start
@@ -155,6 +156,7 @@ Explicit commands remain available as an escape hatch:
 ```text
 guarana:plan    guarana:build    guarana:code
 guarana:verify  guarana:remember guarana:memory
+guarana:skill-authoring guarana:memory-maintenance
 guarana:debug   guarana:measure
 ```
 
@@ -173,27 +175,48 @@ overwrites existing project content.
 │   ├── decisions/                   # append-only ADRs
 │   └── features/<task>/              # task-specific feature spec
 └── .guarana/memory/
-    ├── nodes.jsonl                  # decisions, bugs, solutions, refactors
+    ├── nodes.jsonl                  # project knowledge and categorized preferences
     ├── edges.jsonl                  # graph relationships
     └── config.json
 ```
 
-Project knowledge lives in a gitignored vault and is searched on demand; it is
-never injected into assistant context. Standing user preferences live in the
-private global vault. Every eligible confirmed active global preference is
-included with its full text, together with eligible one-hop related context,
-subject to a single effective budget. Direct, related, and reached superseded
-preferences remain separate groups; related context is exactly one relationship
-hop from the direct group. New preferences use `agent_behavior`, `workflow`, or
+Project knowledge lives in a gitignored vault and is searched on demand. Only
+confirmed project preferences with an `agent_behavior`, `workflow`, or
+`communication` category are eligible for automatic injection; legacy
+uncategorized project preferences and project decisions, bugs, solutions, and
+refactors remain excluded. Standing user preferences live in the private global
+vault. The current project's eligible preferences are ranked before Global
+direct, related, and superseded candidates. Global preferences are ranked
+direct before related before superseded, then essential before normal and
+newest first within each group. Complete records are added while the compact
+serialized payload fits the effective budget; a non-fitting record is skipped
+without truncation and later smaller records are still considered.
+Current-project, direct, related, and reached superseded preferences remain separate
+trust groups; related context is exactly one relationship hop from the direct
+group. Injection notices state injected and omitted counts, and no usable
+budget fails closed with no preference text. Dashboard budget presets are Automatic (unset), Less
+(8192), Medium (32768), and More (65536), while custom integer values remain
+supported. New preferences use `agent_behavior`, `workflow`, or
 `communication`; legacy category-less global preferences read as `general`.
-If the complete serialized payload cannot fit the configured/model budget—or no
-usable budget exists—the whole preference payload is omitted with an explicit
-notice. UTF-8 serialized bytes compared with the token budget are an estimate,
-not exact tokenization or remaining conversation capacity.
+The Dashboard estimate exposes only the aggregate selected-project and Global
+candidate count and serialized byte estimate before budget fitting or session
+deduplication.
+UTF-8 serialized bytes compared with the token budget are an estimate, not exact
+tokenization or remaining conversation capacity.
 Guarana Web's memory graph displays both scopes and their relationships. Normal
 tool activity remains telemetry and never becomes a memory atom.
 
 ## Skills
+
+The built-in index labels each procedure with a topical category. Generated
+skills are listed as compact metadata—name, category, scope, and description;
+`skill_list` also returns a revision for safe updates. Their bodies are loaded
+only when relevant. Category describes the subject; scope (`project` or `global`)
+describes where a generated skill applies. Safe skill creation and updates require
+a descriptor-handle namespace (`/proc/self/fd` or `/dev/fd`); unsupported platforms
+fail closed instead of falling back to path-based writes. Updates use a per-skill
+lock: concurrent attempts fail fast, so retry with a refreshed revision. If a
+process crashes and leaves the lock, remove it only after confirming no update is active.
 
 ### Core
 
@@ -203,6 +226,7 @@ tool activity remains telemetry and never becomes a memory atom.
 | `guarana:build` | Run the Frame -> Run -> Verify -> Record lifecycle |
 | `guarana:code` | Implement with read-before-edit and minimal diffs |
 | `guarana:verify` | Independently validate the acceptance condition |
+| `guarana:research` | Investigate evidence within read-only boundaries |
 | `guarana:remember` | Maintain durable state and recover context |
 | `guarana:memory` | Search, review, and manage the memory graph |
 
@@ -212,6 +236,8 @@ tool activity remains telemetry and never becomes a memory atom.
 |---|---|
 | `guarana:debug` | A test fails or the run misbehaves |
 | `guarana:measure` | Cost, telemetry, or budget health needs tuning |
+| `guarana:skill-authoring` | Create or maintain a reusable generated skill |
+| `guarana:memory-maintenance` | Audit or maintain durable project/global memory |
 
 ## CLI Reference
 
@@ -258,9 +284,9 @@ guarana specs --help
 guarana specs -h
 
 guarana workflow read [--project]
-guarana workflow set <specs|verify> <true|false> [--project]
+guarana workflow set <specs|verify|memory.autoInject> <true|false> [--project]
 guarana workflow set memory.preferenceInjectionBudgetTokens <positive-integer> [--project]
-guarana workflow clear [specs|verify|memory.preferenceInjectionBudgetTokens] [--project]
+guarana workflow clear [specs|verify|memory.autoInject|memory.preferenceInjectionBudgetTokens] [--project]
 guarana workflow --help
 guarana workflow -h
 
@@ -271,11 +297,15 @@ guarana --version
 `guarana web` starts the local dashboard. Saved launch preferences can be
 overridden for one run with `--port N`, `--open`, or `--no-open`. Advisor
 commands list available OpenCode models, inspect or update scoped model settings,
-and check managed command/profile health. Workflow settings support `specs` and
-independent `verify` preferences. The `memory.preferenceInjectionBudgetTokens`
-budget can be read, set to a positive integer, or cleared; project values override
-global settings, and clearing a project value restores global inheritance. `--project`
-selects the project settings.
+and check managed command/profile health. Workflow settings support `specs`,
+independent `verify`, and `memory.autoInject` for automatic injection of saved
+memory preferences. Setting `memory.autoInject` to `false` disables automatic
+injection but leaves explicit on-demand memory search available; clearing the
+setting restores inheritance or the enabled default. The
+`memory.preferenceInjectionBudgetTokens` budget can be read, set to a positive
+integer, or cleared; project values override global settings, and clearing a
+project value restores global inheritance. `--project` selects the project
+settings.
 
 The Dashboard's **Workflow** screen also shows the current parallel-subtask run,
 when one is bound: its status and update time, plus each task's ID, mode, status,

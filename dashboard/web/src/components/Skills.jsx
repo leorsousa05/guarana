@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { usePoll } from '../hooks/usePoll.js';
+import { useProjectFetch } from '../lib/projectApi.js';
 import { EmptyState, ErrorBanner, handleTabKeyDown } from './common.jsx';
 import { SpecsMarkdownModal } from './SpecsMarkdownModal.jsx';
 
@@ -11,6 +12,15 @@ const TABS = [
 const SCOPE_CONTEXT = {
   global: 'Available across projects.',
   project: 'Generated for this project.',
+};
+
+const CATEGORY_LABELS = {
+  development: 'Development',
+  automation: 'Automation',
+  research: 'Research',
+  integrations: 'Integrations',
+  memory: 'Memory',
+  general: 'General',
 };
 
 function successfulSkillsData(response) {
@@ -28,7 +38,7 @@ function successfulSkillsData(response) {
 export function filterSkills(skills, query) {
   const term = query.trim().toLowerCase();
   if (!term) return skills;
-  return skills.filter((skill) => `${skill.name}\n${skill.description}`.toLowerCase().includes(term));
+  return skills.filter((skill) => `${skill.name}\n${skill.category || 'general'}\n${skill.description}`.toLowerCase().includes(term));
 }
 
 export function SkillScopeTabs({ response, scope, onScopeChange }) {
@@ -108,7 +118,7 @@ function ScopePanel({ response, data, scope, active, search, onSearch, onRead })
                 type="search"
                 value={search}
                 onChange={(event) => onSearch(event.target.value)}
-                placeholder="Name or description"
+                placeholder="Name, category, or description"
               />
               <p className="skills-search-count" aria-live="polite">
                 Showing {visibleSkills.length} of {skills.length}
@@ -126,6 +136,7 @@ function ScopePanel({ response, data, scope, active, search, onSearch, onRead })
                     onClick={() => onRead(skill)}
                   >
                     <span className="skill-entry-name">{skill.name}</span>
+                    <span className="skill-entry-category">{CATEGORY_LABELS[skill.category] || CATEGORY_LABELS.general}</span>
                     <span className="skill-entry-description">{skill.description}</span>
                     <span className="skill-entry-action">Read</span>
                   </button>
@@ -198,17 +209,35 @@ export function SkillsRegistry({
 
 export function Skills() {
   const response = usePoll('/api/skills', 5000);
+  const projectFetch = useProjectFetch();
   const [scope, setScope] = useState('global');
   const [reading, setReading] = useState(null);
+  const [readError, setReadError] = useState(null);
+
+  const readSkill = async (skill) => {
+    setReadError(null);
+    try {
+      const selectedScope = skill.scope || scope;
+      const result = await projectFetch(`/api/skills/${encodeURIComponent(selectedScope)}/${encodeURIComponent(skill.name)}`);
+      const data = await result.json();
+      if (!result.ok || data.error) throw new Error(data.error || 'Unable to read skill.');
+      setReading(data);
+    } catch (error) {
+      setReadError(error.message || 'Unable to read skill.');
+    }
+  };
 
   return (
-    <SkillsRegistry
-      response={response}
-      scope={scope}
-      onScopeChange={setScope}
-      reading={reading}
-      onRead={setReading}
-      onClose={() => setReading(null)}
-    />
+    <>
+      {readError && <ErrorBanner text={`Unable to read skill: ${readError}`} />}
+      <SkillsRegistry
+        response={response}
+        scope={scope}
+        onScopeChange={setScope}
+        reading={reading}
+        onRead={readSkill}
+        onClose={() => setReading(null)}
+      />
+    </>
   );
 }

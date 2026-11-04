@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { readJsonl } from './telemetry.js';
+import { estimateMemoryPayload } from '../../../orchestrator/prompt.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -134,6 +135,26 @@ export async function preferences(opts = {}) {
         .some((value) => value.toLowerCase().includes(query)))
       .sort((a, b) => (Number(b.ts) || 0) - (Number(a.ts) || 0) || String(a.id).localeCompare(String(b.id)));
     return { preferences: result, count: result.length };
+  } catch (err) {
+    return { error: errMsg(err) };
+  }
+}
+
+// Estimate every eligible current-project and global preference candidate
+// before injection budget fitting or per-session deduplication, using the same
+// context construction as the automatic orchestrator path. The response
+// contains aggregate values only.
+export async function preferenceEstimate(projectVaultDir) {
+  try {
+    const { tools, vault } = await engine();
+    const projectPreferences = await tools.memoryGetProjectPreferences(projectVaultDir);
+    const globalPreferences = await tools.memoryGetGlobalPreferences(vault.userVaultDir(), { complete: true });
+    return estimateMemoryPayload({
+      project_preferences: projectPreferences.preferences,
+      global_preferences: globalPreferences.preferences,
+      related_global_preferences: globalPreferences.relatedPreferences || [],
+      superseded_global_preferences: globalPreferences.relatedSuperseded || [],
+    });
   } catch (err) {
     return { error: errMsg(err) };
   }

@@ -60,13 +60,22 @@ async function run(args, context = {}) {
       return 0;
     }
 
+    if (parsed.command === 'set-auto-inject') {
+      settings.setMemoryAutoInject(scope, parsed.enabled, options);
+      stdoutLine(context, `saved workflow preference memory.autoInject=${parsed.enabled} (${scope})`);
+      return 0;
+    }
+
     if (parsed.command === 'set-budget') {
       settings.setPreferenceInjectionBudget(scope, parsed.budgetTokens, options);
       stdoutLine(context, `saved workflow preference memory.preferenceInjectionBudgetTokens=${parsed.budgetTokens} (${scope})`);
       return 0;
     }
 
-    if (parsed.name === undefined) {
+    if (parsed.command === 'clear-auto-inject') {
+      settings.clearMemoryAutoInject(scope, options);
+      stdoutLine(context, `cleared workflow preference memory.autoInject (${scope})`);
+    } else if (parsed.name === undefined) {
       settings.writeWorkflowSettings(scope, {}, options);
       stdoutLine(context, `cleared workflow preferences (${scope})`);
     } else {

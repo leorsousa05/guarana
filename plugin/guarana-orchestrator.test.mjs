@@ -1,10 +1,11 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { GuaranaOrchestrator } from './guarana-orchestrator.js';
+import OrchestratorPlugin, { GuaranaOrchestrator, consumeEventStreamWithReconnect } from './guarana-orchestrator.js';
 import { GuaranaOrchestrator as BundledOrchestrator } from '../cli/plugin/guarana-orchestrator.js';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { apply, createWorkflow, load, save, workflowFile } from '../orchestrator/state.js';
 import {
@@ -73,8 +74,8 @@ describe('GuaranaOrchestrator', () => {
       'id', 'type', 'scope', 'category', 'priority', 'intent', 'summary', 'tags', 'rejectedAlternatives',
     ];
     assert.deepEqual(compact.fields, fields);
-    return Object.fromEntries([
-      'global_preferences', 'related_global_preferences', 'superseded_global_preferences',
+  return Object.fromEntries([
+      'project_preferences', 'global_preferences', 'related_global_preferences', 'superseded_global_preferences',
     ].map((group) => [group, compact[group].map((values) => Object.fromEntries(fields.flatMap((field, index) =>
       values[index] === null ? [] : [[field, values[index]]])))]));
   }
@@ -94,6 +95,21 @@ describe('GuaranaOrchestrator', () => {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, JSON.stringify(settings));
     return file;
+  }
+
+  function assertNoHumanReadableSpecs(directory, context = 'workflow entry') {
+    for (const relative of [
+      'README.md',
+      'state/project-state.md',
+      'conventions.md',
+      'features/initial-task/initial-task.md',
+    ]) {
+      assert.equal(
+        fs.existsSync(path.join(directory, '.specs', relative)),
+        false,
+        `${context} must not create ${relative}`,
+      );
+    }
   }
 
   function allowPreferenceInjection(scope = 'global', tokens = 100000, directory = tmpDir) {
@@ -254,7 +270,7 @@ describe('GuaranaOrchestrator', () => {
     }
   });
 
-  it('workflow_tick start_task requires a completed plan, atomically persists kickoff, bootstraps specs, and logs ordinary events', async () => {
+  it('workflow_tick start_task requires a completed plan and persists kickoff without scaffolding specs', async () => {
     const tool = api.tool.workflow_tick;
     assert.ok(tool.args.action.enum.includes('start_task'));
     assert.match(tool.args.goal.description, /required and nonempty for start_task/i);
@@ -313,7 +329,8 @@ describe('GuaranaOrchestrator', () => {
       { event: 'plan_complete', from: 'planning', to: 'building', skill: 'build' },
       { event: 'run_start', from: 'building', to: 'coding', skill: 'code' },
     ]);
-    assert.ok(fs.existsSync(path.join(tmpDir, '.specs', 'README.md')));
+    assert.equal(fs.existsSync(path.join(tmpDir, '.specs', 'README.md')), false,
+      'start_task must not create a generic tracker after planning');
   });
 
   it('chat.message with a new task routes to planning and persists', async () => {
@@ -329,7 +346,46 @@ describe('GuaranaOrchestrator', () => {
     assert.equal(evs[0].event, 'new_task');
   });
 
-  it('absent workflow settings preserve automatic specs and verification behavior', async () => {
+  it('plugin startup and task-entry paths never scaffold human-readable specs', async () => {
+    for (const [pluginIndex, plugin] of [GuaranaOrchestrator, BundledOrchestrator].entries()) {
+      const entries = [
+        {
+          name: 'chat-new-task',
+          run: (hooks, id) => hooks['chat.message'](
+            { sessionID: id }, { parts: parts('Implement a fresh task') },
+          ),
+        },
+        {
+          name: 'chat-force',
+          run: (hooks, id) => hooks['chat.message'](
+            { sessionID: id }, { parts: parts('guarana:plan Implement a forced task') },
+          ),
+        },
+        {
+          name: 'tick-new-task',
+          run: (hooks, id) => hooks.tool.workflow_tick.execute(
+            { action: 'new_task', goal: 'Tick task' }, { sessionID: id, agent: 'guarana' },
+          ),
+        },
+        {
+          name: 'tick-force',
+          run: (hooks, id) => hooks.tool.workflow_tick.execute(
+            { action: 'force', skill: 'plan', goal: 'Forced tick task' }, { sessionID: id, agent: 'guarana' },
+          ),
+        },
+      ];
+
+      for (const entry of entries) {
+        const projectDir = path.join(tmpDir, `empty-entry-${pluginIndex}-${entry.name}`);
+        const hooks = await plugin({ directory: projectDir });
+        assertNoHumanReadableSpecs(projectDir, `${entry.name} startup`);
+        await entry.run(hooks, `${pluginIndex}-${entry.name}`);
+        assertNoHumanReadableSpecs(projectDir, entry.name);
+      }
+    }
+  });
+
+  it('absent workflow settings preserve verification behavior without scaffolding specs', async () => {
     await chat('Implement the default workflow task');
     for (const action of ['plan_complete', 'run_start', 'code_complete']) {
       await api.tool.workflow_tick.execute({ action }, primaryContext());
@@ -337,7 +393,7 @@ describe('GuaranaOrchestrator', () => {
 
     const out = { system: [] };
     await api['experimental.chat.system.transform']({ sessionID: 'default-workflow-settings' }, out);
-    assert.ok(fs.existsSync(path.join(tmpDir, '.specs', 'README.md')));
+    assert.equal(fs.existsSync(path.join(tmpDir, '.specs', 'README.md')), false);
     assert.match(out.system.join('\n'), /worker-verify/);
     assert.doesNotMatch(out.system.join('\n'), /Workflow preference overrides/);
   });
@@ -357,7 +413,8 @@ describe('GuaranaOrchestrator', () => {
         { sessionID: `workflow-preferences-${index}` },
         { parts: parts('Implement a preference-aware workflow') },
       );
-      assert.ok(fs.existsSync(path.join(projectDir, '.specs', 'README.md')));
+      assert.equal(fs.existsSync(path.join(projectDir, '.specs', 'README.md')), false,
+        'enabling specs automation must not scaffold a placeholder at task entry');
 
       for (const action of ['plan_complete', 'run_start', 'code_complete']) {
         await hooks.tool.workflow_tick.execute({ action }, {
@@ -466,7 +523,8 @@ describe('GuaranaOrchestrator', () => {
       { sessionID: 'malformed-workflow-settings' },
       { parts: parts('Implement with malformed preferences') },
     );
-    assert.ok(fs.existsSync(path.join(tmpDir, '.specs', 'README.md')));
+    assert.equal(fs.existsSync(path.join(tmpDir, '.specs', 'README.md')), false,
+      'malformed settings must not bootstrap human-readable specs');
 
     for (const action of ['plan_complete', 'run_start', 'code_complete']) {
       await hooks.tool.workflow_tick.execute({ action }, primaryContext());
@@ -528,15 +586,15 @@ describe('GuaranaOrchestrator', () => {
     assert.equal(fs.existsSync(path.join(process.env.HOME, '.config', 'guarana', 'memory')), false, 'read-only questions must not bootstrap the user memory vault');
   });
 
-  it('explicit guarana skill commands still enter workflow and bootstrap task records', async () => {
+  it('explicit guarana skill commands enter workflow without creating placeholder task records', async () => {
     await chat('guarana:plan');
     assert.equal(workflow().state, 'planning');
-    assert.ok(fs.existsSync(path.join(tmpDir, '.specs', 'README.md')));
-    assert.ok(fs.existsSync(path.join(tmpDir, '.specs', 'state', 'project-state.md')));
-    assert.ok(fs.existsSync(path.join(tmpDir, '.specs', 'features', 'initial-task', 'initial-task.md')));
+    assert.equal(fs.existsSync(path.join(tmpDir, '.specs', 'README.md')), false);
+    assert.equal(fs.existsSync(path.join(tmpDir, '.specs', 'state', 'project-state.md')), false);
+    assert.equal(fs.existsSync(path.join(tmpDir, '.specs', 'features', 'initial-task', 'initial-task.md')), false);
   });
 
-  it('targeted README, docs, and config updates start and bootstrap normal workflows', async () => {
+  it('targeted README, docs, and config updates start without placeholder specs', async () => {
     const plugins = [GuaranaOrchestrator, BundledOrchestrator];
     for (const [pluginIndex, plugin] of plugins.entries()) {
       for (const [index, text] of [
@@ -564,7 +622,8 @@ describe('GuaranaOrchestrator', () => {
           '.specs/state/project-state.md',
           '.specs/features/initial-task/initial-task.md',
         ]) {
-          assert.ok(fs.existsSync(path.join(projectDir, file)), `${file} must be bootstrapped for ${text}`);
+          assert.equal(fs.existsSync(path.join(projectDir, file)), false,
+            `${file} must not be bootstrapped before planning for ${text}`);
         }
       }
     }
@@ -619,12 +678,12 @@ describe('GuaranaOrchestrator', () => {
     }
   });
 
-  it('new tasks bootstrap specs and the memory vault automatically', async () => {
+  it('new tasks bootstrap the memory vault but not placeholder specs', async () => {
     await chat('Implement OAuth authentication');
-    assert.ok(fs.existsSync(path.join(tmpDir, '.specs', 'README.md')));
-    assert.ok(fs.existsSync(path.join(tmpDir, '.specs', 'state', 'project-state.md')));
-    assert.ok(fs.existsSync(path.join(tmpDir, '.specs', 'decisions')));
-    assert.ok(fs.existsSync(path.join(tmpDir, '.specs', 'features', 'initial-task', 'initial-task.md')));
+    assert.equal(fs.existsSync(path.join(tmpDir, '.specs', 'README.md')), false);
+    assert.equal(fs.existsSync(path.join(tmpDir, '.specs', 'state', 'project-state.md')), false);
+    assert.equal(fs.existsSync(path.join(tmpDir, '.specs', 'decisions')), false);
+    assert.equal(fs.existsSync(path.join(tmpDir, '.specs', 'features', 'initial-task', 'initial-task.md')), false);
     assert.ok(fs.existsSync(path.join(tmpDir, '.guarana', 'memory', 'nodes.jsonl')));
     assert.ok(fs.existsSync(path.join(tmpDir, '.guarana', 'memory', 'config.json')));
     assert.equal(fs.readFileSync(path.join(tmpDir, '.guarana', 'memory', 'nodes.jsonl'), 'utf8').trim(), '');
@@ -671,6 +730,40 @@ describe('GuaranaOrchestrator', () => {
       'Legacy atom for OAuth.',
       'Legacy supernode for OAuth.',
     ]) assert.equal(injection.includes(text), false, `${text} must not be automatically injected`);
+  });
+
+  it('honors scoped memory auto-injection opt-out while retaining on-demand memory search', async () => {
+    const globalVault = initUserVault();
+    const preference = createNode(globalVault, {
+      type: 'preference', status: 'confirmed', scope: 'global', category: 'communication',
+      intent: 'response language', summary: 'AUTO-INJECT-OPT-OUT-PREFERENCE',
+    });
+    writeWorkflowSettings('global', { memory: { autoInject: false, preferenceInjectionBudgetTokens: 100000 } });
+    await chat('Start an unrelated implementation task');
+
+    const sessionID = 'memory-auto-inject-toggle';
+    const disabled = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID }, disabled);
+    assert.doesNotMatch(disabled.system.join('\n'), /AUTO-INJECT-OPT-OUT-PREFERENCE/);
+    assert.match(disabled.system.join('\n'), /Automatic memory preference injection is disabled/);
+    assert.equal(readEvents().filter((event) => event.type === 'memory-injected' && event.sessionID === sessionID).length, 0);
+
+    writeWorkflowSettings('project', { memory: { autoInject: true, preferenceInjectionBudgetTokens: 100000 } });
+    await chat('continue');
+    const overridden = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID }, overridden);
+    assert.match(overridden.system.join('\n'), /AUTO-INJECT-OPT-OUT-PREFERENCE/);
+    assert.equal(readEvents().filter((event) => event.type === 'memory-injected' && event.sessionID === sessionID).length, 1);
+
+    writeWorkflowSettings('project', { memory: { autoInject: false, preferenceInjectionBudgetTokens: 100000 } });
+    await chat('continue with memory disabled');
+    const disabledAgain = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID }, disabledAgain);
+    assert.doesNotMatch(disabledAgain.system.join('\n'), /AUTO-INJECT-OPT-OUT-PREFERENCE/);
+
+    const memory = await GuaranaMemory({ directory: tmpDir });
+    const explicit = JSON.parse(await memory.tool.memory_search.execute({ query: preference.summary, scope: 'global' }));
+    assert.ok(explicit.results.some((node) => node.id === preference.id), 'on-demand search remains available');
   });
 
   it('injects global preferences even when their wording does not match the project task', async () => {
@@ -724,7 +817,7 @@ describe('GuaranaOrchestrator', () => {
       { id: newPreference.id, type: 'preference', scope: 'global' },
     ]);
 
-    await api['session.compacted']({ properties: { info: { id: 'session-global-pref' } } });
+    await api.event({ event: { type: 'session.compacted', data: { sessionID: 'session-global-pref' } } });
     const afterCompact = { system: [] };
     await api['experimental.chat.system.transform']({ sessionID: 'session-global-pref' }, afterCompact);
     assert.match(afterCompact.system.join('\n'), /Always answer me in Portuguese/);
@@ -733,7 +826,700 @@ describe('GuaranaOrchestrator', () => {
     assert.equal(readEvents().filter((event) => event.type === 'memory-injected')[2].reason, 'compacted');
   });
 
-  it('uses configured/model preference budgets and fails closed for the complete serialized set', async () => {
+  it('persists session eviction recency when a repeated claim has no new memories', async () => {
+    allowPreferenceInjection();
+    const globalVault = initUserVault();
+    const preference = createNode(globalVault, {
+      id: 'session-lru-preference', type: 'preference', status: 'confirmed', scope: 'global',
+      category: 'communication', intent: 'session LRU fixture', summary: 'SESSION-LRU-PREFERENCE',
+    });
+    await chat('Start a task for the session LRU fixture');
+
+    const stateFile = path.join(tmpDir, '.specs', 'state', 'telemetry', 'memory-injection-state.json');
+    const olderSession = 'session-lru-older';
+    const newerSession = 'session-lru-newer';
+    const first = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID: olderSession }, first);
+    assert.match(first.system.join('\n'), /SESSION-LRU-PREFERENCE/);
+    const second = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID: newerSession }, second);
+    assert.match(second.system.join('\n'), /SESSION-LRU-PREFERENCE/);
+    assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(stateFile, 'utf8')).sessions), [olderSession, newerSession]);
+
+    globalThis[Symbol.for('guarana.orchestrator.memory-injection-cache')]
+      .delete(`${path.resolve(tmpDir)}::${olderSession}`);
+    const repeated = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID: olderSession }, repeated);
+    assert.doesNotMatch(repeated.system.join('\n'), /SESSION-LRU-PREFERENCE/);
+    const persisted = JSON.parse(fs.readFileSync(stateFile, 'utf8')).sessions;
+    assert.deepEqual(Object.keys(persisted), [newerSession, olderSession]);
+    assert.deepEqual(persisted[olderSession].seen, [`global:${preference.id}`]);
+    assert.equal(readEvents().filter((event) => event.type === 'memory-injected' && event.sessionID === olderSession).length, 1);
+    assert.equal(preference.scope, 'global');
+  });
+
+  it('refreshes active LRU state on a deduplicated turn and preserves it across restart', async () => {
+    allowPreferenceInjection();
+    const globalVault = initUserVault();
+    const preference = createNode(globalVault, {
+      id: 'active-session-lru-preference', type: 'preference', status: 'confirmed', scope: 'global',
+      category: 'communication', intent: 'active session LRU fixture', summary: 'ACTIVE-SESSION-LRU-PREFERENCE',
+    });
+    await chat('Start a task for the active session LRU fixture');
+
+    const sessionID = 'active-session-lru';
+    const first = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID }, first);
+    assert.match(first.system.join(' '), /ACTIVE-SESSION-LRU-PREFERENCE/);
+
+    const stateFile = path.join(tmpDir, '.specs', 'state', 'telemetry', 'memory-injection-state.json');
+    const persistedState = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    persistedState.sessions = Object.fromEntries(Array.from({ length: 128 }, (_, index) => [
+      `newer-session-${index}`,
+      { seen: [], nextReason: 'new-memories', updatedAt: index + 1 },
+    ]));
+    fs.writeFileSync(stateFile, JSON.stringify(persistedState));
+
+    const repeated = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID }, repeated);
+    assert.doesNotMatch(repeated.system.join(' '), /ACTIVE-SESSION-LRU-PREFERENCE/);
+    const refreshed = JSON.parse(fs.readFileSync(stateFile, 'utf8')).sessions;
+    assert.ok(Object.hasOwn(refreshed, sessionID), 'the active session claim must be restored to persistent LRU state');
+    assert.deepEqual(refreshed[sessionID].seen, [`global:${preference.id}`]);
+
+    globalThis[Symbol.for('guarana.orchestrator.memory-injection-cache')]
+      ?.delete(`${path.resolve(tmpDir)}::${sessionID}`);
+    api = await GuaranaOrchestrator({ directory: tmpDir });
+    await chat('Continue the active session after plugin restart');
+    const afterRestart = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID }, afterRestart);
+    assert.doesNotMatch(afterRestart.system.join(' '), /ACTIVE-SESSION-LRU-PREFERENCE/);
+    assert.equal(readEvents().filter((event) => event.type === 'memory-injected' && event.sessionID === sessionID).length, 1);
+  });
+
+  it('recovers compacted preference claims after the persistent state lock times out and the process restarts', async () => {
+    allowPreferenceInjection();
+    const globalVault = initUserVault();
+    const preference = createNode(globalVault, {
+      id: 'compaction-lock-recovery', type: 'preference', status: 'confirmed', scope: 'global',
+      category: 'communication', intent: 'lock recovery fixture', summary: 'REINJECT-AFTER-COMPACTION-LOCK',
+    });
+    await chat('Start a task for the lock recovery fixture');
+
+    const sessionID = 'compaction-lock-recovery-session';
+    const first = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID }, first);
+    assert.match(first.system.join('\n'), /REINJECT-AFTER-COMPACTION-LOCK/);
+
+    const telemetryDir = path.join(tmpDir, '.specs', 'state', 'telemetry');
+    const lockFile = path.join(telemetryDir, 'memory-injection-state.lock');
+    fs.mkdirSync(telemetryDir, { recursive: true });
+    fs.writeFileSync(lockFile, 'held by regression fixture');
+    const originalNow = Date.now;
+    let nowCalls = 0;
+    Date.now = () => originalNow() + nowCalls++ * 3000;
+    try {
+      await api.event({ event: { type: 'session.compacted', data: { sessionID } } });
+    } finally {
+      Date.now = originalNow;
+    }
+
+    const timeout = readEvents().find((event) => event.type === 'session-compacted' && event.outcome === 'reset-timeout');
+    assert.ok(timeout, 'compaction reset lock timeout must be observable');
+    assert.equal(timeout.sessionIDSource, 'event');
+    assert.equal(Object.hasOwn(timeout, 'sessionID'), false);
+    fs.unlinkSync(lockFile);
+    assert.ok(fs.readdirSync(telemetryDir).some((name) => name.startsWith('memory-injection-reset-') && name.endsWith('.json')),
+      'the reset intent must survive process restart after lock timeout');
+
+    globalThis[Symbol.for('guarana.orchestrator.memory-injection-cache')]
+      ?.delete(`${path.resolve(tmpDir)}::${sessionID}`);
+    api = await GuaranaOrchestrator({ directory: tmpDir });
+    await chat('Continue after compaction and plugin restart');
+    const afterCompact = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID }, afterCompact);
+    assert.match(afterCompact.system.join('\n'), /REINJECT-AFTER-COMPACTION-LOCK/);
+    const injections = readEvents().filter((event) => event.type === 'memory-injected' && event.sessionID === sessionID);
+    assert.equal(injections.length, 2, 'the stale persisted seen ID is claimed again only once');
+    assert.equal(injections[1].reason, 'compacted');
+    assert.deepEqual(injections[1].memories, [
+      { id: preference.id, type: 'preference', scope: 'global' },
+    ]);
+
+    const repeated = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID }, repeated);
+    assert.doesNotMatch(repeated.system.join('\n'), /REINJECT-AFTER-COMPACTION-LOCK/);
+    assert.equal(readEvents().filter((event) => event.type === 'memory-injected' && event.sessionID === sessionID).length, 2);
+  });
+
+  it('publishes reset intent before waiting so a concurrent transform sees compaction', async () => {
+    allowPreferenceInjection();
+    const globalVault = initUserVault();
+    createNode(globalVault, {
+      id: 'compaction-intent-before-lock', type: 'preference', status: 'confirmed', scope: 'global',
+      category: 'communication', intent: 'reset intent lock race fixture', summary: 'COMPACTION-INTENT-BEFORE-LOCK',
+    });
+    await chat('Start a task for reset intent lock race');
+
+    const sessionID = 'compaction-intent-before-lock-session';
+    const initial = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID }, initial);
+    assert.match(initial.system.join('\n'), /COMPACTION-INTENT-BEFORE-LOCK/);
+
+    const telemetryDir = path.join(tmpDir, '.specs', 'state', 'telemetry');
+    const lockFile = path.join(telemetryDir, 'memory-injection-state.lock');
+    fs.writeFileSync(lockFile, 'held by reset-intent race fixture');
+    const originalSetTimeout = globalThis.setTimeout;
+    let releaseResetWait;
+    globalThis.setTimeout = function (callback, delay, ...args) {
+      if (delay === 5 && !releaseResetWait) {
+        releaseResetWait = () => callback(...args);
+        return { unref() {} };
+      }
+      return originalSetTimeout.call(this, callback, delay, ...args);
+    };
+    let resetPromise;
+    try {
+      resetPromise = api.event({ event: { type: 'session.compacted', data: { sessionID } } });
+      const pendingMarkers = fs.readdirSync(telemetryDir)
+        .filter((name) => name.startsWith('memory-injection-reset-') && name.endsWith('.json'));
+      fs.unlinkSync(lockFile);
+
+      const afterCompaction = { system: [] };
+      await api['experimental.chat.system.transform']({ sessionID }, afterCompaction);
+      assert.match(afterCompaction.system.join('\n'), /COMPACTION-INTENT-BEFORE-LOCK/);
+
+      releaseResetWait?.();
+      await resetPromise;
+      const repeated = { system: [] };
+      await api['experimental.chat.system.transform']({ sessionID }, repeated);
+      assert.doesNotMatch(repeated.system.join('\n'), /COMPACTION-INTENT-BEFORE-LOCK/);
+      assert.equal(pendingMarkers.length, 1, 'the reset marker must be visible while reset waits for the lock');
+      assert.equal(readEvents().filter((event) => event.type === 'memory-injected' && event.sessionID === sessionID).length, 2);
+    } finally {
+      globalThis.setTimeout = originalSetTimeout;
+      fs.rmSync(lockFile, { force: true });
+      releaseResetWait?.();
+      if (resetPromise) await resetPromise.catch(() => {});
+    }
+  });
+
+  it('preserves a pending compaction reason when a session-start reset succeeds', async () => {
+    allowPreferenceInjection();
+    const globalVault = initUserVault();
+    createNode(globalVault, {
+      id: 'compaction-reset-precedence', type: 'preference', status: 'confirmed', scope: 'global',
+      category: 'communication', intent: 'reset precedence fixture', summary: 'COMPACTED-RESET-TAKES-PRECEDENCE',
+    });
+    await chat('Start a task for reset precedence');
+
+    const sessionID = 'compaction-reset-precedence-session';
+    const first = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID }, first);
+    assert.match(first.system.join('\n'), /COMPACTED-RESET-TAKES-PRECEDENCE/);
+
+    const telemetryDir = path.join(tmpDir, '.specs', 'state', 'telemetry');
+    const fingerprint = createHash('sha256').update(sessionID).digest('hex');
+    const marker = path.join(telemetryDir, `memory-injection-reset-${fingerprint}-pending-compaction.json`);
+    fs.writeFileSync(marker, JSON.stringify({ fingerprint, reason: 'compacted', updatedAt: 1 }), { mode: 0o600 });
+    await api.event({ event: { type: 'session.created', data: { sessionID, info: { id: sessionID } } } });
+
+    const stateFile = path.join(telemetryDir, 'memory-injection-state.json');
+    assert.equal(JSON.parse(fs.readFileSync(stateFile, 'utf8')).sessions[sessionID].nextReason, 'compacted');
+    assert.equal(fs.existsSync(marker), false);
+  });
+
+  it('preserves a persisted compaction reason over a pending session-start marker during claim', async () => {
+    allowPreferenceInjection();
+    const globalVault = initUserVault();
+    const preference = createNode(globalVault, {
+      id: 'persisted-compaction-precedence', type: 'preference', status: 'confirmed', scope: 'global',
+      category: 'communication', intent: 'persisted reset precedence fixture', summary: 'PERSISTED-COMPACTION-TAKES-PRECEDENCE',
+    });
+    await chat('Start a task for persisted reset precedence');
+
+    const sessionID = 'persisted-compaction-precedence-session';
+    const telemetryDir = path.join(tmpDir, '.specs', 'state', 'telemetry');
+    const stateFile = path.join(telemetryDir, 'memory-injection-state.json');
+    const fingerprint = createHash('sha256').update(sessionID).digest('hex');
+    const marker = path.join(telemetryDir, `memory-injection-reset-${fingerprint}-pending-session-start.json`);
+    fs.mkdirSync(telemetryDir, { recursive: true });
+    fs.writeFileSync(stateFile, JSON.stringify({ sessions: {
+      [sessionID]: { seen: [`global:${preference.id}`], nextReason: 'compacted', updatedAt: 1 },
+    } }));
+    fs.writeFileSync(marker, JSON.stringify({ fingerprint, reason: 'session-start', updatedAt: 2 }), { mode: 0o600 });
+
+    const output = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID }, output);
+    assert.match(output.system.join('\n'), /PERSISTED-COMPACTION-TAKES-PRECEDENCE/);
+    const injection = readEvents().find((event) => event.type === 'memory-injected' && event.sessionID === sessionID);
+    assert.equal(injection.reason, 'compacted');
+    assert.equal(fs.existsSync(marker), false);
+  });
+
+  it('preserves a newer pending compaction reset created while a claim persists', async () => {
+    allowPreferenceInjection();
+    const globalVault = initUserVault();
+    const preference = createNode(globalVault, {
+      id: 'racing-pending-reset-preference', type: 'preference', status: 'confirmed', scope: 'global',
+      category: 'communication', intent: 'pending reset race fixture', summary: 'REINJECT-AFTER-NEWER-RESET',
+    });
+    await chat('Start a task for the pending reset race fixture');
+
+    const sessionID = 'pending-reset-race-session';
+    const initial = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID }, initial);
+    assert.match(initial.system.join(' '), /REINJECT-AFTER-NEWER-RESET/);
+
+    const telemetryDir = path.join(tmpDir, '.specs', 'state', 'telemetry');
+    const stateFile = path.join(telemetryDir, 'memory-injection-state.json');
+    const fingerprint = createHash('sha256').update(sessionID).digest('hex');
+    const oldMarker = path.join(telemetryDir, `memory-injection-reset-${fingerprint}.json`);
+    const newerMarker = path.join(telemetryDir, `memory-injection-reset-${fingerprint}-concurrent.json`);
+    fs.mkdirSync(telemetryDir, { recursive: true });
+    fs.writeFileSync(oldMarker, JSON.stringify({ fingerprint, reason: 'session-start', updatedAt: 1 }), { mode: 0o600 });
+
+    const originalRenameSync = fs.renameSync;
+    let insertedNewerReset = false;
+    fs.renameSync = function (source, target) {
+      const result = originalRenameSync.call(this, source, target);
+      if (!insertedNewerReset && target === stateFile) {
+        fs.writeFileSync(newerMarker, JSON.stringify({ fingerprint, reason: 'compacted', updatedAt: 2 }), { mode: 0o600 });
+        insertedNewerReset = true;
+      }
+      return result;
+    };
+    const consumingOldReset = { system: [] };
+    try {
+      await api['experimental.chat.system.transform']({ sessionID }, consumingOldReset);
+    } finally {
+      fs.renameSync = originalRenameSync;
+    }
+    assert.equal(insertedNewerReset, true);
+    assert.match(consumingOldReset.system.join(' '), /REINJECT-AFTER-NEWER-RESET/);
+    assert.equal(fs.existsSync(oldMarker), false);
+    assert.equal(fs.existsSync(newerMarker), true, 'claim cleanup must only consume the marker it observed');
+
+    const afterNewerReset = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID }, afterNewerReset);
+    assert.match(afterNewerReset.system.join(' '), /REINJECT-AFTER-NEWER-RESET/);
+    const injections = readEvents().filter((event) => event.type === 'memory-injected' && event.sessionID === sessionID);
+    assert.equal(injections.length, 3);
+    assert.equal(injections[2].reason, 'compacted');
+    assert.deepEqual(injections[2].memories, [{ id: preference.id, type: 'preference', scope: 'global' }]);
+    assert.equal(fs.existsSync(newerMarker), false);
+  });
+
+  it('injects post-compaction preferences once across concurrent transforms', async () => {
+    allowPreferenceInjection();
+    initUserVault();
+    const memoryText = 'CONCURRENT_COMPACTION_INJECTION';
+    const preference = createNode(initUserVault(), {
+      id: 'concurrent-compaction-claim', type: 'preference', status: 'confirmed', scope: 'global',
+      category: 'communication', intent: 'concurrent compaction fixture', summary: memoryText,
+    });
+    await chat('Start a task for concurrent compaction behavior');
+
+    const sessionID = 'concurrent-compaction-session';
+    const first = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID }, first);
+    assert.match(first.system.join('\n'), new RegExp(memoryText));
+    await api.event({ event: { type: 'session.compacted', data: { sessionID } } });
+
+    const nextA = { system: [] };
+    const nextB = { system: [] };
+    await Promise.all([
+      api['experimental.chat.system.transform']({ sessionID }, nextA),
+      api['experimental.chat.system.transform']({ sessionID }, nextB),
+    ]);
+    const injected = [nextA, nextB].filter((output) => output.system.join('\n').includes(memoryText));
+    assert.equal(injected.length, 1, 'a concurrent pair should inject the preference once');
+    const events = readEvents().filter((event) => event.type === 'memory-injected' && event.sessionID === sessionID);
+    assert.equal(events.length, 2);
+    assert.equal(events[1].reason, 'compacted');
+    assert.deepEqual(events[1].memories, [
+      { id: preference.id, type: 'preference', scope: 'global' },
+    ]);
+  });
+
+  it('persists compacted claim reset when the first post-timeout injection has no fitting records', async () => {
+    allowPreferenceInjection();
+    const globalVault = initUserVault();
+    const preference = createNode(globalVault, {
+      id: 'compaction-lock-zero-fit', type: 'preference', status: 'confirmed', scope: 'global',
+      category: 'communication', intent: 'zero-fit lock recovery fixture', summary: 'ZERO-FIT-COMPACTION-RESET',
+    });
+    await chat('Start a task for the zero-fit lock recovery fixture');
+
+    const sessionID = 'compaction-lock-zero-fit-session';
+    const stateFile = path.join(tmpDir, '.specs', 'state', 'telemetry', 'memory-injection-state.json');
+    const first = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID }, first);
+    assert.match(first.system.join('\n'), /ZERO-FIT-COMPACTION-RESET/);
+    assert.deepEqual(JSON.parse(fs.readFileSync(stateFile, 'utf8')).sessions[sessionID].seen,
+      [`global:${preference.id}`]);
+
+    const lockFile = path.join(path.dirname(stateFile), 'memory-injection-state.lock');
+    fs.writeFileSync(lockFile, 'held by regression fixture');
+    const originalNow = Date.now;
+    let nowCalls = 0;
+    Date.now = () => originalNow() + nowCalls++ * 3000;
+    try {
+      await api.event({ event: { type: 'session.compacted', data: { sessionID } } });
+    } finally {
+      Date.now = originalNow;
+    }
+    fs.unlinkSync(lockFile);
+
+    writeWorkflowSettings('project', { memory: { preferenceInjectionBudgetTokens: 1 } });
+    const noFit = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID }, noFit);
+    assert.doesNotMatch(noFit.system.join('\n'), /ZERO-FIT-COMPACTION-RESET/);
+    const resetState = JSON.parse(fs.readFileSync(stateFile, 'utf8')).sessions[sessionID];
+    assert.deepEqual(resetState.seen, []);
+    assert.equal(resetState.nextReason, 'compacted');
+  });
+
+  it('resets preference claims on successful v2 compaction end, but not on other lifecycle events', async () => {
+    allowPreferenceInjection();
+    const globalVault = initUserVault();
+    const memorySecret = 'V2_COMPACTION_REINJECTION_SECRET';
+    const preference = createNode(globalVault, {
+      id: 'v2-compaction-reset', type: 'preference', status: 'confirmed', scope: 'global',
+      category: 'communication', intent: 'v2 compaction fixture', summary: memorySecret,
+    });
+    await chat('Start a task for the v2 compaction fixture');
+
+    const sessionID = 'V2_COMPACTION_RAW_SESSION_ID_SECRET';
+    const stateFile = path.join(tmpDir, '.specs', 'state', 'telemetry', 'memory-injection-state.json');
+    const first = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID }, first);
+    assert.match(first.system.join('\n'), new RegExp(memorySecret));
+    const claimedState = JSON.parse(fs.readFileSync(stateFile, 'utf8')).sessions[sessionID];
+    assert.deepEqual(claimedState.seen, [`global:${preference.id}`]);
+
+    for (const [type, data] of [
+      ['session.compaction.started', { sessionID }],
+      ['session.compaction.delta', { sessionID, text: 'V2_COMPACTION_DELTA_SECRET' }],
+      ['session.compaction.failed', { sessionID, error: 'V2_COMPACTION_FAILURE_SECRET' }],
+    ]) {
+      await api.event({ event: { type, data } });
+      assert.deepEqual(JSON.parse(fs.readFileSync(stateFile, 'utf8')).sessions[sessionID], claimedState,
+        `${type} must not reset persisted preference claims`);
+    }
+    const afterNonSuccess = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID }, afterNonSuccess);
+    assert.doesNotMatch(afterNonSuccess.system.join('\n'), new RegExp(memorySecret));
+    assert.equal(readEvents().filter((entry) => entry.type === 'memory-injected' && entry.sessionID === sessionID).length, 1);
+
+    const compactionTextSecret = 'V2_COMPACTION_TEXT_SECRET';
+    await api.event({ event: {
+      type: 'session.compaction.ended',
+      data: { sessionID, text: compactionTextSecret },
+    } });
+    const diagnostics = readEvents().filter((entry) => entry.type === 'session-compacted');
+    assert.deepEqual(diagnostics.map(({ outcome }) => outcome), ['received', 'reset-success']);
+    assert.ok(diagnostics.every((entry) => entry.sessionIDSource === 'event'));
+    assert.ok(diagnostics.every((entry) => /^[a-f0-9]{12}$/.test(entry.sessionFingerprint)));
+    const diagnosticText = JSON.stringify(diagnostics);
+    for (const secret of [sessionID, memorySecret, compactionTextSecret, 'V2_COMPACTION_DELTA_SECRET', 'V2_COMPACTION_FAILURE_SECRET']) {
+      assert.equal(diagnosticText.includes(secret), false, `${secret} must not be persisted in diagnostics`);
+    }
+
+    const resetState = JSON.parse(fs.readFileSync(stateFile, 'utf8')).sessions[sessionID];
+    assert.deepEqual(resetState.seen, []);
+    assert.equal(resetState.nextReason, 'compacted');
+    const afterCompaction = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID }, afterCompaction);
+    assert.match(afterCompaction.system.join('\n'), new RegExp(memorySecret));
+    const injections = readEvents().filter((entry) => entry.type === 'memory-injected' && entry.sessionID === sessionID);
+    assert.equal(injections.length, 2);
+    assert.equal(injections[1].reason, 'compacted');
+    assert.deepEqual(injections[1].memories, [
+      { id: preference.id, type: 'preference', scope: 'global' },
+    ]);
+  });
+
+  it('records redacted compacted-session receipt, child skip, and fallback reset diagnostics', async () => {
+    const eventSessionID = 'COMPACTION_RAW_SESSION_ID_SECRET';
+    const promptSecret = 'COMPACTION_RAW_PROMPT_SECRET';
+    const memorySecret = 'COMPACTION_RAW_MEMORY_SECRET';
+    await api.event({ event: {
+      type: 'session.compacted',
+      data: { sessionID: eventSessionID, prompt: promptSecret, memory: memorySecret },
+    } });
+    const eventDiagnostics = readEvents().filter((entry) => entry.type === 'session-compacted');
+    assert.deepEqual(eventDiagnostics.map(({ outcome }) => outcome), ['received', 'reset-success']);
+    assert.ok(eventDiagnostics.every((entry) => entry.sessionIDSource === 'event'));
+    assert.ok(eventDiagnostics.every((entry) => /^[a-f0-9]{12}$/.test(entry.sessionFingerprint)));
+    const eventDiagnosticText = JSON.stringify(eventDiagnostics);
+    for (const secret of [eventSessionID, promptSecret, memorySecret]) {
+      assert.equal(eventDiagnosticText.includes(secret), false, `${secret} must not be persisted in diagnostics`);
+    }
+
+    const childID = 'COMPACTION_CHILD_SESSION_ID_SECRET';
+    await api.event({ event: { type: 'session.created', data: {
+      sessionID: childID, info: { id: childID, parentID: 'primary', agent: 'worker-code' },
+    } } });
+    await api.event({ event: { type: 'session.compacted', data: { sessionID: childID } } });
+    const allDiagnostics = readEvents().filter((entry) => entry.type === 'session-compacted');
+    assert.deepEqual(allDiagnostics.slice(2).map(({ outcome }) => outcome), ['received', 'skipped-child']);
+    assert.ok(allDiagnostics.slice(2).every((entry) => entry.sessionIDSource === 'event'));
+
+    const fallbackID = 'COMPACTION_FALLBACK_SESSION_ID_SECRET';
+    const fallbackPrompt = 'COMPACTION_FALLBACK_PROMPT_SECRET';
+    await api['chat.message'](
+      { sessionID: fallbackID, messageID: 'compaction-fallback-message' },
+      { parts: parts(`Implement task ${fallbackPrompt}`) },
+    );
+    await api.event({ event: { type: 'session.compacted', data: {} } });
+    const fallbackDiagnostics = readEvents().filter((entry) => entry.type === 'session-compacted').slice(-2);
+    assert.deepEqual(fallbackDiagnostics.map(({ outcome }) => outcome), ['received', 'reset-success']);
+    assert.ok(fallbackDiagnostics.every((entry) => entry.sessionIDSource === 'fallback'));
+    const fallbackDiagnosticText = JSON.stringify(fallbackDiagnostics);
+    assert.equal(fallbackDiagnosticText.includes(fallbackID), false);
+    assert.equal(fallbackDiagnosticText.includes(fallbackPrompt), false);
+  });
+
+  it('records compacted reset errors without persisting session, prompt, memory, or error text', async () => {
+    const sessionID = 'COMPACTION_RESET_ERROR_SESSION_SECRET';
+    const telemetryDir = path.join(tmpDir, '.specs', 'state', 'telemetry');
+    fs.mkdirSync(path.join(telemetryDir, 'memory-injection-state.json'), { recursive: true });
+    await api.event({ event: { type: 'session.compacted', data: {
+      sessionID, prompt: 'RESET_ERROR_PROMPT_SECRET', memory: 'RESET_ERROR_MEMORY_SECRET',
+    } } });
+    const diagnostics = readEvents().filter((entry) => entry.type === 'session-compacted');
+    assert.deepEqual(diagnostics.map(({ outcome }) => outcome), ['received', 'reset-error']);
+    const text = JSON.stringify(diagnostics);
+    for (const secret of [sessionID, 'RESET_ERROR_PROMPT_SECRET', 'RESET_ERROR_MEMORY_SECRET']) {
+      assert.equal(text.includes(secret), false);
+    }
+  });
+
+  it('reconnects after stream errors and clean termination, resets delay on events, and caps backoff', async () => {
+    const controller = new AbortController();
+    const delays = [];
+    const failures = [];
+    const received = [];
+    const stream = (steps = []) => {
+      let index = 0;
+      return {
+        [Symbol.asyncIterator]() { return this; },
+        next() {
+          const step = steps[index++];
+          if (!step) return Promise.resolve({ done: true });
+          if (step.error) return Promise.reject(step.error);
+          return Promise.resolve({ done: false, value: step.value });
+        },
+        return() { return Promise.resolve({ done: true }); },
+      };
+    };
+    const sequence = [
+      () => { throw new Error('RAW_EVENT_STREAM_ERROR_SECRET'); },
+      () => stream(),
+      () => stream([{ value: { type: 'test-event' } }, { error: new Error('RAW_EVENT_STREAM_ERROR_SECRET') }]),
+    ];
+    let subscriptions = 0;
+    await consumeEventStreamWithReconnect({
+      subscribe: ({ signal }) => {
+        assert.equal(signal, controller.signal);
+        subscriptions += 1;
+        return sequence[subscriptions - 1]();
+      },
+      onEvent: async (event) => received.push(event),
+      onFailure: (diagnostic) => failures.push(diagnostic),
+      signal: controller.signal,
+      sleep: async (ms) => {
+        delays.push(ms);
+        if (delays.length === 3) controller.abort();
+      },
+    });
+    assert.equal(subscriptions, 3);
+    assert.deepEqual(received, [{ type: 'test-event' }]);
+    assert.deepEqual(failures, [
+      { failure: 'thrown', attempt: 1, delayMs: 100, action: 'reconnect' },
+      { failure: 'terminated', attempt: 2, delayMs: 200, action: 'reconnect' },
+      { failure: 'thrown', attempt: 1, delayMs: 100, action: 'reconnect' },
+    ]);
+    assert.deepEqual(delays, [100, 200, 100], 'receiving an event resets the next reconnect delay');
+    assert.equal(JSON.stringify(failures).includes('RAW_EVENT_STREAM_ERROR_SECRET'), false);
+
+    const cappedController = new AbortController();
+    const cappedDelays = [];
+    const cappedFailures = [];
+    await consumeEventStreamWithReconnect({
+      subscribe: () => { throw new Error('private failure detail'); },
+      onEvent: () => {},
+      onFailure: (diagnostic) => cappedFailures.push(diagnostic),
+      signal: cappedController.signal,
+      sleep: async (ms) => {
+        cappedDelays.push(ms);
+        if (cappedDelays.length === 11) cappedController.abort();
+      },
+    });
+    assert.deepEqual(cappedDelays, [100, 200, 400, 800, 1600, 3200, 6400, 12800, 25600, 30000, 30000]);
+    assert.deepEqual(cappedFailures.map(({ attempt, delayMs }) => ({ attempt, delayMs })), cappedDelays.map((delayMs, index) => ({
+      attempt: index + 1,
+      delayMs,
+    })));
+    assert.ok(cappedFailures.every(({ failure, action }) => failure === 'thrown' && action === 'reconnect'));
+    assert.equal(JSON.stringify(cappedFailures).includes('private failure detail'), false);
+  });
+
+  it('stops a blocked event stream promptly on abort and logs only sanitized failure metadata', async () => {
+    const controller = new AbortController();
+    let iteratorReturned = false;
+    const running = consumeEventStreamWithReconnect({
+      subscribe: async ({ signal }) => {
+        assert.equal(signal, controller.signal);
+        return {
+          [Symbol.asyncIterator]() { return this; },
+          next: () => new Promise(() => {}),
+          return: () => { iteratorReturned = true; return Promise.resolve({ done: true }); },
+        };
+      },
+      onEvent: () => {},
+      signal: controller.signal,
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    controller.abort();
+    await running;
+    assert.equal(iteratorReturned, true);
+
+    const subscribeController = new AbortController();
+    const waitingForSubscription = consumeEventStreamWithReconnect({
+      subscribe: () => new Promise(() => {}),
+      onEvent: () => {},
+      signal: subscribeController.signal,
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    subscribeController.abort();
+    await waitingForSubscription;
+
+    const setupCtx = {
+      location: { directory: tmpDir },
+      agent: { transform: async (transform) => transform({ default() {} }) },
+      tool: {
+        transform: async (transform) => transform({ add() {} }),
+        hook: async () => {},
+      },
+      session: { hook: async () => {} },
+      event: { subscribe: () => { throw new Error('RAW_EVENT_SUBSCRIBE_ERROR_SECRET'); } },
+    };
+    const dispose = await OrchestratorPlugin.setup(setupCtx);
+    await new Promise((resolve) => setImmediate(resolve));
+    dispose();
+    const streamFailures = readEvents().filter((entry) => entry.operation === 'event-stream');
+    assert.equal(streamFailures.length, 1);
+    assert.equal(streamFailures[0].failure, 'thrown');
+    assert.equal(streamFailures[0].attempt, 1);
+    assert.equal(streamFailures[0].delayMs, 100);
+    assert.equal(streamFailures[0].action, 'reconnect');
+    assert.deepEqual(Object.keys(streamFailures[0]).sort(), [
+      'action', 'attempt', 'delayMs', 'failure', 'operation', 'project', 'ts', 'type',
+    ]);
+    assert.equal(Object.hasOwn(streamFailures[0], 'error'), false);
+    assert.equal(JSON.stringify(streamFailures).includes('RAW_EVENT_SUBSCRIBE_ERROR_SECRET'), false);
+  });
+
+  it('injects only categorized preferences from the current project vault, keeps scope-colliding Global records distinct, and deduplicates the session', async () => {
+    allowPreferenceInjection();
+    const projectVault = initVault(tmpDir);
+    const projectPreference = createNode(projectVault, {
+      id: 'same-raw-preference-id', type: 'preference', status: 'confirmed', scope: 'project',
+      category: 'workflow', ts: 10, intent: 'synthetic project context', summary: 'Use this repository workflow.',
+    });
+    const linkedProjectDecision = createNode(projectVault, {
+      id: 'project-decision-not-eligible', type: 'decision', status: 'confirmed', scope: 'project', ts: 9,
+      intent: 'synthetic project context', summary: 'Project decisions remain excluded from automatic preference injection.',
+    });
+    createEdge(projectVault, { from: projectPreference.id, to: linkedProjectDecision.id, rel: 'relates-to' });
+    const legacy = {
+      id: 'legacy-project-pref-not-eligible', type: 'preference', status: 'confirmed', scope: 'project', ts: 11,
+      intent: 'synthetic project context', summary: 'Uncategorized legacy preference remains searchable but excluded.',
+    };
+    fs.appendFileSync(paths(projectVault).nodes, `${JSON.stringify(legacy)}\n`);
+    const otherProjectDir = path.join(tmpDir, 'different-project');
+    const otherProjectVault = initVault(otherProjectDir);
+    const otherProjectPreference = createNode(otherProjectVault, {
+      id: 'other-project-only-pref', type: 'preference', status: 'confirmed', scope: 'project',
+      category: 'communication', ts: 12, intent: 'other project sentinel', summary: 'Must not be read from another project vault.',
+    });
+    const globalVault = initUserVault();
+    const globalPreference = createNode(globalVault, {
+      id: projectPreference.id, type: 'preference', status: 'confirmed', scope: 'global',
+      category: 'communication', ts: 13, intent: 'synthetic global context', summary: 'Use the saved Global preference.',
+    });
+
+    const fixtureFiles = [
+      paths(projectVault).nodes, paths(projectVault).edges,
+      paths(otherProjectVault).nodes, paths(otherProjectVault).edges,
+      paths(globalVault).nodes, paths(globalVault).edges,
+    ];
+    const before = fixtureFiles.map((file) => fs.readFileSync(file));
+    await chat('Implement synthetic project context');
+    const out = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID: 'project-global-collision' }, out);
+    const injection = out.system.join('\n');
+    const payload = preferencePayloadFrom(injection);
+
+    assert.deepEqual(payload.project_preferences.map(({ id, category }) => [id, category]), [
+      [projectPreference.id, 'workflow'],
+    ]);
+    assert.deepEqual(payload.global_preferences.map(({ id, category }) => [id, category]), [
+      [globalPreference.id, 'communication'],
+    ]);
+    assert.deepEqual(payload.related_global_preferences, []);
+    assert.deepEqual(payload.superseded_global_preferences, []);
+    for (const excluded of [linkedProjectDecision, legacy, otherProjectPreference]) {
+      assert.equal(injection.includes(excluded.summary), false, `${excluded.id} must remain excluded`);
+    }
+    const event = readEvents().find((entry) => entry.type === 'memory-injected' && entry.sessionID === 'project-global-collision');
+    assert.deepEqual(event.memories, [
+      { id: projectPreference.id, type: 'preference', scope: 'project' },
+      { id: globalPreference.id, type: 'preference', scope: 'global' },
+    ], 'scope-qualified references preserve two records with the same raw ID');
+    assert.equal(JSON.stringify(event).includes(projectPreference.summary), false, 'telemetry stores no preference text');
+
+    const repeated = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID: 'project-global-collision' }, repeated);
+    assert.doesNotMatch(repeated.system.join('\n'), /guarana memory \(automatic context\)/);
+    assert.equal(readEvents().filter((entry) => entry.type === 'memory-injected' && entry.sessionID === 'project-global-collision').length, 1);
+    assert.deepEqual(fixtureFiles.map((file) => fs.readFileSync(file)), before, 'injection reads do not mutate synthetic vaults');
+  });
+
+  it('fits project preferences before Global direct candidates within the shared complete-record budget', async () => {
+    const projectVault = initVault(tmpDir);
+    const projectPreference = createNode(projectVault, {
+      id: 'combined-budget-project', type: 'preference', status: 'confirmed', scope: 'project',
+      category: 'workflow', ts: 20, intent: 'budget fixture', summary: 'PROJECT-BUDGET-FIRST-☃',
+    });
+    const globalVault = initUserVault();
+    const globalPreference = createNode(globalVault, {
+      id: 'combined-budget-global', type: 'preference', status: 'confirmed', scope: 'global',
+      category: 'communication', ts: 21, intent: 'budget fixture', summary: 'GLOBAL-BUDGET-LATER-☕',
+    });
+    const projectOnlyBytes = Buffer.byteLength(serializeMemoryPayload({ project_preferences: [
+      { id: projectPreference.id, type: 'preference', scope: 'project', category: projectPreference.category,
+        intent: projectPreference.intent, summary: projectPreference.summary },
+    ] }).serialized, 'utf8');
+    allowPreferenceInjection('project', projectOnlyBytes);
+
+    await chat('Implement the combined preference budget fixture');
+    const out = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID: 'combined-project-budget' }, out);
+    const injection = out.system.join('\n');
+    const payload = preferencePayloadFrom(injection);
+
+    assert.deepEqual(payload.project_preferences.map(({ id }) => id), [projectPreference.id]);
+    assert.deepEqual(payload.global_preferences, []);
+    assert.match(injection, /injected 1; omitted 1 of 2 eligible unseen records/i);
+    assert.match(injection, /PROJECT-BUDGET-FIRST-☃/);
+    assert.doesNotMatch(injection, /GLOBAL-BUDGET-LATER-☕/);
+    assert.equal(globalPreference.scope, 'global');
+  });
+
+  it('fits complete preference records to configured/model budgets and fails closed without a usable budget', async () => {
     const globalVault = initUserVault();
     const first = createNode(globalVault, {
       id: 'budget-pref-one', type: 'preference', status: 'confirmed', scope: 'global',
@@ -756,7 +1542,7 @@ describe('GuaranaOrchestrator', () => {
       const injection = output.system.join('\n');
       assert.match(injection, /Tell the user that no saved preference text was injected/i);
       assert.match(injection, /do not imply that saved preferences were applied/i);
-      assert.match(injection, /Dashboard Settings → Workflow preferences → Global preference injection budget \(tokens\)/);
+      assert.match(injection, /Dashboard Settings → Workflow preferences → Current-project \+ Global preference injection budget \(tokens\)/);
       assert.match(injection, /guarana workflow set memory\.preferenceInjectionBudgetTokens <positive-integer>/);
       assert.match(injection, /add `--project` for a project override/);
     };
@@ -766,27 +1552,34 @@ describe('GuaranaOrchestrator', () => {
     await api['experimental.chat.system.transform']({ sessionID: 'configured-budget' }, configuredOnly);
     assert.match(configuredOnly.system.join('\n'), /FIRST-PREFERENCE-UNICODE-☃/);
     assert.match(configuredOnly.system.join('\n'), /SECOND-PREFERENCE-—-“quoted”/);
+    assert.match(configuredOnly.system.join('\n'), /injected 2; omitted 0 of 2 eligible unseen records/i);
 
+    writeWorkflowSettings('global', {});
     writeWorkflowSettings('project', {});
+    const globalSettingsFile = path.join(process.env.XDG_CONFIG_HOME, 'guarana', 'workflow.json');
+    assert.deepEqual(JSON.parse(fs.readFileSync(globalSettingsFile, 'utf8')), {}, 'Global Automatic leaves the budget unset');
     const modelOnly = { system: [] };
     await api['experimental.chat.system.transform']({
       sessionID: 'model-budget', model: { limit: { context: byteBudget } },
     }, modelOnly);
     assert.match(modelOnly.system.join('\n'), /FIRST-PREFERENCE-UNICODE-☃/);
-    assert.doesNotMatch(modelOnly.system.join('\n'), /Global preference injection notice/);
+    assert.match(modelOnly.system.join('\n'), /SECOND-PREFERENCE-—-“quoted”/);
+    assert.match(modelOnly.system.join('\n'), /injected 2; omitted 0 of 2 eligible unseen records/i);
 
     allowPreferenceInjection('project', byteBudget + 100);
     const lowerModelLimit = { system: [] };
     await api['experimental.chat.system.transform']({
       sessionID: 'lower-model-budget', model: { limit: { context: byteBudget - 1 } },
     }, lowerModelLimit);
-    assert.match(lowerModelLimit.system.join('\n'), /complete payload is \d+ UTF-8 bytes, over the \d+-token estimated budget/i);
-    assert.doesNotMatch(lowerModelLimit.system.join('\n'), /FIRST-PREFERENCE-UNICODE|SECOND-PREFERENCE/);
+    assert.match(lowerModelLimit.system.join('\n'), /injected 1; omitted 1 of 2 eligible unseen records/i);
+    assert.match(lowerModelLimit.system.join('\n'), /FIRST-PREFERENCE-UNICODE-☃/);
+    assert.doesNotMatch(lowerModelLimit.system.join('\n'), /SECOND-PREFERENCE-—-“quoted”/);
 
     writeWorkflowSettings('project', {});
     const noBudget = { system: [] };
     await api['experimental.chat.system.transform']({ sessionID: 'missing-budget' }, noBudget);
     assert.match(noBudget.system.join('\n'), /no usable configured token budget or model context limit/i);
+    assert.match(noBudget.system.join('\n'), /Injected: 0; omitted: 2 eligible unseen records/i);
     assert.doesNotMatch(noBudget.system.join('\n'), /### Serialized records \(JSON data\)|FIRST-PREFERENCE-UNICODE|SECOND-PREFERENCE/);
     assertRepairPath(noBudget);
 
@@ -795,9 +1588,18 @@ describe('GuaranaOrchestrator', () => {
     await api['experimental.chat.system.transform']({
       sessionID: 'whole-payload-overflow', model: { limit: { context: byteBudget + 100 } },
     }, wholePayloadOverflow);
-    assert.match(wholePayloadOverflow.system.join('\n'), /UTF-8 bytes.*estimate/i);
-    assert.doesNotMatch(wholePayloadOverflow.system.join('\n'), /### Serialized records \(JSON data\)|FIRST-PREFERENCE-UNICODE|SECOND-PREFERENCE/);
-    assertRepairPath(wholePayloadOverflow);
+    assert.match(wholePayloadOverflow.system.join('\n'), /injected 1; omitted 1 of 2 eligible unseen records/i);
+    assert.match(wholePayloadOverflow.system.join('\n'), /FIRST-PREFERENCE-UNICODE-☃/);
+    assert.doesNotMatch(wholePayloadOverflow.system.join('\n'), /SECOND-PREFERENCE-—-“quoted”/);
+
+    allowPreferenceInjection('project', 1);
+    const zeroFit = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID: 'zero-fit-budget' }, zeroFit);
+    assert.match(zeroFit.system.join('\n'), /none of the 2 eligible unseen records fit/i);
+    assert.match(zeroFit.system.join('\n'), /Injected: 0; omitted: 2/i);
+    assert.match(zeroFit.system.join('\n'), /No preference text was included/i);
+    assert.doesNotMatch(zeroFit.system.join('\n'), /### Serialized records \(JSON data\)|FIRST-PREFERENCE-UNICODE|SECOND-PREFERENCE/);
+    assertRepairPath(zeroFit);
   });
 
   it('injects more than ten complete global preferences and preserves historical trust groups without leaking text to telemetry', async () => {
@@ -889,6 +1691,7 @@ describe('GuaranaOrchestrator', () => {
       sourcePreferences.map(({ id, intent, summary }) => ({ id, intent, summary })),
       'all active and historical preference intent and summary text is retained in its trust group');
     assert.match(injection, /Every active global preference is selected/);
+    assert.match(injection, /injected 16; omitted 0 of 16 eligible unseen records/i);
     for (const sentinel of [
       legacyGlobal.intent, legacyGlobal.summary, projectCollision.intent, projectCollision.summary,
       projectOnly.intent, projectOnly.summary, legacyProjectPreference.intent, legacyProjectPreference.summary,

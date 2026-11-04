@@ -18,11 +18,23 @@ function loadEngine() {
   return enginePromise;
 }
 
-export async function listGeneratedSkills(projectDir) {
+export async function listGeneratedSkills(projectDir, { homeDir = os.homedir() } = {}) {
   try {
     const engine = await loadEngine();
-    return engine.listSkills({ projectDir, homeDir: os.homedir() });
+    return engine.listSkills({ projectDir, homeDir, includeContent: false });
   } catch (error) {
     return { global: [], project: [], error: String(error?.message || error) };
+  }
+}
+
+export async function readGeneratedSkill(projectDir, { name, scope }, { homeDir = os.homedir() } = {}) {
+  try {
+    const engine = await loadEngine();
+    const result = engine.readSkill({ projectDir, homeDir, name, scope });
+    if (result.error) return { error: result.error };
+    const { name: skillName, description, category, scope: skillScope, content } = result;
+    return { name: skillName, description, category, scope: skillScope, content };
+  } catch (error) {
+    return { error: String(error?.message || error) };
   }
 }

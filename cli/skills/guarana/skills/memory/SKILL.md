@@ -1,25 +1,32 @@
 ---
 name: guarana:memory
-description: Use when searching, reviewing, or saving durable knowledge in the Guarana memory graph, including project knowledge and categorized global preferences. The orchestrator supplies the complete eligible global preference payload only when it fits the effective budget.
+description: Use when searching, reviewing, or saving durable knowledge in the Guarana memory graph. Automatic context can include eligible categorized preferences from the selected project and eligible Global preferences, ranked as separate trust groups under a shared whole-record budget.
 ---
 
 # guarana:memory
 
-The orchestrator injects every eligible confirmed active global user preference
-with full text, once per session and after context compaction, only when the
-complete preference payload fits the effective budget. Direct, exactly-one-hop
-related, and reached superseded preferences remain separate trust groups. If no
-usable budget exists or the complete payload exceeds it, all preference content
-is omitted with an explicit notice. Project knowledge is never automatically
-injected; use explicit memory tools to search or retrieve it.
+The orchestrator can inject eligible confirmed categorized preferences from
+exactly the selected project, together with eligible Global preferences, once per
+session and after context compaction. Project preferences are direct-only and form
+a separate, lower-trust group ranked before Global direct, related, and superseded
+groups under one shared effective budget. Candidates are ranked and included
+only as whole records when adding them fits the remaining shared budget;
+oversized records are skipped without truncation while later candidates are still
+considered. If no usable budget exists or no record fits, no preference content
+is injected and an explicit notice is given. Project decisions, bugs, solutions,
+refactors, and legacy project preferences without a valid category remain
+explicit/searchable only, not injected.
+Current requests and system, developer, and security policies outrank stored
+project text. Use explicit memory tools to search or retrieve project knowledge.
 Use this skill for deeper searches, decision review, or inspecting the graph;
 normal work does not require a `guarana:memory` command.
 
 The memory system has a project graph and a private user graph. Project decisions,
-bugs, solutions, and refactors live in `<project>/.guarana/memory/`; durable
-"always/never" preferences live in `~/.config/guarana/memory/` and apply across
-projects. The assistant judges user intent and invokes a memory tool when the
-user states durable knowledge. Tool/file activity itself is telemetry, not memory.
+bugs, solutions, refactors, and categorized project preferences live in the
+selected project's shared vault at `<project>/.guarana/memory/`; durable
+preferences intended to apply across projects live in `~/.config/guarana/memory/`.
+The assistant judges user intent and invokes a memory tool when the user states
+durable knowledge. Tool/file activity itself is telemetry, not memory.
 
 ## The memory tools
 | Tool | When to call |
@@ -27,11 +34,14 @@ user states durable knowledge. Tool/file activity itself is telemetry, not memor
 | `memory_search({query,type?,scope?,since?,until?,limit?})` | Search confirmed memory; scope can be `project`, `global`, or `both` (default). |
 | `memory_get_context_for_task({task,scope?,limit?})` | Explicitly retrieve a bounded task-relevant subgraph from the selected scope(s); this tool is not automatic prompt injection. |
 | `memory_save_decision({intent,decision,rejectedAlternatives?,tags?,author?})` | Backward-compatible project decision save. |
-| `memory_save_node({type,scope,intent,summary,category?,priority?,relatedTo?,tags?,author?})` | Save project `decision`, `bug`, `solution`, or `refactor`; or a global `preference` with required category `agent_behavior`, `workflow`, or `communication`. Optional priority (`essential` or `normal`) applies only to global preferences. |
-| `memory_review_draft({id,action:"confirm"\|"discard",edits?})` | Discard a legacy draft, or confirm only with an explicit `edits.type` conversion to project `decision`, `bug`, `solution`, or `refactor`. |
+| `memory_save_node({type,scope,intent,summary,category?,priority?,relatedTo?,tags?,author?})` | Save project `decision`, `bug`, `solution`, or `refactor`; a project `preference` with required category `agent_behavior`, `workflow`, or `communication`; or a Global `preference` with one of those required categories. Optional priority (`essential` or `normal`) applies only to Global preferences. |
+| `memory_review_draft({id,action:"confirm"\|"discard",edits?})` | Discard a legacy draft, or confirm only with an explicit `edits.type` conversion to project `decision`, `bug`, `solution`, `refactor`, or categorized `preference` (the latter requires a supported category in `edits`). |
 | `memory_delete_node({id,scope,confirm:true})` | Hard-delete one confirmed node by exact ID; matching `project`/`global` scope and explicit confirmation are mandatory. Drafts remain on `memory_review_draft`. |
-| `skill_list({scope?})` | Check Guarana-generated skills in project/global scopes before proposing a new reusable procedure. |
-| `skill_create({name,description,scope,content})` | Persist a clear reusable procedure or project context as a native OpenCode skill; the tool never overwrites an existing name. |
+| `skill_list({scope?})` | Read the metadata-only catalog of Guarana-generated skills, including category, scope, and revision. |
+| `skill_read({name,scope})` | Load one relevant generated skill body on demand. |
+| `skill_create({name,description,scope,category,content})` | Persist a distinct reusable procedure; the tool never overwrites an existing name. |
+| `skill_update({name,description,scope,category?,content,expectedRevision})` | Enrich one generated skill with optimistic concurrency; never overwrites manual skills. |
+| `guarana_learning_review({summary,changedPaths})` | Run the separate, bounded OpenCode post-task reviewer after successful substantive work. |
 
 ## Explicit memory lifecycle
 Automatically save only unmistakable durable intent with `memory_save_node`.
@@ -45,48 +55,78 @@ personal facts, tool calls, file edits, prompts, and tool input/output do not cr
 memory nodes. Report the saved type and scope only after a successful tool result.
 `memory_save_decision` remains a compatible project-decision-only save.
 Legacy drafts from older versions are never retrieved automatically; discard
-them or explicitly convert them with `memory_review_draft` by supplying one of
-the four allowed project types in `edits.type`. Confirmation without that target
-is rejected, and conversion preserves existing project edges.
+them or explicitly convert them with `memory_review_draft` by supplying project
+`decision`, `bug`, `solution`, or `refactor` in `edits.type`, or project
+`preference` with a supported category in `edits`. Confirmation without an
+allowed target (and category for a preference) is rejected, and conversion
+preserves existing project edges. Legacy drafts are never converted implicitly.
 
-## Skill capture boundary
+## Skill discovery and post-task review
 
-The memory plugin also injects an automatic skill-capture policy. After completing
-task work and before the final response, assess whether what surfaced is likely to
-help with similar future work. Create a concise skill for reusable workflow,
-project knowledge, conventions, or context, including explanations of application
-architecture/components and how to work with or change them. This is a positive
-trigger even when the user did not explicitly ask for or document a procedure; one
-task can reveal reusable context. Repeatable sequences/checklists, specialized
-recurring checks, and corrections meant to guide similar work are also triggers.
+The bundled `guarana` index lists built-in skills with topical categories. Its
+scope is the selected project or global installation location; category and scope
+are independent. Generated-skill context starts as a bounded metadata-only catalog
+that prioritizes the current project. If it says the catalog is truncated, call
+`skill_list` to inspect more metadata. The agent chooses relevant skills
+automatically and calls `skill_read` only for relevant generated skills; do not
+load every body. Use `guarana:skill-authoring` for explicit creation or maintenance.
 
-Do not create a skill for one-off deliverables (such as rewriting one paragraph in
-bullets), temporary acceptance criteria, generic best practices, or a simple task.
-A technically complex or long request is not a trigger by itself. If future reuse
-is ambiguous, do not create one. Durable preferences and decisions remain memories;
-skills capture reusable procedures or project context, and the same content should
-not be duplicated across both. Use `skill_list` across both scopes before creating
-one to avoid semantic duplicates; never overwrite an existing skill. Choose project
-scope for repository-specific conventions, tools, architecture, or context and
-global scope for portable procedures. Never copy secrets, credentials, private
-data, or raw conversation transcripts. The plugin's always-on policy remains the
-runtime authority.
+After successful, substantive task work, the primary may call
+`guarana_learning_review` once with a concise sanitized summary and changed paths.
+OpenCode runs in a separate isolated session with no tools. It receives no raw
+conversation transcript. The reviewer model is selected only from user-level
+Guarana/OpenCode configuration (or the user process environment); project
+configuration cannot choose an authenticated provider destination. The payload
+includes up to 100 skill metadata entries, up to 3 relevant project skill bodies,
+and up to 8 matching project memories; these are sent to the user-selected provider
+and may incur configured usage. Memory and skill proposals are returned as
+`approval_required` and never written automatically because reviewer context may be
+influenced by untrusted project data. Present the complete exact proposal and ask the
+user to reply exactly `approve <approvalId>` or `reject <approvalId>`. The primary
+plugin binds that message to the session and proposal; write tools reject pending,
+altered, rejected, and replayed proposals. Pass the unchanged approvalId to the
+matching memory or skill write tool.
+Automatic review never writes Global skills; make those changes only through an
+explicit user-directed skill tool call. The reviewer content is model-generated:
+project scoping and structural/secret checks reduce impact but cannot guarantee
+that proposed content is free of every prompt-injection instruction. Skill bodies
+are loaded only from the current project scope—never from Global skills. Do not call
+it for trivial, failed, or interrupted work, and never trigger recursive review.
+The primary waits for the receipt and reports only writes that were verified.
+
+The reviewer may propose project `decision`, `bug`, `solution`, or `refactor` records;
+it does not infer global user preferences and cannot persist them without approval.
+Save Global preferences only from clear explicit user intent through the normal
+memory tools. Skills capture reusable procedures and project context; memories
+capture durable facts, decisions, and preferences. Do not duplicate the same content
+across both or preserve secrets, private data, prompts, or transcripts.
 
 ## Automatic retrieval boundary
-Every eligible confirmed active preference from the global user vault is
-selected, retaining its full text and rendering its `category`. Direct active
-preferences, exactly-one-hop related preferences, and reached superseded
-preferences stay in distinct trust groups; no second-hop traversal occurs. The
-entire serialized payload must fit the effective configured/model token budget,
-or it is omitted as a whole. The UTF-8-byte/token comparison is an estimate, not
-exact tokenization or remaining conversation capacity. A category-less legacy
-global preference reads as `general` without rewriting its vault record.
-Existing project preferences, atoms, and supernodes remain available only
-through deliberate legacy read/search paths; they are never automatically
-injected or migrated. New project writes are limited to `decision`, `bug`,
-`solution`, and `refactor`; new global writes are limited to categorized
-`preference` records. Secret filtering, draft exclusion, and trust labels still
-apply.
+Eligible confirmed active preferences from the Global user vault are candidates,
+retaining their full text and rendering their `category`. For the exactly
+selected/current project, the selector enumerates that project's shared vault
+only to identify confirmed preferences with a valid `agent_behavior`, `workflow`,
+or `communication` category. Those project preferences are direct-only: they form
+a separate, lower-trust group, ranked before the Global direct, related, and
+superseded groups under the same shared budget. No unrelated project vault is
+read. Project decisions, bugs, solutions, refactors, atoms, supernodes, and
+legacy project preferences without a valid category are not selected into,
+returned in, or injected as automatic context. Project direct preferences do
+not expand through graph edges. Global direct active preferences, exactly-one-hop
+related preferences, and reached superseded preferences remain in distinct
+trust groups; no second-hop traversal occurs. Candidate records are ranked, then
+included whole only when adding each record fits the remaining shared effective
+configured/model token budget. Oversized records are skipped without truncation
+and later candidates are still considered. If no usable budget exists or no
+record fits, no preference content is injected and an explicit notice is given.
+The UTF-8-byte/token comparison is an estimate, not exact tokenization or remaining conversation
+capacity. A category-less legacy global preference
+reads as `general` without rewriting its vault record. Categorized project
+`preference` writes are allowed; new project writes otherwise include `decision`,
+`bug`, `solution`, and `refactor`, while new global writes are limited to
+categorized `preference` records. Secret filtering, draft exclusion, and trust
+labels still apply. Current explicit user requests and system, developer, and
+security policies remain higher priority than injected memory.
 
 ## Gotchas
 - A normal task request is not a memory; capture only durable user intent.

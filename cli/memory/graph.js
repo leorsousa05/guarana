@@ -76,6 +76,10 @@ export function updateNode(vaultDir, id, patch) {
 export function confirmDraft(vaultDir, id, targetType, patch = {}) {
   if (!PROJECT_NODE_TYPES.includes(targetType))
     throw new MemoryValidationError(`project type must be one of ${PROJECT_NODE_TYPES.join("|")}`);
+  if (targetType === "preference" && !Object.hasOwn(patch, "category"))
+    throw new MemoryValidationError("project preference category is required");
+  if (targetType !== "preference" && Object.hasOwn(patch, "category"))
+    throw new MemoryValidationError("category is only valid when converting a draft to a preference");
   const p = paths(vaultDir).nodes;
   const nodes = readJsonl(p);
   const idx = nodes.findIndex((node) => node.id === id);
@@ -94,7 +98,7 @@ export function confirmDraft(vaultDir, id, targetType, patch = {}) {
     status: "confirmed",
     scope: "project",
   };
-  delete converted.category;
+  if (targetType !== "preference") delete converted.category;
   delete converted.priority;
   validateNewNode(converted);
   nodes[idx] = converted;

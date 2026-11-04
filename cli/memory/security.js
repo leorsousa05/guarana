@@ -12,15 +12,23 @@ const HARD_PATTERNS = [
 
 const ENV_LINE = /^[A-Za-z_][A-Za-z0-9_]*=\S+$/;
 
-// Redactable: generic secret assignments (key=value / key: value).
-const ASSIGN_RE =
-  /(\b(?:api[_-]?key|secret|password|passwd|token|credential)\b\s*[:=]\s*)(["']?)[^\s"']+\2/gi;
+// Redactable: generic and provider-prefixed secret assignments.
+const SECRET_NAME_SOURCE = String.raw`\b(?:[A-Za-z0-9]+[_-])*(?:api[_-]?key|access[_-]?key|private[_-]?key|secret|password|passwd|passphrase|pg[_-]?password|pass|pwd|token|credential)(?:[_-][A-Za-z0-9]+)*\b`;
+const QUOTED_VALUE_SOURCE = String.raw`(?:\\*"(?:\\.|[^"\\])*\\*"|\\*'(?:\\.|[^'\\])*\\*')\S*`;
+const ASSIGN_RE = new RegExp(
+  `(${SECRET_NAME_SOURCE}\\s*[:=]\\s*)(?:${QUOTED_VALUE_SOURCE}|[^\\s"']+)`,
+  "gi",
+);
 // Detection is derived from the redaction shape but stays non-global so test()
 // cannot leak lastIndex state between sensitive-content checks.
 const SENSITIVE_ASSIGN_RE = new RegExp(ASSIGN_RE.source, "i");
+const REDACTED_ASSIGN_RE = new RegExp(
+  `(${SECRET_NAME_SOURCE}\\s*[:=]\\s*)(["']?)\\[REDACTED\\]\\2(?=$|\\s|[),.;](?=\\s|$))`,
+  "gi",
+);
 
 export function hasSensitiveAssignment(text) {
-  return typeof text === "string" && SENSITIVE_ASSIGN_RE.test(text);
+  return typeof text === "string" && SENSITIVE_ASSIGN_RE.test(text.replace(REDACTED_ASSIGN_RE, "[REDACTED]"));
 }
 
 export function isSensitive(text) {

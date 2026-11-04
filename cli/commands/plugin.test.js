@@ -11,7 +11,7 @@ const {
   pluginTarget, workerAgentsTarget, advisorCommandTarget, advisorAgentsTarget, advisorSubagentTarget,
   legacyAdvisorAgentsTarget, advisorSettingsTarget, openCodeRootTarget, installManifestTarget,
 } = require('../lib/paths.js');
-const { PLUGIN_NAME, MEMORY_PLUGIN_NAME, ORCHESTRATOR_PLUGIN_NAME } = require('../constants.js');
+const { PLUGIN_NAME, MEMORY_PLUGIN_NAME, LEARNING_REVIEW_NAME, ORCHESTRATOR_PLUGIN_NAME } = require('../constants.js');
 const { PLUGIN_MARKER, MEMORY_PLUGIN_MARKER, ORCHESTRATOR_PLUGIN_MARKER } = require('../lib/guard.js');
 const BIN = path.join(__dirname, '..', '..', 'bin', 'guarana.js');
 const PLUGIN_MARKERS = new Map([
@@ -590,6 +590,7 @@ it('refuses install and uninstall when a tracked engine file changed, without ch
     const plugins = [
       pluginTarget(true, 'guarana-telemetry.js'),
       pluginTarget(true, 'guarana-memory.js'),
+      pluginTarget(true, 'learning-review.js'),
       pluginTarget(true, 'guarana-orchestrator.js'),
     ].map((file) => fs.readFileSync(file));
 
@@ -599,6 +600,7 @@ it('refuses install and uninstall when a tracked engine file changed, without ch
     for (const [index, file] of [
       pluginTarget(true, 'guarana-telemetry.js'),
       pluginTarget(true, 'guarana-memory.js'),
+      pluginTarget(true, 'learning-review.js'),
       pluginTarget(true, 'guarana-orchestrator.js'),
     ].entries()) assert.deepEqual(fs.readFileSync(file), plugins[index]);
   } finally {
@@ -904,7 +906,7 @@ it('adopts marker-owned legacy plugins and preserves unknown plugin-directory ex
     plugin.install(true, { quiet: true });
     const manifest = JSON.parse(fs.readFileSync(installManifestTarget(true), 'utf8'));
     assert.deepEqual(manifest.plugins.map((entry) => entry.path).sort(),
-      [PLUGIN_NAME, MEMORY_PLUGIN_NAME, ORCHESTRATOR_PLUGIN_NAME].sort());
+      [PLUGIN_NAME, MEMORY_PLUGIN_NAME, LEARNING_REVIEW_NAME, ORCHESTRATOR_PLUGIN_NAME].sort());
     assert.equal(fs.readFileSync(unknown, 'utf8'), 'keep this extra plugin\n');
 
     plugin.uninstall(true);
@@ -928,7 +930,7 @@ it('preflights every engine before plugin mutations and refuses an ambiguous leg
     fs.mkdirSync(path.dirname(conflictingFile), { recursive: true });
     fs.writeFileSync(conflictingFile, conflictingBytes);
     assert.throws(() => plugin.install(true, { quiet: true }), /existing Guarana plugin .* is required/);
-    for (const name of ['guarana-telemetry.js', 'guarana-memory.js', 'guarana-orchestrator.js']) {
+    for (const name of ['guarana-telemetry.js', 'guarana-memory.js', 'learning-review.js', 'guarana-orchestrator.js']) {
       assert.equal(fs.existsSync(pluginTarget(true, name)), false);
     }
     assert.equal(fs.existsSync(path.join(project, '.opencode', 'memory')), false);
@@ -985,6 +987,7 @@ it('deploys Task subagents, reports their health, and removes Guarana-owned prof
     const output = captureStreams();
     await plugin.run(['status'], { useProject: true, ...output });
     assert.equal(output.output().stdout.split('\n').filter((line) => line.includes('subagent') && line.includes('ok (up to date)')).length, expectedAgents.length);
+    assert.ok(output.output().stdout.includes('runtime module learning-review.js: ok (up to date)'));
 
     const foreign = path.join(agentDir, 'my-worker.md');
     fs.writeFileSync(foreign, 'foreign profile\n');

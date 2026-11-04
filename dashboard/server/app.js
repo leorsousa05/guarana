@@ -1,5 +1,6 @@
 import express from 'express';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { createTelemetryRouter } from './routes/telemetry.js';
 import { createSpecsRouter } from './routes/specs.js';
@@ -13,7 +14,7 @@ import { createOpenCodeRouter } from './routes/opencode.js';
 import { createProjectsRouter } from './routes/projects.js';
 import { createProjectRegistry } from './lib/projects.js';
 
-export function createApp({ root, distDir, execFileImpl }) {
+export function createApp({ root, distDir, execFileImpl, homeDir = os.homedir() }) {
   const app = express();
   const projects = createProjectRegistry({ root });
   app.use(express.json());
@@ -40,7 +41,7 @@ export function createApp({ root, distDir, execFileImpl }) {
   app.use('/api/decisions', createDecisionsRouter({ root }));
   app.use('/api/memory', createMemoryRouter({ root }));
   app.use('/api/workflow', createWorkflowRouter({ root }));
-  app.use('/api/skills', createSkillsRouter({ root }));
+  app.use('/api/skills', createSkillsRouter({ root, homeDir }));
   app.use('/api/models', createModelsRouter({ root }));
   app.use('/api/opencode', createOpenCodeRouter({ root, execFileImpl }));
   app.use('/api/web', createWebSettingsRouter({ root }));

@@ -6,9 +6,9 @@ const os = require('node:os');
 const path = require('node:path');
 const install = require('./install.js');
 const update = require('./update.js');
-const { SOURCE, STAMP } = require('../constants.js');
+const { SOURCE, STAMP, LEARNING_REVIEW_BUNDLE } = require('../constants.js');
 const { targetDir, installManifestTarget, pluginTarget, advisorSettingsTarget } = require('../lib/paths.js');
-const { PLUGIN_NAME, MEMORY_PLUGIN_NAME, ORCHESTRATOR_PLUGIN_NAME } = require('../constants.js');
+const { PLUGIN_NAME, MEMORY_PLUGIN_NAME, LEARNING_REVIEW_NAME, ORCHESTRATOR_PLUGIN_NAME } = require('../constants.js');
 
 function hash(bytes) {
   return crypto.createHash('sha256').update(bytes).digest('hex');
@@ -64,10 +64,14 @@ for (const useProject of [true, false]) {
       assert.equal(firstManifest.version, 1);
       assert.deepEqual(Object.keys(firstManifest.engines).sort(), ['memory', 'orchestrator', 'skill-engine']);
       assert.deepEqual(firstManifest.plugins.map((entry) => entry.path).sort(),
-        [PLUGIN_NAME, MEMORY_PLUGIN_NAME, ORCHESTRATOR_PLUGIN_NAME].sort());
+        [PLUGIN_NAME, MEMORY_PLUGIN_NAME, LEARNING_REVIEW_NAME, ORCHESTRATOR_PLUGIN_NAME].sort());
       for (const entry of firstManifest.plugins) {
         assert.equal(entry.sha256, hash(fs.readFileSync(pluginTarget(useProject, entry.path))));
       }
+      const reviewTarget = pluginTarget(useProject, LEARNING_REVIEW_NAME);
+      assert.equal(fs.existsSync(reviewTarget), true);
+      assert.deepEqual(fs.readFileSync(reviewTarget), fs.readFileSync(LEARNING_REVIEW_BUNDLE));
+      assert.ok(firstManifest.plugins.some((entry) => entry.path === LEARNING_REVIEW_NAME));
       assert.ok(Array.isArray(firstManifest.skills.guarana));
       const expectedPaths = [...sourcePaths(), STAMP].sort((a, b) => a.localeCompare(b));
       assert.deepEqual(firstManifest.skills.guarana.map((entry) => entry.path), expectedPaths);
@@ -100,6 +104,7 @@ for (const useProject of [true, false]) {
       assert.equal(fs.readFileSync(advisor, 'utf8'), '{"primary":{"provider":"keep"}}\n');
       assert.equal(fs.existsSync(state), true);
       assert.equal(fs.existsSync(pluginTarget(useProject)), false);
+      assert.equal(fs.existsSync(pluginTarget(useProject, LEARNING_REVIEW_NAME)), false);
     } finally {
       process.chdir(originalCwd);
       if (originalHome === undefined) delete process.env.HOME;
@@ -123,7 +128,7 @@ it('preflights modified and untracked skill conflicts before changing plugins or
     const skillFile = path.join(root, 'skills', 'plan', 'SKILL.md');
     const localBytes = Buffer.from('local modification\0\xff');
     fs.writeFileSync(skillFile, localBytes);
-    const pluginFiles = ['guarana-telemetry.js', 'guarana-memory.js', 'guarana-orchestrator.js']
+    const pluginFiles = ['guarana-telemetry.js', 'guarana-memory.js', 'learning-review.js', 'guarana-orchestrator.js']
       .map((name) => fs.readFileSync(pluginTarget(true, name)));
     const otherSkill = fs.readFileSync(path.join(root, 'SKILL.md'));
     const manifestBytes = fs.readFileSync(manifestFile);
@@ -132,7 +137,7 @@ it('preflights modified and untracked skill conflicts before changing plugins or
     assert.deepEqual(fs.readFileSync(skillFile), localBytes);
     assert.deepEqual(fs.readFileSync(path.join(root, 'SKILL.md')), otherSkill);
     assert.deepEqual(fs.readFileSync(manifestFile), manifestBytes);
-    for (const [index, name] of ['guarana-telemetry.js', 'guarana-memory.js', 'guarana-orchestrator.js'].entries()) {
+    for (const [index, name] of ['guarana-telemetry.js', 'guarana-memory.js', 'learning-review.js', 'guarana-orchestrator.js'].entries()) {
       assert.deepEqual(fs.readFileSync(pluginTarget(true, name)), pluginFiles[index]);
     }
 
@@ -144,7 +149,7 @@ it('preflights modified and untracked skill conflicts before changing plugins or
     assert.throws(() => install.run([], { useProject: true, quiet: true }), /untracked skill file conflicts with bundle/);
     assert.deepEqual(fs.readFileSync(skillFile), fs.readFileSync(path.join(SOURCE, 'skills', 'plan', 'SKILL.md')));
     assert.deepEqual(fs.readFileSync(manifestFile), untrackedManifest);
-    for (const [index, name] of ['guarana-telemetry.js', 'guarana-memory.js', 'guarana-orchestrator.js'].entries()) {
+    for (const [index, name] of ['guarana-telemetry.js', 'guarana-memory.js', 'learning-review.js', 'guarana-orchestrator.js'].entries()) {
       assert.deepEqual(fs.readFileSync(pluginTarget(true, name)), pluginFiles[index]);
     }
   } finally {

@@ -1,8 +1,8 @@
 // guarana orchestrator plugin (Component C)
 // Thin opencode adapter over the host-independent orchestrator core
 // (orchestrator/state.js + decide.js + prompt.js). Decides which guarana skill
-// should fire each turn, advances the persisted state machine, bootstraps the
-// project record, retrieves relevant memory, and injects a small always-on
+// should fire each turn, advances the persisted state machine, retrieves
+// relevant memory, and injects a small always-on
 // orchestration prompt. Never throws. No external deps.
 //
 // Markers: '// guarana orchestrator plugin'.
@@ -11,17 +11,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const pluginDir = path.dirname(fileURLToPath(import.meta.url));
 const ORCHESTRATOR_INJECTION_MARKER = '<!-- guarana orchestrator injection -->';
 const ADVISOR_OPT_IN_MARKER = '<!-- guarana-advisor-opt-in -->';
 const MEMORY_CONTEXT_GROUPS = [
+  'project_preferences',
   'global_preferences',
   'related_global_preferences',
   'superseded_global_preferences',
 ];
+const PROJECT_PREFERENCE_CATEGORIES = new Set(['agent_behavior', 'workflow', 'communication']);
 const WORKER_AGENT_NAMES = new Set(['worker-code', 'worker-verify', 'worker-debug', 'worker-specs', 'worker-research', 'guarana-advisor']);
 const INJECTION_CACHE_SYMBOL = Symbol.for('guarana.orchestrator.memory-injection-cache');
 const injectedMemoryBySession = globalThis[INJECTION_CACHE_SYMBOL] || new Map();
@@ -99,24 +101,6 @@ function claimAdvisorDispatch(sessionKey, contextKey, input) {
   return true;
 }
 
-function selectUnseenMemory(context, seen) {
-  const selected = {};
-  const memories = [];
-  for (const group of MEMORY_CONTEXT_GROUPS) {
-    selected[group] = [];
-    for (const node of context?.[group] || []) {
-      if (!node || !node.id || node.scope !== 'global' || node.type !== 'preference') continue;
-      const key = memoryNodeKey(node);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      selected[group].push(node);
-      memories.push({ id: node.id, type: node.type, scope: node.scope === 'global' ? 'global' : 'project' });
-    }
-  }
-  selected.count = memories.length;
-  return { context: memories.length ? selected : null, memories };
-}
-
 function sessionIdFrom(event) {
   const data = event?.data || {};
   const properties = event?.properties || {};
@@ -132,6 +116,10 @@ function sessionInfoFrom(event) {
   return info || (data && Object.keys(data).length ? data : props);
 }
 
+function sessionFingerprint(sessionID) {
+  return createHash('sha256').update(String(sessionID)).digest('hex').slice(0, 12);
+}
+
 function storeSessionInjectionState(key, value) {
   injectedMemoryBySession.delete(key);
   injectedMemoryBySession.set(key, value);
@@ -142,7 +130,208 @@ function storeSessionInjectionState(key, value) {
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function withPersistentInjectionState(directory, update) {
+const EVENT_RECONNECT_BASE_MS = 100;
+const EVENT_RECONNECT_MAX_MS = 30_000;
+
+function abortableWait(ms, signal) {
+  return new Promise((resolve) => {
+    if (signal?.aborted) return resolve();
+    let timer;
+    const finish = () => {
+      if (timer !== undefined) clearTimeout(timer);
+      signal?.removeEventListener('abort', finish);
+      resolve();
+    };
+    timer = setTimeout(finish, ms);
+    signal?.addEventListener('abort', finish, { once: true });
+    if (signal?.aborted) finish();
+  });
+}
+
+function returnIterator(iterator) {
+  try {
+    Promise.resolve(iterator?.return?.()).catch(() => {});
+  } catch {
+    // Iterator cleanup is best-effort and must not prevent abort or reconnect.
+  }
+}
+
+function valueOrAbort(value, signal) {
+  const pending = Promise.resolve(value);
+  if (!signal) return pending.then((resolved) => ({ value: resolved }));
+  if (signal.aborted) {
+    pending.catch(() => {});
+    return Promise.resolve({ aborted: true });
+  }
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (callback, result) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', onAbort);
+      callback(result);
+    };
+    const onAbort = () => finish(resolve, { aborted: true });
+    signal.addEventListener('abort', onAbort, { once: true });
+    if (signal.aborted) onAbort();
+    pending.then(
+      (resolved) => finish(resolve, { value: resolved }),
+      (error) => finish(reject, error),
+    );
+  });
+}
+
+function nextOrAbort(iterator, signal) {
+  if (signal?.aborted) {
+    returnIterator(iterator);
+    return Promise.resolve({ aborted: true });
+  }
+  const next = Promise.resolve().then(() => iterator.next());
+  if (!signal) return next.then((value) => ({ value }));
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      returnIterator(iterator);
+      resolve({ aborted: true });
+    };
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', onAbort);
+      callback(value);
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    if (signal.aborted) onAbort();
+    next.then(
+      (value) => finish(resolve, { value }),
+      (error) => finish(reject, error),
+    );
+  });
+}
+
+export async function consumeEventStreamWithReconnect({
+  subscribe,
+  onEvent,
+  signal,
+  onFailure = () => {},
+  sleep = abortableWait,
+}) {
+  let backoff = EVENT_RECONNECT_BASE_MS;
+  let attempt = 0;
+  while (!signal?.aborted) {
+    let iterator;
+    let failure = null;
+    try {
+      const subscribed = await valueOrAbort(subscribe({ signal }), signal);
+      if (subscribed.aborted || signal?.aborted) break;
+      const stream = subscribed.value;
+      iterator = stream?.[Symbol.asyncIterator]?.();
+      if (!iterator || typeof iterator.next !== 'function') throw new TypeError('Event stream is not async iterable');
+      let ended = false;
+      while (!signal?.aborted) {
+        const next = await nextOrAbort(iterator, signal);
+        if (next.aborted || signal?.aborted) break;
+        if (next.value.done) {
+          ended = true;
+          break;
+        }
+        backoff = EVENT_RECONNECT_BASE_MS;
+        attempt = 0;
+        const handled = await valueOrAbort(onEvent(next.value.value), signal);
+        if (handled.aborted || signal?.aborted) break;
+      }
+      if (signal?.aborted) break;
+      if (ended) failure = 'terminated';
+    } catch {
+      if (signal?.aborted) break;
+      failure = 'thrown';
+      returnIterator(iterator);
+    }
+    if (signal?.aborted) break;
+    const delayMs = backoff;
+    if (failure) {
+      attempt += 1;
+      try { onFailure({ failure, attempt, delayMs, action: 'reconnect' }); } catch { /* diagnostics are best-effort */ }
+    }
+    await sleep(delayMs, signal);
+    backoff = Math.min(EVENT_RECONNECT_MAX_MS, backoff * 2);
+  }
+}
+
+function pendingMemoryResetFile(directory, sessionID, token = '') {
+  const fingerprint = createHash('sha256').update(String(sessionID)).digest('hex');
+  const prefix = `memory-injection-reset-${fingerprint}`;
+  return {
+    file: path.join(directory, '.specs', 'state', 'telemetry', `${prefix}${token ? `-${token}` : ''}.json`),
+    prefix,
+    fingerprint,
+  };
+}
+
+function readPendingMemoryResets(directory, sessionID) {
+  const pending = pendingMemoryResetFile(directory, sessionID);
+  let names;
+  try {
+    names = fs.readdirSync(path.dirname(pending.file))
+      .filter((name) => name.startsWith(pending.prefix) && name.endsWith('.json'));
+  } catch {
+    return [];
+  }
+  const markers = [];
+  for (const name of names) {
+    const file = path.join(path.dirname(pending.file), name);
+    let descriptor;
+    try {
+      descriptor = fs.openSync(file,
+        fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0) | (fs.constants.O_NONBLOCK || 0));
+      const openedStat = fs.fstatSync(descriptor);
+      if (!openedStat.isFile() || openedStat.size > 1024) continue;
+      const buffer = Buffer.alloc(1025);
+      const bytesRead = fs.readSync(descriptor, buffer, 0, buffer.length, 0);
+      const finalStat = fs.fstatSync(descriptor);
+      if (bytesRead !== openedStat.size || bytesRead > 1024
+        || finalStat.size !== openedStat.size || finalStat.mtimeMs !== openedStat.mtimeMs)
+        continue;
+      const marker = JSON.parse(buffer.subarray(0, bytesRead).toString('utf8'));
+      if (marker.fingerprint === pending.fingerprint && ['session-start', 'compacted'].includes(marker.reason)) {
+        markers.push({ file, reason: marker.reason, updatedAt: Number.isSafeInteger(marker.updatedAt) ? marker.updatedAt : 0 });
+      }
+    } catch { /* absent or invalid markers are ignored */ }
+    finally {
+      if (descriptor !== undefined) {
+        try { fs.closeSync(descriptor); } catch { /* marker was only best-effort */ }
+      }
+    }
+  }
+  return markers;
+}
+
+function strongestMemoryResetReason(...reasons) {
+  if (reasons.includes('compacted')) return 'compacted';
+  if (reasons.includes('session-start')) return 'session-start';
+  return null;
+}
+
+function writePendingMemoryReset(directory, sessionID, reason) {
+  if (!['session-start', 'compacted'].includes(reason)) throw new TypeError('invalid pending memory reset reason');
+  const token = `${String(Date.now()).padStart(16, '0')}-${process.pid}-${randomUUID()}`;
+  const pending = pendingMemoryResetFile(directory, sessionID, token);
+  fs.mkdirSync(path.dirname(pending.file), { recursive: true });
+  const tempFile = `${pending.file}.${Math.random().toString(36).slice(2)}.tmp`;
+  try {
+    fs.writeFileSync(tempFile, JSON.stringify({ fingerprint: pending.fingerprint, reason, updatedAt: Date.now() }), {
+      encoding: 'utf8', mode: 0o600, flag: 'wx',
+    });
+    fs.renameSync(tempFile, pending.file);
+  } finally {
+    try { fs.rmSync(tempFile, { force: true }); } catch { /* preserve marker result */ }
+  }
+  return pending.file;
+}
+
+async function withPersistentInjectionState(directory, update, shouldPersist = () => true, afterPersist = () => {}, onLockTimeout = () => {}) {
   const telemetryDir = path.join(directory, '.specs', 'state', 'telemetry');
   const stateFile = path.join(telemetryDir, 'memory-injection-state.json');
   const lockFile = path.join(telemetryDir, 'memory-injection-state.lock');
@@ -163,7 +352,10 @@ async function withPersistentInjectionState(directory, update) {
       await wait(5);
     }
   }
-  if (lock == null) return null;
+  if (lock == null) {
+    onLockTimeout();
+    return null;
+  }
 
   try {
     let state;
@@ -174,9 +366,12 @@ async function withPersistentInjectionState(directory, update) {
     }
     if (!state.sessions || typeof state.sessions !== 'object') state.sessions = {};
     const result = update(state);
-    const tempFile = `${stateFile}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
-    fs.writeFileSync(tempFile, JSON.stringify(state), 'utf8');
-    fs.renameSync(tempFile, stateFile);
+    if (shouldPersist(result)) {
+      const tempFile = `${stateFile}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
+      fs.writeFileSync(tempFile, JSON.stringify(state), 'utf8');
+      fs.renameSync(tempFile, stateFile);
+      afterPersist(result);
+    }
     return result;
   } finally {
     try { fs.closeSync(lock); } catch {}
@@ -184,18 +379,35 @@ async function withPersistentInjectionState(directory, update) {
   }
 }
 
-async function claimMemoryReferences(directory, sessionID, references, fallbackReason) {
+async function claimMemoryReferences(directory, sessionID, references, fallbackReason, selectEligible = (eligible) => eligible, knownSeen = []) {
+  let clearPendingResets = [];
   return withPersistentInjectionState(directory, (state) => {
+    const pendingResets = readPendingMemoryResets(directory, sessionID);
+    const pendingReason = strongestMemoryResetReason(...pendingResets.map((marker) => marker.reason));
     const previous = state.sessions[sessionID] || { seen: [], nextReason: fallbackReason || 'session-start' };
-    const seen = new Set(previous.seen || []);
-    const memories = references.filter((ref) => {
+    const hadPersistentSession = Object.hasOwn(state.sessions, sessionID);
+    const refreshRecency = !hadPersistentSession || Object.keys(state.sessions).at(-1) !== sessionID;
+    const persistedBoundary = strongestMemoryResetReason(previous.nextReason);
+    const boundaryReason = strongestMemoryResetReason(pendingReason, persistedBoundary);
+    clearPendingResets = pendingResets;
+    const persistedSeen = new Set(boundaryReason ? [] : previous.seen || []);
+    const seen = new Set(boundaryReason ? [] : [...persistedSeen, ...knownSeen]);
+    const seenChanged = seen.size !== persistedSeen.size;
+    const eligible = references.filter((ref) => {
       if (!ref || typeof ref.id !== 'string') return false;
       const key = `${ref.scope === 'global' ? 'global' : 'project'}:${ref.id}`;
       if (seen.has(key)) return false;
+      return true;
+    });
+    const selectedKeys = new Set(selectEligible(eligible).map((ref) =>
+      `${ref.scope === 'global' ? 'global' : 'project'}:${ref.id}`));
+    const memories = eligible.filter((ref) => {
+      const key = `${ref.scope === 'global' ? 'global' : 'project'}:${ref.id}`;
+      if (!selectedKeys.has(key)) return false;
       seen.add(key);
       return true;
     });
-    const reason = previous.nextReason || fallbackReason || 'session-start';
+    const reason = boundaryReason || previous.nextReason || fallbackReason || 'session-start';
     delete state.sessions[sessionID];
     state.sessions[sessionID] = {
       seen: [...seen],
@@ -205,19 +417,38 @@ async function claimMemoryReferences(directory, sessionID, references, fallbackR
     while (Object.keys(state.sessions).length > 128) {
       delete state.sessions[Object.keys(state.sessions)[0]];
     }
-    return { memories, reason };
+    return { memories, eligible, reason, refreshRecency, seenChanged };
+  }, ({ memories, reason, refreshRecency, seenChanged }) => memories.length > 0
+    || reason === 'compacted' || reason === 'session-start' || refreshRecency || seenChanged,
+  () => {
+    for (const marker of clearPendingResets) fs.rmSync(marker.file, { force: true });
   });
 }
 
 async function resetPersistentMemoryReferences(directory, sessionID, reason) {
-  return withPersistentInjectionState(directory, (state) => {
+  const ownMarker = writePendingMemoryReset(directory, sessionID, reason);
+  let clearPendingResets = [];
+  const result = await withPersistentInjectionState(directory, (state) => {
+    const pendingResets = readPendingMemoryResets(directory, sessionID);
+    if (!pendingResets.some((marker) => marker.file === ownMarker)) return { applied: false };
+    clearPendingResets = pendingResets;
+    const previous = state.sessions[sessionID];
+    const effectiveReason = strongestMemoryResetReason(
+      reason,
+      previous?.nextReason,
+      ...pendingResets.map((marker) => marker.reason),
+    ) || reason;
     delete state.sessions[sessionID];
-    state.sessions[sessionID] = { seen: [], nextReason: reason, updatedAt: Date.now() };
+    state.sessions[sessionID] = { seen: [], nextReason: effectiveReason, updatedAt: Date.now() };
     while (Object.keys(state.sessions).length > 128) {
       delete state.sessions[Object.keys(state.sessions)[0]];
     }
-    return true;
+    return { applied: true, reason: effectiveReason };
+  }, (update) => update.applied,
+  () => {
+    for (const marker of clearPendingResets) fs.rmSync(marker.file, { force: true });
   });
+  return result !== null;
 }
 
 function contextForReferences(context, references) {
@@ -231,6 +462,14 @@ function contextForReferences(context, references) {
   return selected;
 }
 
+function referencesForContext(context) {
+  return MEMORY_CONTEXT_GROUPS.flatMap((group) => (context?.[group] || []).map((node) => ({
+    id: node.id,
+    type: node.type,
+    scope: node.scope,
+  })));
+}
+
 // Load the core engine from repo (plugin/ -> ../orchestrator) or bundle
 // (cli/plugin/ -> ../orchestrator). Same relative path covers both; ../../orchestrator
 // is a fallback for running the bundle in-repo.
@@ -241,14 +480,13 @@ async function loadCore() {
   ];
   for (const dir of candidates) {
     if (fs.existsSync(path.join(dir, 'state.js'))) {
-      const [state, decide, prompt, specs, workflowSettings] = await Promise.all([
+      const [state, decide, prompt, workflowSettings] = await Promise.all([
         import(pathToFileURL(path.join(dir, 'state.js')).href),
         import(pathToFileURL(path.join(dir, 'decide.js')).href),
         import(pathToFileURL(path.join(dir, 'prompt.js')).href),
-        import(pathToFileURL(path.join(dir, 'specs.js')).href),
         import(pathToFileURL(path.join(dir, 'workflow-settings.js')).href),
       ]);
-      return { state, decide, prompt, specs, workflowSettings };
+      return { state, decide, prompt, workflowSettings };
     }
   }
   return null;
@@ -473,7 +711,7 @@ export const GuaranaOrchestrator = async ({ directory, client, session, sdkVersi
         append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
         workflowSettingsErrorReported = true;
       }
-      return { specs: { enabled: true }, verify: { enabled: true } };
+      return { specs: { enabled: true }, verify: { enabled: true }, memory: { autoInject: true } };
     }
   };
 
@@ -642,22 +880,49 @@ export const GuaranaOrchestrator = async ({ directory, client, session, sdkVersi
   };
 
   const handleSessionCompacted = async (event) => {
-    const sessionID = sessionIdFrom(event) || activeSessionID || 'unknown';
-    if (childSessions.has(sessionID)) return;
+    const eventSessionID = sessionIdFrom(event);
+    const sessionID = eventSessionID || activeSessionID || 'unknown';
+    const sessionIDSource = eventSessionID ? 'event' : 'fallback';
+    const compactedDiagnostic = (outcome) => append({
+      ts: Date.now(),
+      type: 'session-compacted',
+      outcome,
+      sessionFingerprint: sessionFingerprint(sessionID),
+      sessionIDSource,
+    });
+    compactedDiagnostic('received');
+    if (childSessions.has(sessionID)) {
+      compactedDiagnostic('skipped-child');
+      return;
+    }
     storeSessionInjectionState(sessionCacheKey(sessionID), { seen: new Set(), nextReason: 'compacted' });
+    let reset;
     try {
-      await resetPersistentMemoryReferences(directory, sessionID, 'compacted');
+      reset = await resetPersistentMemoryReferences(directory, sessionID, 'compacted');
+    } catch {
+      compactedDiagnostic('reset-error');
+      return;
+    }
+    compactedDiagnostic(reset ? 'reset-success' : 'reset-timeout');
+    try {
       const c = await core();
       if (!c) return;
       const wf = c.state.load(directory);
       memoryContext = await loadContext(wf.goal || wf.activeTask || '');
       latest = wf;
-    } catch (err) {
-      append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
+    } catch {
+      append({ ts: Date.now(), type: 'orchestrator-error', operation: 'session-compacted-refresh', failure: 'thrown' });
     }
   };
 
   const loadContext = async (task) => {
+    const settingsCore = await core();
+    if (settingsCore && workflowPreferences(settingsCore).memory?.autoInject === false) {
+      return {
+        project_preferences: [], global_preferences: [], related_global_preferences: [],
+        superseded_global_preferences: [], count: 0,
+      };
+    }
     if (!memoryPromise) {
       memoryPromise = loadMemoryEngine().catch((err) => {
         append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
@@ -667,15 +932,20 @@ export const GuaranaOrchestrator = async ({ directory, client, session, sdkVersi
     const e = await memoryPromise;
     if (!e) return null;
     try {
-      // Preserve the established task-start project-vault initialization, but
-      // never read project nodes for automatic prompt context.
-      if (task) e.vault.initVault(directory);
-      const globalPreferences = await e.tools.memoryGetGlobalPreferences(e.vault.userVaultDir(), { complete: true });
+      // Preserve task-start initialization while avoiding writes for read-only
+      // turns; automatic project preferences come only from this directory's vault.
+      const projectVault = task ? e.vault.initVault(directory) : e.vault.projectVaultDir(directory);
+      const [projectPreferences, globalPreferences] = await Promise.all([
+        e.tools.memoryGetProjectPreferences(projectVault),
+        e.tools.memoryGetGlobalPreferences(e.vault.userVaultDir(), { complete: true }),
+      ]);
       return {
+        project_preferences: projectPreferences.preferences || [],
         global_preferences: globalPreferences.preferences,
         related_global_preferences: globalPreferences.relatedPreferences || [],
         superseded_global_preferences: globalPreferences.relatedSuperseded || [],
-        count: (globalPreferences.preferences || []).length
+        count: (projectPreferences.preferences || []).length
+          + (globalPreferences.preferences || []).length
           + (globalPreferences.relatedPreferences || []).length
           + (globalPreferences.relatedSuperseded || []).length,
       };
@@ -704,15 +974,6 @@ export const GuaranaOrchestrator = async ({ directory, client, session, sdkVersi
           const rejected = await parallelTransitionRejection(wf, applied);
           if (rejected) return;
           next = applied;
-          if ((d.event === 'new_task' || d.event === 'force') && (d.goal || wf.goal || userText)) {
-            if (workflowPreferences(c).specs.enabled) {
-              try {
-                c.specs.ensureSpecs(directory, d.goal || wf.goal || userText);
-              } catch (err) {
-                append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
-              }
-            }
-          }
           c.state.save(directory, next);
           appendWorkflowEvent({
             source: 'chat.message',
@@ -818,16 +1079,6 @@ export const GuaranaOrchestrator = async ({ directory, client, session, sdkVersi
           const rejected = await parallelTransitionRejection(wf, applied);
           if (rejected) return rejected;
           c.state.save(directory, applied);
-          if (((action === 'new_task' || action === 'start_task') && args.goal) || action === 'force') {
-            if (workflowPreferences(c).specs.enabled) {
-              try {
-                const skill = String(args.skill || applied.skill || 'plan').replace(/^guarana[:_-]?/i, '');
-                c.specs.ensureSpecs(directory, args.goal || applied.goal || `guarana:${skill}`);
-              } catch (err) {
-                append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });
-              }
-            }
-          }
           latest = applied;
           memoryContext = await loadContext(applied.goal || applied.activeTask || '');
           const history = action === 'start_task' ? applied.history.slice(-3) : [applied.history.at(-1)];
@@ -1117,6 +1368,14 @@ export const GuaranaOrchestrator = async ({ directory, client, session, sdkVersi
     event: async ({ event } = {}) => {
       if (event?.type === 'session.created') await handleSessionCreated(event);
       if (event?.type === 'session.compacted') await handleSessionCompacted(event);
+      if (event?.type === 'session.compaction.ended') await handleSessionCompacted(event);
+    },
+
+    eventStreamFailure: ({ failure, attempt, delayMs }) => {
+      if ((failure !== 'thrown' && failure !== 'terminated')
+        || !Number.isSafeInteger(attempt) || attempt < 1
+        || !Number.isSafeInteger(delayMs) || delayMs < 0) return;
+      append({ ts: Date.now(), type: 'orchestrator-error', operation: 'event-stream', failure, action: 'reconnect', attempt, delayMs });
     },
 
     // Observe every user prompt: restore the persisted workflow, decide the
@@ -1158,9 +1417,8 @@ export const GuaranaOrchestrator = async ({ directory, client, session, sdkVersi
         const c = await core();
         if (!c) return;
         const wf = latest ? latest : c.state.load(directory);
-        const candidates = selectUnseenMemory(memoryContext, new Set(seen));
+        const memoryReferences = referencesForContext(memoryContext);
         const preferences = workflowPreferences(c);
-        const serializedMemory = c.prompt.serializeMemoryPayload(candidates.context);
         const configuredBudget = preferences.memory?.preferenceInjectionBudgetTokens;
         const modelContext = input?.model?.limit?.context;
         const usableConfigured = Number.isSafeInteger(configuredBudget) && configuredBudget > 0 ? configuredBudget : null;
@@ -1168,21 +1426,41 @@ export const GuaranaOrchestrator = async ({ directory, client, session, sdkVersi
         const effectiveBudget = usableConfigured != null && usableModelContext != null
           ? Math.min(usableConfigured, usableModelContext)
           : usableConfigured ?? usableModelContext;
-        const serializedBytes = serializedMemory
-          ? Buffer.byteLength(serializedMemory.serialized, 'utf8')
-          : 0;
         let memoryNotice;
-        let claim = { memories: [], reason: sessionMemory.nextReason };
+        let claim = { memories: [], eligible: [], reason: sessionMemory.nextReason };
         let pendingMemoryContext = null;
-        const preferenceBudgetRepair = 'Tell the user that no saved preference text was injected, and do not imply that saved preferences were applied. To enable injection, set or raise `memory.preferenceInjectionBudgetTokens` high enough for the complete payload (subject to the model context limit) in Dashboard Settings → Workflow preferences → Global preference injection budget (tokens), or run `guarana workflow set memory.preferenceInjectionBudgetTokens <positive-integer>`; add `--project` for a project override.';
-        if (serializedMemory && effectiveBudget == null) {
-          memoryNotice = `Global preferences were not injected because no usable configured token budget or model context limit is available. No preference text was included. ${preferenceBudgetRepair}`;
-        } else if (serializedMemory && serializedBytes > effectiveBudget) {
-          memoryNotice = `Global preferences were not injected because the complete payload is ${serializedBytes} UTF-8 bytes, over the ${effectiveBudget}-token estimated budget. UTF-8 bytes are only an estimate, not exact tokenization or remaining conversation capacity; no preference text was included. ${preferenceBudgetRepair}`;
-        } else if (candidates.memories.length) {
-          claim = await claimMemoryReferences(directory, sessionID, candidates.memories, sessionMemory.nextReason)
-            || { memories: [], reason: sessionMemory.nextReason };
-          pendingMemoryContext = contextForReferences(candidates.context, claim.memories);
+        const noInjectionRepair = 'Tell the user that no saved preference text was injected, and do not imply that saved preferences were applied. To enable injection, set or raise `memory.preferenceInjectionBudgetTokens` in Dashboard Settings → Workflow preferences → Current-project + Global preference injection budget (tokens), or run `guarana workflow set memory.preferenceInjectionBudgetTokens <positive-integer>`; add `--project` for a project override.';
+        const raiseBudgetAdvice = 'To include more complete records, raise `memory.preferenceInjectionBudgetTokens` in Dashboard Settings → Workflow preferences → Current-project + Global preference injection budget (tokens), or run `guarana workflow set memory.preferenceInjectionBudgetTokens <positive-integer>`; add `--project` for a project override.';
+        if (preferences.memory?.autoInject === false) {
+          memoryNotice = 'Automatic memory preference injection is disabled for this scope. No saved preference text was included. On-demand memory search remains available.';
+        } else if (memoryReferences.length) {
+          let fittedMemoryContext = null;
+          claim = await claimMemoryReferences(
+            directory,
+            sessionID,
+            memoryReferences,
+            sessionMemory.nextReason,
+            (eligible) => {
+              if (effectiveBudget == null) return [];
+              const fit = c.prompt.fitMemoryPayload(
+                contextForReferences(memoryContext, eligible), effectiveBudget,
+              );
+              fittedMemoryContext = fit.context;
+              return referencesForContext(fit.context);
+            },
+            [...seen],
+          ) || { memories: [], eligible: [], reason: sessionMemory.nextReason };
+          pendingMemoryContext = contextForReferences(fittedMemoryContext || memoryContext, claim.memories);
+          const injectedCount = claim.memories.length;
+          const eligibleCount = claim.eligible.length;
+          const omittedCount = eligibleCount - injectedCount;
+          if (eligibleCount && effectiveBudget == null) {
+            memoryNotice = `Project and Global preferences were not injected because no usable configured token budget or model context limit is available. Injected: 0; omitted: ${eligibleCount} eligible unseen records. No preference text was included. ${noInjectionRepair}`;
+          } else if (eligibleCount && injectedCount === 0) {
+            memoryNotice = `No preferences were injected: none of the ${eligibleCount} eligible unseen records fit the ${effectiveBudget}-token estimated budget. Injected: 0; omitted: ${omittedCount}. UTF-8 serialized bytes are only an estimate, not exact tokenization or remaining conversation capacity. No preference text was included. ${noInjectionRepair}`;
+          } else if (eligibleCount) {
+            memoryNotice = `Project and Global preference injection counts: injected ${injectedCount}; omitted ${omittedCount} of ${eligibleCount} eligible unseen records. Complete records that do not fit are skipped without truncation. UTF-8 serialized bytes are only an estimate, not exact tokenization or remaining conversation capacity.${omittedCount ? ` ${raiseBudgetAdvice}` : ''}`;
+          }
         }
         const pendingMemory = { memories: claim.memories, context: pendingMemoryContext };
         const injection = `${ORCHESTRATOR_INJECTION_MARKER}\n${c.prompt.buildInjection(wf, { memoryContext: pendingMemory.context, memoryNotice, directory, preferences })}`;
@@ -1214,6 +1492,10 @@ export const GuaranaOrchestrator = async ({ directory, client, session, sdkVersi
     },
 
     'session.compacted': async (event) => {
+      await handleSessionCompacted(event);
+    },
+
+    'session.compaction.ended': async (event) => {
       await handleSessionCompacted(event);
     },
 
@@ -1354,15 +1636,12 @@ async function setupGuaranaOrchestrator(ctx) {
   });
 
   const controller = new AbortController();
-  void (async () => {
-    try {
-      for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
-        await hooks.event({ event });
-      }
-    } catch {
-      // Event observation is best-effort; core hooks remain non-fatal.
-    }
-  })();
+  void consumeEventStreamWithReconnect({
+    subscribe: ({ signal }) => ctx.event.subscribe({ signal }),
+    onEvent: (event) => hooks.event({ event }),
+    signal: controller.signal,
+    onFailure: (diagnostic) => hooks.eventStreamFailure(diagnostic),
+  });
   return () => controller.abort();
 }
 

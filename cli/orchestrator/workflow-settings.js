@@ -8,6 +8,7 @@ import path from 'node:path';
 
 const PREFERENCE_NAMES = ['specs', 'verify'];
 const PREFERENCE_BUDGET_FIELD = 'preferenceInjectionBudgetTokens';
+const MEMORY_AUTO_INJECT_FIELD = 'autoInject';
 
 function assertObject(value, label) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -49,18 +50,22 @@ export function validateWorkflowSettings(settings) {
     const memory = settings.memory;
     assertObject(memory, 'Workflow settings section "memory"');
     for (const field of Object.keys(memory)) {
-      if (field !== PREFERENCE_BUDGET_FIELD) {
+      if (field !== PREFERENCE_BUDGET_FIELD && field !== MEMORY_AUTO_INJECT_FIELD) {
         throw new TypeError(`Unknown workflow settings field: memory.${field}`);
       }
+    }
+    if (Object.hasOwn(memory, MEMORY_AUTO_INJECT_FIELD)) {
+      if (typeof memory[MEMORY_AUTO_INJECT_FIELD] !== 'boolean') {
+        throw new TypeError(`Workflow setting memory.${MEMORY_AUTO_INJECT_FIELD} must be a boolean`);
+      }
+      normalized.memory = { [MEMORY_AUTO_INJECT_FIELD]: memory[MEMORY_AUTO_INJECT_FIELD] };
     }
     if (Object.hasOwn(memory, PREFERENCE_BUDGET_FIELD)) {
       const budget = memory[PREFERENCE_BUDGET_FIELD];
       if (!Number.isSafeInteger(budget) || budget <= 0) {
         throw new TypeError(`Workflow setting memory.${PREFERENCE_BUDGET_FIELD} must be a positive integer token budget`);
       }
-      normalized.memory = { [PREFERENCE_BUDGET_FIELD]: budget };
-    } else {
-      normalized.memory = {};
+      normalized.memory = { ...(normalized.memory || {}), [PREFERENCE_BUDGET_FIELD]: budget };
     }
   }
 
@@ -111,6 +116,8 @@ export function mergeWorkflowSettings(globalSettings, projectSettings) {
 
   const projectBudget = project.memory?.[PREFERENCE_BUDGET_FIELD];
   const globalBudget = global.memory?.[PREFERENCE_BUDGET_FIELD];
+  const projectAutoInject = project.memory?.[MEMORY_AUTO_INJECT_FIELD];
+  const globalAutoInject = global.memory?.[MEMORY_AUTO_INJECT_FIELD];
   const budget = projectBudget ?? globalBudget ?? null;
   effective.memory = { [PREFERENCE_BUDGET_FIELD]: budget };
   sources.memory = {
@@ -118,6 +125,10 @@ export function mergeWorkflowSettings(globalSettings, projectSettings) {
       ? 'project'
       : globalBudget !== undefined ? 'global' : 'default',
   };
+  if (projectAutoInject !== undefined || globalAutoInject !== undefined) {
+    effective.memory[MEMORY_AUTO_INJECT_FIELD] = projectAutoInject ?? globalAutoInject;
+    sources.memory[MEMORY_AUTO_INJECT_FIELD] = projectAutoInject !== undefined ? 'project' : 'global';
+  }
 
   return { global, project, effective, sources };
 }
@@ -210,6 +221,26 @@ export function clearPreferenceInjectionBudget(scope, options = {}) {
   const current = readScope(file);
   if (current.memory) {
     delete current.memory[PREFERENCE_BUDGET_FIELD];
+    if (!Object.keys(current.memory).length) delete current.memory;
+  }
+  return writeWorkflowSettings(scope, current, options);
+}
+
+export function setMemoryAutoInject(scope, enabled, options = {}) {
+  if (typeof enabled !== 'boolean') {
+    throw new TypeError(`Workflow setting memory.${MEMORY_AUTO_INJECT_FIELD} must be a boolean`);
+  }
+  const file = scopeFile(scope, options);
+  const current = readScope(file);
+  current.memory = { ...(current.memory || {}), [MEMORY_AUTO_INJECT_FIELD]: enabled };
+  return writeWorkflowSettings(scope, current, options);
+}
+
+export function clearMemoryAutoInject(scope, options = {}) {
+  const file = scopeFile(scope, options);
+  const current = readScope(file);
+  if (current.memory) {
+    delete current.memory[MEMORY_AUTO_INJECT_FIELD];
     if (!Object.keys(current.memory).length) delete current.memory;
   }
   return writeWorkflowSettings(scope, current, options);

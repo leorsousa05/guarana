@@ -14,54 +14,87 @@ The model forgets between runs; only files survive (hard truth 3). Anything that
 - Change log → `.specs/changes/*.md`
 
 ## Restoration round-trip
-For an active task, restore relevant records from README.md → project-state.md →
-decisions/* → current feature spec. That round-trip IS the memory mechanism —
-across sessions, across models. Read-only questions do not bootstrap task records.
+For an active task, use targeted search in README.md and project-state.md, then
+read only the matching feature sections and specific governing ADRs. Never read
+`decisions/*` or the full tracker wholesale; this round-trip IS the memory
+mechanism across sessions and models. Read-only questions do not bootstrap task
+records.
 
-Project knowledge is searched on demand and is never injected into assistant
-context. Every eligible confirmed active global user preference is included
-losslessly, without truncating its text, only when the complete serialized
-preference payload fits the effective budget; otherwise the entire payload is
-omitted. Direct preferences, confirmed related preferences exactly one graph
-hop away, and reached superseded preferences retain distinct labeled trust
-groups; no second hop is traversed. New preferences use the `agent_behavior`, `workflow`, or
-`communication` categories, while a legacy confirmed global preference without
-a stored category is read as `general` without rewriting its vault.
+Project decisions, bugs, solutions, and refactors are searched on demand and
+never injected into assistant context. Confirmed current-project preferences
+are eligible only when explicitly categorized as `agent_behavior`, `workflow`,
+or `communication`; legacy uncategorized project preferences remain excluded.
+Eligible current-project preferences rank before Global candidates. Eligible
+unseen confirmed Global preferences are considered as complete records, without
+truncating text, against the shared effective budget. The orchestrator ranks
+Global direct preferences before exactly-one-hop related context and reached
+superseded history; within each Global group it ranks `essential` before
+`normal`, then newer records first. It includes a record only when the complete
+compact serialized payload still fits, skips non-fitting records, and considers
+later smaller records. Project, direct, related, and superseded preferences
+retain distinct labeled trust groups; no second hop is traversed. New
+preferences use the `agent_behavior`, `workflow`, or `communication` categories.
+A legacy confirmed Global preference without a stored category remains eligible
+and is read as `general` without rewriting its vault; a project preference
+without a stored category is not eligible.
 
 The optional positive-integer token budget is `memory.preferenceInjectionBudgetTokens`
 in the existing global workflow settings (`$XDG_CONFIG_HOME/guarana/workflow.json`,
 falling back to `~/.config/guarana/workflow.json`) or project settings
 (`.guarana/workflow.json`); a project value overrides the global value. Set it in
-Dashboard Settings → Workflow preferences → Global preference injection budget
+Dashboard Settings → Workflow preferences → Current-project + Global preference injection budget
 (tokens), or with `guarana workflow set memory.preferenceInjectionBudgetTokens
 <positive-integer>` (`--project` selects the project override). When the setting
 is unset, the model context limit is used when available; when both limits are
 available, the lower one applies. If neither a configured budget nor a usable
 model context limit is available, preference injection is omitted and the
 generated prompt directs the assistant to report that no saved preference text
-was injected and how to configure a budget. The comparison uses UTF-8 serialized
-byte length against a token count as an estimate only, not exact tokenization or
-remaining conversation capacity.
+was injected and how to configure a budget. Injection notices report exact
+injected and omitted record counts; if none fit, they say no preferences were
+injected. With no usable configured or model budget, injection remains visibly
+fail-closed. Dashboard presets are Automatic (unset), Less (8192), Medium
+(32768), and More (65536); custom integer values remain supported. The
+comparison uses UTF-8 serialized byte length against a token count as an
+estimate only, not exact tokenization or remaining conversation capacity.
 
-New project records are limited to decisions, bugs, solutions, and refactors.
-Project preferences, atoms, and supernodes are legacy-only records available
-through explicit read/search paths; they are not injected, migrated, or newly
-written. Compact and prune preserve legacy records and neither create nor delete
-atoms or supernodes.
+The Dashboard's aggregate estimate covers the selected project's categorized
+preferences plus Global direct, related, and superseded candidates before budget
+fitting or per-session deduplication; it returns only a candidate count and
+serialized byte estimate.
+
+New project records include categorized preferences as well as decisions, bugs,
+solutions, and refactors. Legacy uncategorized project preferences, atoms, and
+supernodes remain available through explicit read/search paths; they are not
+eligible for injection, migrated, or newly written. Compact and prune preserve
+legacy records and neither create nor delete atoms or supernodes.
 Confirming a legacy draft requires explicit conversion to `decision`, `bug`,
-`solution`, or `refactor`; implicit atom confirmation is not supported.
+`solution`, `refactor`, or `preference`. Preference conversion requires an
+explicit `category` of `agent_behavior`, `workflow`, or `communication`;
+implicit conversion to a legacy `atom` is not supported.
 
-Missing spec scaffolding is created only for a clear mutation request or
-explicit workflow-skill command; read-only requests do not cause task-specific
-record writes. Explicit project-knowledge and global-preference saves, plus the
-existing verified-workflow completion record, are persisted as vault nodes;
-normal tool activity remains telemetry. The disk tree remains the source of
-truth.
+Human-readable `.specs` files are not scaffolded when a project or task starts.
+Create or update them only on explicit request or after requirements discovery
+establishes a durable cross-session need; ordinary one-off work stays in code and
+tests. Specs are not injected wholesale: use the index and retrieve only relevant
+feature sections, governing ADRs, or state excerpts. Explicit project-knowledge
+and global-preference saves, plus the existing verified-workflow completion
+record, are persisted as vault nodes; normal tool activity remains telemetry.
+The disk tree remains the source of truth.
 
-Global preference injection selects the complete eligible active preference
-set and preserves its text. The whole serialized payload is injected only when
-it fits the effective budget; otherwise an explicit notice is shown and no
-preference content is included. Configure the optional positive-integer
+Automatic preference injection can be disabled per global/project scope with
+`memory.autoInject`. It defaults to enabled; set it through Dashboard Settings or
+`guarana workflow set memory.autoInject false` (add `--project` for a project
+override), and restore inheritance with `guarana workflow clear memory.autoInject`.
+Disabling it omits saved preferences from the automatic prompt, but leaves
+explicit `memory_*` search/retrieval available.
+
+Preference injection considers the eligible selected-project and complete
+Global unseen candidate set and preserves every included record's full text.
+Project preferences precede Global direct, related, and superseded candidates;
+Global records retain their priority ordering. It adds complete records while
+the entire compact payload fits, skips oversized records and continues
+considering later ones, and reports injected/omitted counts.
+Configure the optional positive-integer
 `memory.preferenceInjectionBudgetTokens` in global workflow settings
 (`$XDG_CONFIG_HOME/guarana/workflow.json`, falling back to
 `~/.config/guarana/workflow.json`) or project settings
@@ -78,7 +111,7 @@ memory.preferenceInjectionBudgetTokens <positive-integer>`; use
 
 ## Silent context truncation
 Contexts truncate without notice. Keep transient stage, budget, and current-step
-checkpoints in operational workflow/run state; project-state records task start/end
-and material blockers/status, not every stage. On restore, verify the checkpoint
+checkpoints in operational workflow/run state; project-state records meaningful
+completion and material blockers/status, not task starts or every stage. On restore, verify the checkpoint
 matches; on mismatch, re-read from disk — never reconstruct from recall. Markdown
 over vector DB (ADR-004): inspectable, diffable, append-only, zero infrastructure.

@@ -12,8 +12,8 @@ import { decide, resultFailed } from './decide.js';
 import { buildSystemBlock, buildInjection, resolveSkillBody, completionAction } from './prompt.js';
 import { ensureSpecs, taskSlug } from './specs.js';
 import {
-  clearPreferenceInjectionBudget, clearWorkflowPreference, readWorkflowSettings,
-  setPreferenceInjectionBudget, setWorkflowPreference,
+  clearMemoryAutoInject, clearPreferenceInjectionBudget, clearWorkflowPreference, readWorkflowSettings,
+  setMemoryAutoInject, setPreferenceInjectionBudget, setWorkflowPreference,
   validateWorkflowSettings, workflowSettingsPaths, writeWorkflowSettings,
 } from './workflow-settings.js';
 
@@ -129,6 +129,27 @@ test('workflow settings default on, use isolated XDG paths, and merge fields ind
   assert.equal(Object.hasOwn(JSON.parse(fs.readFileSync(workflowSettingsPaths(options).project, 'utf8')), 'memory'), false);
 });
 
+test('automatic memory injection inherits per scope and can be disabled or restored', () => {
+  const root = tmp();
+  const options = { directory: path.join(root, 'project'), env: { XDG_CONFIG_HOME: path.join(root, 'xdg') }, home: path.join(root, 'home') };
+  assert.equal(readWorkflowSettings(options).effective.memory.autoInject, undefined, 'omitted means the established enabled default');
+
+  setMemoryAutoInject('global', false, options);
+  let resolved = readWorkflowSettings(options);
+  assert.equal(resolved.effective.memory.autoInject, false);
+  assert.equal(resolved.sources.memory.autoInject, 'global');
+
+  setMemoryAutoInject('project', true, options);
+  resolved = readWorkflowSettings(options);
+  assert.equal(resolved.effective.memory.autoInject, true);
+  assert.equal(resolved.sources.memory.autoInject, 'project');
+
+  clearMemoryAutoInject('project', options);
+  resolved = readWorkflowSettings(options);
+  assert.equal(resolved.effective.memory.autoInject, false);
+  assert.equal(resolved.sources.memory.autoInject, 'global');
+});
+
 test('workflow settings reject unknown sections, fields, and non-booleans without partial writes', () => {
   for (const invalid of [
     { advisor: { enabled: false } },
@@ -139,6 +160,7 @@ test('workflow settings reject unknown sections, fields, and non-booleans withou
     { memory: { preferenceInjectionBudgetTokens: -1 } },
     { memory: { preferenceInjectionBudgetTokens: 1.5 } },
     { memory: { preferenceInjectionBudgetTokens: '100' } },
+    { memory: { autoInject: 'false' } },
     { memory: { extra: 100 } },
   ]) assert.throws(() => validateWorkflowSettings(invalid), TypeError);
 
@@ -285,6 +307,25 @@ test('remember and memory descriptions route state recovery separately from grap
   assert.match(memory.split('---')[1], /searching, reviewing, or saving durable knowledge/i);
   assert.match(remember.split('---')[1], /checkpoint/i);
   assert.match(memory.split('---')[1], /memory graph/i);
+});
+
+test('built-in skills expose topical categories and focused memory/skill maintenance procedures', () => {
+  const index = fs.readFileSync(path.resolve('skills/guarana/SKILL.md'), 'utf8');
+  const skillAuthoring = fs.readFileSync(path.resolve('skills/guarana/skills/skill-authoring/SKILL.md'), 'utf8');
+  const memoryMaintenance = fs.readFileSync(path.resolve('skills/guarana/skills/memory-maintenance/SKILL.md'), 'utf8');
+
+  assert.match(index, /Skill.*Category.*Scope.*Description.*Trigger/i);
+  assert.match(index, /Scope is the install/);
+  assert.match(index, /independent of topical category/);
+  assert.ok(index.includes('guarana:skill-authoring | memory'));
+  assert.ok(index.includes('guarana:memory-maintenance | memory'));
+  assert.match(skillAuthoring, /skill_list/);
+  assert.match(skillAuthoring, /skill_read/);
+  assert.match(skillAuthoring, /expectedRevision/);
+  assert.match(skillAuthoring, /project.*global/i);
+  assert.match(memoryMaintenance, /memory_search/);
+  assert.match(memoryMaintenance, /project.*global/i);
+  assert.match(memoryMaintenance, /raw prompts, conversation transcripts/);
 });
 
 test('measure is discoverable for telemetry/cost work and remains outside workflow states', () => {
@@ -514,7 +555,7 @@ test('clear mutation requests and explicit skill commands still enter workflow',
   assert.equal(forcedPortuguese.state, 'verifying');
 });
 
-test('automatic specs bootstrap uses a generic spec path and is idempotent', () => {
+test('specs scaffold helper uses a generic spec path and is idempotent', () => {
   const dir = tmp();
   const request = 'Implement OAuth authentication';
   const first = ensureSpecs(dir, request, 0);
@@ -544,7 +585,7 @@ test('automatic specs bootstrap uses a generic spec path and is idempotent', () 
   assert.doesNotMatch(spec, /^# Feature spec: Implement OAuth authentication/m);
 });
 
-test('automatic specs bootstrap preserves custom conventions bytes', () => {
+test('specs scaffold helper preserves custom conventions bytes', () => {
   const dir = tmp();
   const conventionsFile = path.join(dir, '.specs', 'conventions.md');
   const customBytes = Buffer.from('# My rules\r\ncustom \u2603\n', 'utf8');
@@ -557,7 +598,7 @@ test('automatic specs bootstrap preserves custom conventions bytes', () => {
   assert.ok(!result.created.includes(conventionsFile));
 });
 
-test('fresh automatic specs bootstrap passes the shipped specs validator', () => {
+test('fresh specs scaffold helper passes the shipped specs validator', () => {
   const dir = tmp();
   ensureSpecs(dir, 'Implement OAuth authentication', 0);
   const bin = path.resolve('bin/guarana.js');
@@ -569,7 +610,7 @@ test('fresh automatic specs bootstrap passes the shipped specs validator', () =>
   assert.equal(JSON.parse(result.stdout).ok, true);
 });
 
-test('automatic specs bootstrap preserves multiline task Markdown', () => {
+test('specs scaffold helper preserves multiline task Markdown', () => {
   const dir = tmp();
   const task = '# Big goal\n\n## Details\n\n- first step';
   const result = ensureSpecs(dir, task, 0);
@@ -674,7 +715,9 @@ test('planning injection asks about consequential unknowns before code dispatch'
   assert.match(injection, /up to five per\s+round/i);
   assert.match(injection, /acceptance condition/i);
   assert.match(injection, /System-of-record writes/i);
-  assert.match(injection, /Informational questions, audits, reviews,[\s\S]*create no task spec, tracker, or project-state entry/i);
+  assert.match(injection, /Do not create a `\.specs\/` shell, README, tracker, project-state row, feature spec,[\s\S]*do not create a placeholder during kickoff/i);
+  assert.match(injection, /Specs are on-disk references, not an automatically injected prompt corpus/i);
+  assert.match(injection, /targeted search, not a full-file read/i);
   assert.match(injection, /Dispatch\s+it only when a human-readable record will materially change/i);
   assert.match(injection, /Do not dispatch for every[\s\S]*workflow\/run state/i);
   assert.match(injection, /only after a human-readable record write/i);
@@ -716,7 +759,7 @@ test('recording policies limit ADRs and known issues to durable actionable cases
   const code = readSkill('code');
   assert.match(code, /smallest ordinary checks mapped to changed acceptance criteria/i);
   assert.match(code, /Do not run smoke tests/i);
-  assert.match(remember, /record task start\/end and material blockers or status changes in\s+`state\/project-state\.md`/i);
+  assert.match(remember, /Never create a\s+project-state entry solely because a task started/i);
   assert.match(remember, /checkpoint[\s\S]*operational workflow\/run state/i);
   assert.match(remember, /actual build run/i);
   assert.match(debug, /confirmed,\s+reproducible\s+product failure/i);

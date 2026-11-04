@@ -237,6 +237,11 @@ export function catalogStateFromResponse(response, body) {
   return { status: models.length ? 'ready' : 'empty', models, error: null };
 }
 
+export function retryModelCatalog(setCatalog, setAttempt) {
+  setCatalog({ status: 'loading', models: [], error: null });
+  setAttempt((attempt) => attempt + 1);
+}
+
 function optionId(role, field, index) {
   return `model-${role}-${field}-option-${index}`;
 }
@@ -254,6 +259,7 @@ export function ModelsForm({
   variants = {},
   onSelectModel = () => {},
   onRequestVariants = () => {},
+  onRetryCatalog = () => {},
 }) {
   const [searches, setSearches] = useState({ primary: project?.primary?.model || '', advisor: project?.advisor?.model || '' });
   const [providerSearches, setProviderSearches] = useState({ primary: project?.primary?.provider || '', advisor: project?.advisor?.provider || '' });
@@ -287,10 +293,13 @@ export function ModelsForm({
     <section id="models" aria-label="Models">
       <h2 className="section-title">Models</h2>
       <p className="models-intro">Project defaults for Guarana profiles; running OpenCode sessions are unchanged. Credentials stay OpenCode-managed.</p>
-      <p id="models-catalog-status" className={`models-catalog-status${catalogLoading ? ' models-catalog-status--loading' : ''}`} role="status" aria-live="polite" aria-busy={catalogLoading || undefined}>
-        {catalogLoading && <span className="models-variant-spinner" aria-hidden="true" />}
-        {message}
-      </p>
+      <div className="models-catalog-feedback">
+        <p id="models-catalog-status" className={`models-catalog-status${catalogLoading ? ' models-catalog-status--loading' : ''}`} role="status" aria-live="polite" aria-busy={catalogLoading || undefined}>
+          {catalogLoading && <span className="models-variant-spinner" aria-hidden="true" />}
+          {message}
+        </p>
+        {catalog?.status === 'error' && <button type="button" className="models-inherit models-catalog-retry" aria-label="Retry OpenCode model discovery" onClick={onRetryCatalog}>Retry discovery</button>}
+      </div>
       <form className="models-form" onSubmit={(event) => handleModelsSubmit(event, project, baseSettings, onSubmit)}>
         <div className="models-roles">{ROLES.map(([role, title]) => {
           const provider = effectiveFieldValue(project, baseSettings, role, 'provider');
@@ -415,6 +424,7 @@ export function Models() {
   const [settings, setSettings] = useState(null);
   const [project, setProject] = useState(emptyProject);
   const [catalog, setCatalog] = useState({ status: 'loading', models: [] });
+  const [catalogAttempt, setCatalogAttempt] = useState(0);
   const [variants, setVariants] = useState({});
   const variantLoader = useRef(null);
   if (!variantLoader.current) variantLoader.current = createVariantLoader(setVariants, (provider, model) => fetchVariantSuggestions(provider, model, projectFetch));
@@ -437,6 +447,11 @@ export function Models() {
         if (!cancelled) setLoadingError(cause.message);
       });
 
+    return () => { cancelled = true; };
+  }, [projectFetch]);
+
+  useEffect(() => {
+    let cancelled = false;
     projectFetch('/api/models/catalog')
       .then(async (response) => {
         const body = await response.json();
@@ -447,7 +462,7 @@ export function Models() {
         if (!cancelled) setCatalog(result);
       });
     return () => { cancelled = true; };
-  }, [projectFetch]);
+  }, [projectFetch, catalogAttempt]);
 
   const loadVariants = variantLoader.current;
   useEffect(() => {
@@ -514,6 +529,7 @@ export function Models() {
       variants={variants}
       onSelectModel={selectModel}
        onRequestVariants={(role) => loadVariants(role, effectiveFieldValue(project, settings.global, role, 'provider'), effectiveFieldValue(project, settings.global, role, 'model'))}
+      onRetryCatalog={() => retryModelCatalog(setCatalog, setCatalogAttempt)}
     />
   );
 }

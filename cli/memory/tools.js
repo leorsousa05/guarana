@@ -53,7 +53,9 @@ export async function memorySearch(vaultDir, opts = {}) {
     scope: n.scope || "project",
     ...(n.type === "preference" && n.scope === "global"
       ? { category: preferenceCategory(n) }
-      : {}),
+      : n.type === "preference" && PREFERENCE_CATEGORIES.includes(n.category)
+        ? { category: n.category }
+        : {}),
     intent: n.intent || "",
     summary: n.summary || "",
     tags: filterSensitiveTags(n.tags),
@@ -75,8 +77,10 @@ export async function memorySaveNode(vaultDir, opts = {}) {
     throw new MemoryValidationError('global scope only allows type "preference"');
   if (scope === "global" && !PREFERENCE_CATEGORIES.includes(opts.category))
     throw new MemoryValidationError(`global preference category must be one of ${PREFERENCE_CATEGORIES.join("|")}`);
-  if (scope === "project" && opts.category !== undefined)
-    throw new MemoryValidationError("category is only valid for global preference nodes");
+  if (scope === "project" && type === "preference" && !PREFERENCE_CATEGORIES.includes(opts.category))
+    throw new MemoryValidationError(`project preference category must be one of ${PREFERENCE_CATEGORIES.join("|")}`);
+  if (scope === "project" && type !== "preference" && opts.category !== undefined)
+    throw new MemoryValidationError("category is only valid for preference nodes");
   const intent = requireStr(opts.intent, "intent");
   const summary = requireStr(opts.summary ?? opts.decision, "summary");
   if (opts.priority !== undefined && (type !== "preference" || scope !== "global"))
@@ -106,7 +110,7 @@ export async function memorySaveNode(vaultDir, opts = {}) {
     type,
     status: "confirmed",
     scope,
-    ...(scope === "global" ? { category: opts.category } : {}),
+    ...(type === "preference" ? { category: opts.category } : {}),
     ...(opts.priority !== undefined ? { priority: opts.priority } : {}),
     intent: sanitize(intent),
     summary: sanitize(summary),
@@ -174,7 +178,9 @@ export async function memoryGetContextForTask(vaultDir, opts = {}) {
     rejectedAlternatives: n.rejectedAlternatives || [],
     ...(n.type === "preference" && n.scope === "global"
       ? { category: preferenceCategory(n) }
-      : {}),
+      : n.type === "preference" && PREFERENCE_CATEGORIES.includes(n.category)
+        ? { category: n.category }
+        : {}),
   });
   for (const { node, viaSupersedes } of picked.values()) {
     if (viaSupersedes) out.superseded.push(brief(node));
@@ -238,6 +244,29 @@ export async function memoryGetGlobalPreferences(vaultDir, { limit = 10, complet
   return { preferences, relatedPreferences, relatedSuperseded, count: preferences.length };
 }
 
+// Project-scoped preferences are eligible only when explicitly categorized.
+// Unlike global preferences, they do not expand through graph relationships.
+export async function memoryGetProjectPreferences(vaultDir) {
+  const preferences = listNodes(vaultDir)
+    .filter((node) => node.status === "confirmed"
+      && node.type === "preference"
+      && (node.scope === undefined || node.scope === "project")
+      && PREFERENCE_CATEGORIES.includes(node.category))
+    .sort((a, b) => b.ts - a.ts || String(a.id).localeCompare(String(b.id)))
+    .map((node) => ({
+      id: node.id,
+      type: "preference",
+      scope: "project",
+      category: node.category,
+      intent: node.intent || "",
+      summary: node.summary || "",
+      rejectedAlternatives: node.rejectedAlternatives || [],
+      tags: filterSensitiveTags(node.tags),
+      ts: node.ts,
+    }));
+  return { preferences, count: preferences.length };
+}
+
 // Confirmed-node deletion is intentionally separate from legacy draft review.
 export async function memoryDeleteNode(vaultDir, opts = {}) {
   const id = requireStr(opts.id, "id");
@@ -286,6 +315,11 @@ export async function memoryReviewDraft(vaultDir, opts = {}) {
     }
   }
   if (edits.tags !== undefined) patch.tags = strArray(edits.tags, "edits.tags").map(String);
+  if (edits.category !== undefined) {
+    if (edits.type !== "preference")
+      throw new MemoryValidationError("category is only valid when converting a draft to a preference");
+    patch.category = edits.category;
+  }
   const converted = confirmDraft(vaultDir, id, edits.type, patch);
   return { id, action: "confirm", node: converted };
 }

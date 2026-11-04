@@ -1,6 +1,6 @@
 import express from 'express';
 import path from 'node:path';
-import { summary, search, graph, injections, preferences, drafts, review, createRelationship, deleteRelationship } from '../lib/memory.js';
+import { summary, search, graph, injections, preferences, preferenceEstimate, drafts, review, createRelationship, deleteRelationship } from '../lib/memory.js';
 
 const invalidQuery = Symbol('invalid memory query');
 const validScopes = new Set(['project', 'global']);
@@ -75,6 +75,12 @@ export function createMemoryRouter({ root }) {
       return res.status(400).json({ error: 'status must be active, superseded, or all.' });
     }
     res.json(await preferences({ q, category, status }));
+  });
+
+  router.get('/preference-estimate', async (req, res) => {
+    const result = await preferenceEstimate(vaultDir(req));
+    if (result.error) return res.status(500).json({ error: result.error });
+    res.json(result);
   });
 
   router.get('/drafts', async (req, res) => {

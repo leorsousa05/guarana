@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-10-27T14:41:37.083Z
+Last updated: 2026-10-31T19:43:05.224Z
 
 ## Per-skill status
 | Skill | Status |
@@ -24,7 +24,11 @@ Last updated: 2026-10-27T14:41:37.083Z
 | Guarana optional model advisor | **VALIDATED** — UI criteria 11–14 and ADR-027 runtime proof |
 
 ## Current step
-Dashboard current-parallel-subtasks is SHIPPED as source on origin/main at ff10f918c67ecf7c6f85287bde93bc83a9f10655; 1.5.2 remains unpublished and untagged, with no tag, npm publication/dist-tag, GitHub Release, formal package release, or smoke test.
+Project-scoped preference injection is VALIDATED after final independent PASS; no real vault data was accessed or changed, and shipping has not occurred.
+
+## Implementation checkpoint — Project-scoped preference injection — 2026-10-31
+
+**VALIDATED, not SHIPPED.** Historical review failures remain distinct: an earlier review found stale record counts/ADR state; a subsequent review failed criterion 2 on overly literal R3 “not read” wording (worker-debug classified it as an acceptance-wording mismatch, not a product defect) and criterion 6 on lower-section stale memory-skill guidance; the latest pre-correction review failed criterion 6 on top-level/usage/all-or-nothing memory-skill contradictions. The selected-vault clarification and canonical/CLI memory-skill documentation correction are complete. Fresh final independent `worker-verify` returned overall PASS (8/8) after all corrections. It independently reran `npm test` (721/721), `npm run check-cli`, `npm run specs:validate -- --json` (`{"ok":true,"filesScanned":261,"featureSpecs":101,"adrs":48,"linksChecked":300,"issues":[]}`), and `git diff --check`; all passed. The verifier did not rerun the asset-writing build; the primary's post-correction `npm run build` passed (Vite 60 modules and canonical-to-CLI synchronization, including the skill). Tests used synthetic fixtures only; actual project and Global vaults were not inspected or mutated, and all 18 supplied candidate entries remain Global. No commit, push, publish, tag, deployment, runtime install, or shipping occurred. Receipt: `.specs/changes/2026-10-31-project-scoped-preference-injection.md`.
 
 ## Bounded feature validation — Dashboard Overview operational workbench — 2026-10-24
 

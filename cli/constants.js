@@ -6,7 +6,7 @@ module.exports = {
   VERSION: PKG.version,
   STAMP: '.guarana-version',
   SOURCE: path.join(__dirname, 'skills', 'guarana'),
-  SKILLS: ['plan', 'build', 'code', 'verify', 'research', 'remember', 'memory', 'debug', 'measure'],
+  SKILLS: ['plan', 'build', 'code', 'verify', 'research', 'remember', 'memory', 'skill-authoring', 'memory-maintenance', 'debug', 'measure'],
   WORKER_AGENTS: [
     { name: 'worker-code', skill: 'code', description: 'Implements one Guarana condition and returns a diff plus stop reason.' },
     { name: 'worker-verify', skill: 'verify', description: 'Independently verifies a Guarana condition and returns criterion-level proof.' },
@@ -18,6 +18,8 @@ module.exports = {
   PLUGIN_NAME: 'guarana-telemetry.js',
   MEMORY_PLUGIN_BUNDLE: path.join(__dirname, 'plugin', 'guarana-memory.js'),
   MEMORY_PLUGIN_NAME: 'guarana-memory.js',
+  LEARNING_REVIEW_BUNDLE: path.join(__dirname, 'plugin', 'learning-review.js'),
+  LEARNING_REVIEW_NAME: 'learning-review.js',
   ORCHESTRATOR_PLUGIN_BUNDLE: path.join(__dirname, 'plugin', 'guarana-orchestrator.js'),
   ORCHESTRATOR_PLUGIN_NAME: 'guarana-orchestrator.js',
   MEMORY_ENGINE_SOURCE: path.join(__dirname, 'memory'),

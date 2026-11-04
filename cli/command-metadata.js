@@ -65,8 +65,8 @@ const WORKFLOW = {
       ],
     },
     {
-      rows: ['  guarana workflow set <specs|verify> <true|false> [--project]'],
-      details: ['    Set one automation preference in global settings, or in the project with --project.'],
+      rows: ['  guarana workflow set <specs|verify|memory.autoInject> <true|false> [--project]'],
+      details: ['    Set one automation or automatic-memory preference in global settings, or in the project with --project.'],
     },
     {
       rows: ['  guarana workflow set memory.preferenceInjectionBudgetTokens <positive-integer> [--project]'],
@@ -76,7 +76,7 @@ const WORKFLOW = {
       ],
     },
     {
-      rows: ['  guarana workflow clear [specs|verify|memory.preferenceInjectionBudgetTokens] [--project]'],
+      rows: ['  guarana workflow clear [specs|verify|memory.autoInject|memory.preferenceInjectionBudgetTokens] [--project]'],
       details: [
         '    Clear one preference or all stored preferences in the selected scope.',
         '    Clearing a project preference restores inheritance from global settings; an unset budget uses model context.',

@@ -28,6 +28,10 @@ describe('GuaranaMemory standalone deploy (ADR-004)', () => {
       path.resolve('plugin/guarana-memory.js'),
       path.join(pluginsDir, 'guarana-memory.js')
     );
+    fs.copyFileSync(
+      path.resolve('plugin/learning-review.js'),
+      path.join(pluginsDir, 'learning-review.js')
+    );
     for (const f of fs.readdirSync(path.resolve('memory'))) {
       const s = path.resolve('memory', f);
       if (fs.statSync(s).isFile()) fs.copyFileSync(s, path.join(memoryDir, f));

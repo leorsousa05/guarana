@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
-import { summary, search, graph, injections, preferences, drafts, review, createRelationship, deleteRelationship } from './memory.js';
+import { summary, search, graph, injections, preferences, preferenceEstimate, drafts, review, createRelationship, deleteRelationship } from './memory.js';
 import { initVault, initUserVault } from '../../../memory/vault.js';
 import { createNode, createEdge, listEdges } from '../../../memory/graph.js';
+import { memoryGetGlobalPreferences, memoryGetProjectPreferences } from '../../../memory/tools.js';
+import { serializeMemoryPayload } from '../../../orchestrator/prompt.js';
 
 function seedLegacyNode(vaultDir, node) {
   const seeded = { id: node.id || `legacy-${Date.now()}-${Math.random()}`, ts: Date.now(), tags: [], ...node };
@@ -117,6 +119,85 @@ describe('memory lib — summary', () => {
 });
 
 describe('memory lib — read-only scope projections and preference library', () => {
+  it('estimates the complete current-project and Global candidate context with shared UTF-8 serialization only', async () => {
+    const projectVault = initVault(path.join(fakeHome, 'estimate-project'));
+    seedLegacyNode(projectVault, {
+      id: 'estimate-project-category', type: 'preference', status: 'confirmed', scope: 'project',
+      category: 'workflow', intent: 'Project workflow', summary: 'Preserve this project-specific order.',
+    });
+    seedLegacyNode(projectVault, {
+      id: 'estimate-project-legacy', type: 'preference', status: 'confirmed', scope: 'project',
+      intent: 'Legacy project preference', summary: 'Must not be a candidate.',
+    });
+    seedLegacyNode(projectVault, {
+      id: 'estimate-project-draft', type: 'preference', status: 'draft', scope: 'project',
+      category: 'communication', intent: 'Draft project preference', summary: 'Must not be a candidate.',
+    });
+    const globalVault = initUserVault();
+    const active = seedLegacyNode(globalVault, {
+      id: 'estimate-active', type: 'preference', status: 'confirmed', scope: 'global',
+      category: 'communication', priority: 'essential', intent: 'Use Portuguese', summary: 'Answer in Portuguese ☕',
+      tags: ['language'], rejectedAlternatives: ['English'],
+    });
+    seedLegacyNode(globalVault, {
+      id: 'estimate-linked-old', type: 'preference', status: 'confirmed', scope: 'global',
+      intent: 'Historical language', summary: 'Previously answer in Spanish.',
+    });
+    seedLegacyNode(globalVault, {
+      id: 'estimate-unrelated-old', type: 'preference', status: 'confirmed', scope: 'global',
+      intent: 'Unrelated historical item', summary: 'Must not be a candidate.',
+    });
+    for (let index = 0; index < 11; index += 1) {
+      seedLegacyNode(globalVault, {
+        id: `estimate-complete-${index}`, type: 'preference', status: 'confirmed', scope: 'global',
+        category: 'workflow', intent: `Complete candidate ${index}`,
+        summary: index === 10 ? 'x'.repeat(20000) : 'Complete candidate beyond the bounded injection preview.',
+      });
+    }
+    seedLegacyNode(globalVault, {
+      id: 'estimate-draft', type: 'preference', status: 'draft', scope: 'global',
+      intent: 'Draft-only candidate', summary: 'Must not be included.',
+    });
+    const unrelatedSource = seedLegacyNode(globalVault, {
+      id: 'estimate-non-preference', type: 'decision', status: 'confirmed', scope: 'global',
+      intent: 'Unrelated stored Global record', summary: 'Must not be included.',
+    });
+    createEdge(globalVault, { from: active.id, to: 'estimate-linked-old', rel: 'supersedes', ts: 101 });
+    createEdge(globalVault, { from: unrelatedSource.id, to: 'estimate-unrelated-old', rel: 'supersedes', ts: 102 });
+
+    const projectPreferences = await memoryGetProjectPreferences(projectVault);
+    const injectedContext = await memoryGetGlobalPreferences(globalVault, { complete: true });
+    const context = {
+      project_preferences: projectPreferences.preferences,
+      global_preferences: injectedContext.preferences,
+      related_global_preferences: injectedContext.relatedPreferences || [],
+      superseded_global_preferences: injectedContext.relatedSuperseded || [],
+    };
+    const serialized = serializeMemoryPayload(context);
+    const estimate = await preferenceEstimate(projectVault);
+
+    assert.deepEqual(estimate, {
+      candidateCount: Object.values(serialized.payload).reduce((sum, group) => sum + group.length, 0),
+      serializedBytes: Buffer.byteLength(serialized.serialized, 'utf8'),
+    });
+    assert.equal(estimate.candidateCount, 14);
+    assert.deepEqual(serialized.payload.project_preferences.map(({ id }) => id), ['estimate-project-category']);
+    assert.equal(serialized.payload.global_preferences.length, 12);
+    assert.ok(serialized.payload.global_preferences.some(({ id }) => id === 'estimate-active'));
+    assert.ok(serialized.payload.global_preferences.some(({ id }) => id === 'estimate-complete-10'));
+    assert.deepEqual(serialized.payload.related_global_preferences, []);
+    assert.deepEqual(serialized.payload.superseded_global_preferences.map(({ id }) => id), ['estimate-linked-old']);
+    assert.equal(JSON.stringify(estimate).includes('estimate-'), false);
+    assert.equal(JSON.stringify(estimate).includes('Portuguese'), false);
+    assert.equal(JSON.stringify(estimate).includes('Unrelated'), false);
+    assert.equal(JSON.stringify(estimate).includes('project-specific'), false);
+  });
+
+  it('returns a zero aggregate shape when the synthetic user vault has no candidates', async () => {
+    const projectVault = initVault(path.join(fakeHome, 'empty-project'));
+    assert.deepEqual(await preferenceEstimate(projectVault), { candidateCount: 0, serializedBytes: 0 });
+  });
+
   it('returns the complete filtered preference set and isolates summary/graph projections by scope', async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-memory-projection-'));
     const vaultDir = initVault(tmp);

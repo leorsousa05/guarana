@@ -2,10 +2,11 @@
 
 const PREFERENCES = ['specs', 'verify'];
 const BUDGET_PREFERENCE = 'memory.preferenceInjectionBudgetTokens';
+const AUTO_INJECT_PREFERENCE = 'memory.autoInject';
 const WORKFLOW_USAGE = 'usage: guarana workflow <read|set|clear> [--project]';
 const READ_USAGE = 'usage: guarana workflow read [--project]';
-const SET_USAGE = 'usage: guarana workflow set <specs|verify|memory.preferenceInjectionBudgetTokens> <value> [--project]';
-const CLEAR_USAGE = 'usage: guarana workflow clear [specs|verify|memory.preferenceInjectionBudgetTokens] [--project]';
+const SET_USAGE = 'usage: guarana workflow set <specs|verify|memory.autoInject|memory.preferenceInjectionBudgetTokens> <value> [--project]';
+const CLEAR_USAGE = 'usage: guarana workflow clear [specs|verify|memory.autoInject|memory.preferenceInjectionBudgetTokens] [--project]';
 
 function parseWorkflowArgs(args = []) {
   const [subcommand, ...rest] = args;
@@ -22,6 +23,12 @@ function parseWorkflowArgs(args = []) {
     if (rest.length < 2) return { error: SET_USAGE };
     if (rest.length > 2) return { error: 'unexpected extra arguments' };
     const [name, value] = rest;
+    if (name === AUTO_INJECT_PREFERENCE) {
+      if (value !== 'true' && value !== 'false') {
+        return { error: `invalid boolean value for ${name}: ${value} (expected true or false)` };
+      }
+      return { command: 'set-auto-inject', enabled: value === 'true' };
+    }
     if (name === BUDGET_PREFERENCE) {
       const budgetTokens = Number(value);
       if (!/^[1-9]\d*$/.test(String(value)) || !Number.isSafeInteger(budgetTokens)) {
@@ -39,6 +46,7 @@ function parseWorkflowArgs(args = []) {
   if (subcommand === 'clear') {
     if (rest.length > 1) return { error: 'unexpected extra arguments' };
     const [name] = rest;
+    if (name === AUTO_INJECT_PREFERENCE) return { command: 'clear-auto-inject' };
     if (name !== undefined && name !== BUDGET_PREFERENCE && !PREFERENCES.includes(name)) {
       return { error: `unknown workflow preference: ${name}` };
     }

@@ -18,6 +18,7 @@ function assertGuard(target, action) {
 // Markers present in every guarana-authored version of each plugin.
 const PLUGIN_MARKER = '// guarana telemetry plugin';
 const MEMORY_PLUGIN_MARKER = '// guarana memory plugin';
+const LEARNING_REVIEW_MARKER = '// guarana learning review runtime module';
 const ORCHESTRATOR_PLUGIN_MARKER = '// guarana orchestrator plugin';
 
 // Plugin guard: a target file is "guarana-installed" iff it is byte-identical
@@ -31,4 +32,4 @@ function pluginIsOurs(target, bundlePath, marker = PLUGIN_MARKER) {
   return a.toString('utf8', 0, 512).includes(marker);
 }
 
-module.exports = { assertGuard, pluginIsOurs, STAMP, PLUGIN_MARKER, MEMORY_PLUGIN_MARKER, ORCHESTRATOR_PLUGIN_MARKER };
+module.exports = { assertGuard, pluginIsOurs, STAMP, PLUGIN_MARKER, MEMORY_PLUGIN_MARKER, LEARNING_REVIEW_MARKER, ORCHESTRATOR_PLUGIN_MARKER };

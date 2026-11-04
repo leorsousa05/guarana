@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const update = require('./update.js');
 const install = require('./install.js');
-const { VERSION, PLUGIN_NAME, MEMORY_PLUGIN_NAME, ORCHESTRATOR_PLUGIN_NAME } = require('../constants.js');
+const { VERSION, SKILLS, WORKER_AGENTS, PLUGIN_NAME, MEMORY_PLUGIN_NAME, ORCHESTRATOR_PLUGIN_NAME } = require('../constants.js');
 const { installManifestTarget } = require('../lib/paths.js');
 
 function captureStreams() {
@@ -42,7 +42,7 @@ it('prints a structured project update summary and refreshes the complete runtim
     assert.match(summary, /Update complete/);
     assert.ok(summary.includes(`0.9.0 → ${VERSION}`));
     assert.match(summary, /Target\s+Project · /);
-    assert.match(summary, /9 skills · 3 plugins · 3 engines · 5 worker profiles/);
+    assert.match(summary, new RegExp(`${SKILLS.length} skills · 3 plugins · 3 engines · ${WORKER_AGENTS.length} worker profiles`));
     assert.match(summary, /Restart OpenCode/);
     assert.doesNotMatch(summary, /\u001b\[/);
 

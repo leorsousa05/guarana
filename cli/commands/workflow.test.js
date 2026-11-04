@@ -137,6 +137,29 @@ test('workflow set and clear target only the selected scope and project clear re
   });
 });
 
+test('workflow CLI exposes scoped memory auto-injection controls', async () => {
+  await isolated(async () => {
+    assert.deepEqual(await invoke(['workflow', 'set', 'memory.autoInject', 'false']), {
+      status: 0, stdout: 'saved workflow preference memory.autoInject=false (global)\n', stderr: '',
+    });
+    assert.deepEqual(parsedOutput(await invoke(['workflow', 'read'])), {
+      scope: 'global',
+      settings: { memory: { autoInject: false } },
+      effective: { specs: { enabled: true }, verify: { enabled: true }, memory: { preferenceInjectionBudgetTokens: null, autoInject: false } },
+      sources: { specs: 'default', verify: 'default', memory: { preferenceInjectionBudgetTokens: 'default', autoInject: 'global' } },
+    });
+
+    assert.deepEqual(await invoke(['workflow', 'set', 'memory.autoInject', 'true', '--project']), {
+      status: 0, stdout: 'saved workflow preference memory.autoInject=true (project)\n', stderr: '',
+    });
+    assert.equal(parsedOutput(await invoke(['workflow', 'read', '--project'])).effective.memory.autoInject, true);
+    assert.deepEqual(await invoke(['workflow', 'clear', 'memory.autoInject', '--project']), {
+      status: 0, stdout: 'cleared workflow preference memory.autoInject (project)\n', stderr: '',
+    });
+    assert.equal(parsedOutput(await invoke(['workflow', 'read', '--project'])).effective.memory.autoInject, false);
+  });
+});
+
 test('workflow rejects malformed and invalid settings without overwriting them', async () => {
   await isolated(async ({ project }) => {
     const projectFile = path.join(project, '.guarana', 'workflow.json');
@@ -176,7 +199,7 @@ test('workflow argument errors and detailed help have deterministic output and n
 
     const help = await invoke(['workflow', '--help']);
     assert.deepEqual(help, { status: 0, stdout: workflow.HELP, stderr: '' });
-    assert.match(help.stdout, /guarana workflow clear \[specs\|verify\|memory\.preferenceInjectionBudgetTokens\] \[--project\]/);
+    assert.match(help.stdout, /guarana workflow clear \[specs\|verify\|memory\.autoInject\|memory\.preferenceInjectionBudgetTokens\] \[--project\]/);
   });
 });
 

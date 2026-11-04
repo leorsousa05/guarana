@@ -106,6 +106,7 @@ const mappings = [
   { from: 'skills/guarana', to: 'cli/skills/guarana' },
   { from: 'plugin/guarana-telemetry.js', to: 'cli/plugin/guarana-telemetry.js' },
   { from: 'plugin/guarana-memory.js', to: 'cli/plugin/guarana-memory.js' },
+  { from: 'plugin/learning-review.js', to: 'cli/plugin/learning-review.js' },
   { from: 'plugin/guarana-orchestrator.js', to: 'cli/plugin/guarana-orchestrator.js' },
   { from: 'orchestrator', to: 'cli/orchestrator' },
   { from: 'dashboard/server', to: 'cli/dashboard/server' },

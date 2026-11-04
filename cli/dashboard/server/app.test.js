@@ -11,6 +11,8 @@ import { createNode, createEdge, listEdges } from '../../memory/graph.js';
 import { createSkill } from '../../skill-engine/index.js';
 import { createRunManifest } from '../../orchestrator/parallel.js';
 import { resolveSharedAdvisorModule } from './routes/shared-advisor-modules.js';
+import { memoryGetGlobalPreferences, memoryGetProjectPreferences } from '../../memory/tools.js';
+import { serializeMemoryPayload } from '../../orchestrator/prompt.js';
 
 function seedLegacyNode(vaultDir, node) {
   const seeded = { id: node.id || `legacy-${Date.now()}-${Math.random()}`, ts: Date.now(), tags: [], ...node };
@@ -158,6 +160,14 @@ describe('GET/POST /api/memory', () => {
     assert.equal(body.nodes.byType.decision, 1);
   });
 
+  it('preference estimate safely returns a zero aggregate for an empty synthetic user vault', async () => {
+    const response = await fetch(`${base}/api/memory/preference-estimate`);
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.deepEqual(body, { candidateCount: 0, serializedBytes: 0 });
+    assert.deepEqual(Object.keys(body).sort(), ['candidateCount', 'serializedBytes']);
+  });
+
   it('search returns only confirmed matches', async () => {
     const res = await fetch(`${base}/api/memory/search?q=decision`);
     const body = await res.json();
@@ -173,6 +183,15 @@ describe('GET/POST /api/memory', () => {
   });
 
   it('serves read-only global preference and explicit memory scope projections with safe validation', async () => {
+    const projectVault = initVault(tmp);
+    seedLegacyNode(projectVault, {
+      id: 'project-pref-estimate', type: 'preference', status: 'confirmed', scope: 'project',
+      category: 'workflow', intent: 'Project workflow preference', summary: 'Use this project-specific workflow.',
+    });
+    seedLegacyNode(projectVault, {
+      id: 'project-pref-legacy', type: 'preference', status: 'confirmed', scope: 'project',
+      intent: 'Legacy project preference sentinel', summary: 'Must not be eligible.',
+    });
     const globalVault = initUserVault();
     const oldPreference = seedLegacyNode(globalVault, {
       id: 'global-pref-old', ts: 10, type: 'preference', status: 'confirmed', scope: 'global',
@@ -229,6 +248,25 @@ describe('GET/POST /api/memory', () => {
     ];
     const bytesBefore = files.map((file) => fs.readFileSync(file));
 
+    const estimateResponse = await fetch(`${base}/api/memory/preference-estimate`);
+    const estimate = await estimateResponse.json();
+    const projectCandidates = await memoryGetProjectPreferences(projectVault);
+    const candidates = await memoryGetGlobalPreferences(globalVault, { complete: true });
+    const serializedCandidates = serializeMemoryPayload({
+      project_preferences: projectCandidates.preferences,
+      global_preferences: candidates.preferences,
+      related_global_preferences: candidates.relatedPreferences || [],
+      superseded_global_preferences: candidates.relatedSuperseded || [],
+    });
+    assert.equal(estimateResponse.status, 200);
+    assert.deepEqual(estimate, {
+      candidateCount: Object.values(serializedCandidates.payload).reduce((sum, group) => sum + group.length, 0),
+      serializedBytes: Buffer.byteLength(serializedCandidates.serialized, 'utf8'),
+    });
+    assert.deepEqual(Object.keys(estimate).sort(), ['candidateCount', 'serializedBytes']);
+    assert.equal(estimate.candidateCount, 6);
+    assert.doesNotMatch(JSON.stringify(estimate), /project-pref-|global-pref-|Use this project|Use English|Use Spanish|filterneedle|draft-only|non-preference/i);
+
     const completeResponse = await fetch(`${base}/api/memory/preferences`);
     const complete = await completeResponse.json();
     assert.equal(completeResponse.status, 200);
@@ -247,7 +285,7 @@ describe('GET/POST /api/memory', () => {
     assert.equal((await (await fetch(`${base}/api/memory/preferences?status=all`)).json()).count, 5);
 
     const projectSummary = await (await fetch(`${base}/api/memory/summary?scope=project`)).json();
-    assert.equal(projectSummary.nodes.byScope.project, 2);
+    assert.equal(projectSummary.nodes.byScope.project, 4);
     assert.equal('global' in projectSummary.nodes.byScope, false);
     const projectGraph = await (await fetch(`${base}/api/memory/graph?scope=project`)).json();
     assert.ok(projectGraph.nodes.every((node) => node.scope === 'project'));
@@ -505,7 +543,8 @@ describe('GET /api/skills', () => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-skills-api-'));
     oldHome = process.env.HOME;
     process.env.HOME = path.join(tmp, 'home');
-    const app = createApp({ root: tmp, distDir: path.join(tmp, 'dist') });
+    fs.mkdirSync(process.env.HOME, { recursive: true });
+    const app = createApp({ root: tmp, distDir: path.join(tmp, 'dist'), homeDir: process.env.HOME });
     await new Promise((resolve) => {
       server = app.listen(0, () => resolve());
     });
@@ -525,10 +564,11 @@ describe('GET /api/skills', () => {
       homeDir: process.env.HOME,
       name: 'review-release-candidate',
       description: 'Review a release candidate before publishing.',
+      category: 'research',
       content: '# Release review\n\nRun checks, inspect the archive, and record the host smoke result.',
     };
     createSkill({ ...shared, scope: 'global' });
-    createSkill({ ...shared, name: 'project-build-review', scope: 'project' });
+    createSkill({ ...shared, name: 'project-build-review', scope: 'project', category: 'development' });
     const manualDir = path.join(tmp, '.opencode', 'skills', 'manual-skill');
     fs.mkdirSync(manualDir, { recursive: true });
     fs.writeFileSync(path.join(manualDir, 'SKILL.md'), 'user-authored content');
@@ -538,11 +578,25 @@ describe('GET /api/skills', () => {
     assert.equal(response.status, 200);
     assert.deepEqual(body.global.map((skill) => skill.name), ['review-release-candidate']);
     assert.deepEqual(body.project.map((skill) => skill.name), ['project-build-review']);
-    assert.equal(body.project[0].content, shared.content);
+    assert.equal(body.global[0].category, 'research');
+    assert.equal(body.project[0].category, 'development');
+    assert.equal('content' in body.project[0], false, 'catalog endpoint must stay metadata-only');
     assert.equal('revision' in body.global[0], false);
     assert.equal('revision' in body.project[0], false);
     assert.equal(JSON.stringify(body).includes(tmp), false);
     assert.equal(JSON.stringify(body).includes('manual-skill'), false);
+
+    const detailResponse = await fetch(`${base}/api/skills/project/project-build-review`);
+    const detail = await detailResponse.json();
+    assert.equal(detailResponse.status, 200);
+    assert.equal(detail.content, shared.content);
+    assert.equal(detail.category, 'development');
+    assert.equal(detail.scope, 'project');
+    assert.equal('revision' in detail, false);
+    assert.equal(JSON.stringify(detail).includes(tmp), false);
+
+    const unsafe = await fetch(`${base}/api/skills/project/bad_name`);
+    assert.equal(unsafe.status, 404);
   });
 
   it('returns empty scope lists when no generated skills exist', async () => {
@@ -1443,6 +1497,18 @@ describe('persistent Dashboard project selection', () => {
     const vaultB = initVault(rootB);
     seedLegacyNode(vaultA, { type: 'atom', status: 'confirmed', intent: 'A only' });
     seedLegacyNode(vaultB, { type: 'atom', status: 'confirmed', intent: 'B only' });
+    seedLegacyNode(vaultA, {
+      id: 'project-a-estimate-one', type: 'preference', status: 'confirmed', scope: 'project',
+      category: 'communication', intent: 'A project preference', summary: 'A-only estimate candidate.',
+    });
+    seedLegacyNode(vaultA, {
+      id: 'project-a-estimate-two', type: 'preference', status: 'confirmed', scope: 'project',
+      category: 'workflow', intent: 'A second preference', summary: 'A second candidate in project A.',
+    });
+    seedLegacyNode(vaultB, {
+      id: 'project-b-estimate-one', type: 'preference', status: 'confirmed', scope: 'project',
+      category: 'agent_behavior', intent: 'B project preference', summary: 'B-only estimate candidate.',
+    });
     const draftB = seedLegacyNode(vaultB, { type: 'atom', status: 'draft', intent: 'B draft' });
     createSkill({ projectDir: rootB, homeDir: home, scope: 'project', name: 'selected-project-skill', description: 'Scoped test skill.', content: '# B only' });
     const globalVault = initUserVault();
@@ -1451,6 +1517,26 @@ describe('persistent Dashboard project selection', () => {
     });
 
     const selected = `?projectId=${encodeURIComponent(projectB.id)}`;
+    const estimateA = await (await fetch(`${baseA}/api/memory/preference-estimate`)).json();
+    const estimateB = await (await fetch(`${baseA}/api/memory/preference-estimate${selected}`)).json();
+    const globalCandidates = await memoryGetGlobalPreferences(globalVault, { complete: true });
+    for (const [estimate, vault] of [[estimateA, vaultA], [estimateB, vaultB]]) {
+      const projectCandidates = await memoryGetProjectPreferences(vault);
+      const serializedCandidates = serializeMemoryPayload({
+        project_preferences: projectCandidates.preferences,
+        global_preferences: globalCandidates.preferences,
+        related_global_preferences: globalCandidates.relatedPreferences || [],
+        superseded_global_preferences: globalCandidates.relatedSuperseded || [],
+      });
+      assert.deepEqual(estimate, {
+        candidateCount: Object.values(serializedCandidates.payload).reduce((sum, group) => sum + group.length, 0),
+        serializedBytes: Buffer.byteLength(serializedCandidates.serialized, 'utf8'),
+      });
+      assert.deepEqual(Object.keys(estimate).sort(), ['candidateCount', 'serializedBytes']);
+    }
+    assert.equal(estimateA.candidateCount, estimateB.candidateCount + 1);
+    assert.equal(JSON.stringify(estimateA).includes('project-b-estimate'), false);
+    assert.equal(JSON.stringify(estimateB).includes('project-a-estimate'), false);
     const workflowTs = 1700000000500;
     const workflowRunId = `workflow-${workflowTs}`;
     const workflowState = path.join(rootB, '.specs', 'state');
@@ -1484,7 +1570,7 @@ describe('persistent Dashboard project selection', () => {
     assert.deepEqual(selectedUserPreferences, userPreferences);
     assert.deepEqual(userPreferences.preferences.map(({ id }) => id), [globalPreference.id]);
     const selectedProjectGraph = await (await fetch(`${baseA}/api/memory/graph?scope=project${selected.replace('?', '&')}`)).json();
-    assert.deepEqual(selectedProjectGraph.nodes.map(({ intent }) => intent), ['B only']);
+    assert.deepEqual(new Set(selectedProjectGraph.nodes.map(({ intent }) => intent)), new Set(['B only', 'B project preference']));
     assert.ok(selectedProjectGraph.nodes.every((node) => node.scope === 'project'));
     const specFile = await fetch(`${baseA}/api/specs/file?path=README.md${selected.replace('?', '&')}`);
     assert.equal(await specFile.text(), 'project-b-marker');
@@ -1515,7 +1601,7 @@ describe('persistent Dashboard project selection', () => {
       modelCatalog.discoverModels = originalDiscoverModels;
     }
     const memory = await (await fetch(`${baseA}/api/memory/summary${selected}`)).json();
-    assert.equal(memory.nodes.byScope.project, 2);
+    assert.equal(memory.nodes.byScope.project, 3);
     assert.equal(memory.nodes.byScope.global, 1);
     const review = await jsonRequest(baseA, `/api/memory/review${selected}`, 'POST', { id: draftB.id, action: 'confirm', edits: { type: 'decision' } });
     assert.equal(review.status, 200);

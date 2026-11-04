@@ -19,12 +19,14 @@ memory is supplied to the active skill.
   … force that exact step from any state — an escape hatch that always wins.
 - **Disk is the source of truth.** Workflow state lives at
   `.specs/state/workflow.json` and is resumed across turns/sessions.
-- **Specs are scoped to work.** Missing `.specs/` scaffolding is bootstrapped for
-  clear mutation requests and explicit workflow-skill commands, not for
-  informational/read-only requests. `worker-specs` is dispatched only when a
-  durable human-readable record will change; transient stage, budget, and
-  current-step details remain in operational state. Validation follows an actual
-  record write.
+- **Specs are scoped to durable needs.** Human-readable `.specs/` files are not
+  scaffolded just because a project, task, or explicit workflow-skill command
+  begins. Inspect the request first; create or update a record only on explicit
+  request or when a stable requirement/decision needs cross-session documentation.
+  `worker-specs` is dispatched only when a durable record will change; transient
+  stage, budget, and current-step details remain in operational state. The
+  operational `.specs/state/workflow.json` may still be created to persist the
+  workflow. Validation follows an actual human-readable record write.
 - **Memory is automatic.** Confirmed memory is retrieved on task start/resume;
   actual build runs retain stop-reason recording.
 

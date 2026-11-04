@@ -6,6 +6,14 @@ Entry format: date · feature · what validated / failed / re-opened · proof pa
 
 ## Records
 
+### 2026-10-31 — dashboard Settings
+- [Dashboard Global preference candidate-size estimate](2026-10-31-global-preference-injection-budget-estimate.md) — fresh independent `worker-verify` overall PASS (criteria 1–17); aggregate-only estimate and Settings refresh verified; full test/build/CLI/spec/diff gates PASS; VALIDATED, not shipped; no real Global vault or browser smoke
+- [Dashboard preference-injection budget presets](2026-10-31-dashboard-preference-budget-presets.md) — fresh independent `worker-verify` overall PASS (criteria 1–6); Settings tests 7/7 and full suite 707/707 PASS; build and CLI check PASS; VALIDATED, not shipped; no real-browser interaction claimed
+- [Global preference injection budget: priority-ranked subsets](2026-10-31-global-preference-injection-budget-ranked-subsets.md) — fresh independent `worker-verify` overall PASS (11/11); complete ranked records fit whole, oversized records skipped without truncation, and later candidates considered; raised presets and corrected generated Settings copy; full test/build/CLI/spec/diff gates PASS; VALIDATED, not shipped
+
+### 2026-10-31 — memory
+- [Project-scoped preference injection](2026-10-31-project-scoped-preference-injection.md) — VALIDATED; final independent `worker-verify` overall PASS (8/8); `npm test` 721/721, `npm run build` PASS (Vite 60 modules + canonical/CLI sync), `npm run check-cli`, final specs validator (261 files, 101 features, 48 ADRs, 300 links, 0 issues), and `git diff --check` PASS; historical review failures remain documented in the receipt; synthetic fixtures only, no actual vault access/change or migration; not shipped
+
 ### 2026-10-27 — dashboard Workflow
 - [Dashboard Workflow current parallel subtasks](2026-10-27-dashboard-current-parallel-subtasks.md) — implementation checkpoint: fresh independent worker-verify PASS (6/6), synthetic-fixture Chromium 375×812 proof, and focused/full gates PASS; source SHIPPED normally to `origin/main` at `ff10f918c67ecf7c6f85287bde93bc83a9f10655` (`feat(dashboard): add current parallel-subtask view`), parent `a742d7cf7459ba1a0f006ba54e309180505b8dda`; exact remote ref matched immediately after push. Separate pre-push candidate verifier passed its criteria but reported overall lifecycle FAIL/incomplete while shipment was pending; no overall PASS is claimed for that review. Unpublished/untagged 1.5.2 source only; no tag, npm publication/dist-tag, GitHub Release, formal package release, smoke test, Task-host smoke, or real project session data.
 

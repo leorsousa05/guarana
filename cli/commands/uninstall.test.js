@@ -53,12 +53,12 @@ it('refuses a modified managed skill before mutating plugins during uninstall', 
     const skillFile = path.join(targetDir(true), 'skills', 'plan', 'SKILL.md');
     const local = Buffer.from('user-owned revision\n');
     fs.writeFileSync(skillFile, local);
-    const plugins = ['guarana-telemetry.js', 'guarana-memory.js', 'guarana-orchestrator.js']
+    const plugins = ['guarana-telemetry.js', 'guarana-memory.js', 'learning-review.js', 'guarana-orchestrator.js']
       .map((name) => fs.readFileSync(pluginTarget(true, name)));
 
     assert.throws(() => uninstall.run([], { useProject: true }), /managed skill file was modified/);
     assert.deepEqual(fs.readFileSync(skillFile), local);
-    for (const [index, name] of ['guarana-telemetry.js', 'guarana-memory.js', 'guarana-orchestrator.js'].entries()) {
+    for (const [index, name] of ['guarana-telemetry.js', 'guarana-memory.js', 'learning-review.js', 'guarana-orchestrator.js'].entries()) {
       assert.deepEqual(fs.readFileSync(pluginTarget(true, name)), plugins[index]);
     }
   } finally {
@@ -92,7 +92,7 @@ for (const proof of ['stamp', 'frontmatter']) {
       fs.writeFileSync(extra, 'unrelated user data\n');
 
       const manifestBytes = fs.readFileSync(manifestFile);
-      const pluginNames = ['guarana-telemetry.js', 'guarana-memory.js', 'guarana-orchestrator.js'];
+      const pluginNames = ['guarana-telemetry.js', 'guarana-memory.js', 'learning-review.js', 'guarana-orchestrator.js'];
       const pluginBytes = pluginNames.map((name) => fs.readFileSync(pluginTarget(true, name)));
       const before = snapshotTree(project);
       const env = { ...process.env, HOME: home, XDG_CONFIG_HOME: path.join(home, 'config') };

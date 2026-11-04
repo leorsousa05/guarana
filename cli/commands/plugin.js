@@ -5,9 +5,10 @@ const { pathToFileURL } = require('url');
 const {
   PLUGIN_BUNDLE, PLUGIN_NAME,
   MEMORY_PLUGIN_BUNDLE, MEMORY_PLUGIN_NAME,
+  LEARNING_REVIEW_BUNDLE, LEARNING_REVIEW_NAME,
   ORCHESTRATOR_PLUGIN_BUNDLE, ORCHESTRATOR_PLUGIN_NAME,
 } = require('../constants.js');
-const { pluginIsOurs, PLUGIN_MARKER, MEMORY_PLUGIN_MARKER, ORCHESTRATOR_PLUGIN_MARKER } = require('../lib/guard.js');
+const { pluginIsOurs, PLUGIN_MARKER, MEMORY_PLUGIN_MARKER, LEARNING_REVIEW_MARKER, ORCHESTRATOR_PLUGIN_MARKER } = require('../lib/guard.js');
 const { pluginTarget, memoryEngineTarget, orchestratorEngineTarget, skillEngineTarget, installManifestTarget } = require('../lib/paths.js');
 const engineArtifacts = require('../lib/engine-artifacts.js');
 const agents = require('../lib/agents.js');
@@ -21,6 +22,10 @@ const PLUGINS = [
   { name: MEMORY_PLUGIN_NAME, bundle: MEMORY_PLUGIN_BUNDLE, marker: MEMORY_PLUGIN_MARKER },
   { name: ORCHESTRATOR_PLUGIN_NAME, bundle: ORCHESTRATOR_PLUGIN_BUNDLE, marker: ORCHESTRATOR_PLUGIN_MARKER },
 ];
+const SUPPORT_MODULES = [
+  { name: LEARNING_REVIEW_NAME, bundle: LEARNING_REVIEW_BUNDLE, marker: LEARNING_REVIEW_MARKER, kind: 'runtime module' },
+];
+const MANAGED_PLUGIN_ARTIFACTS = [...PLUGINS, ...SUPPORT_MODULES];
 
 function hash(bytes) {
   return crypto.createHash('sha256').update(bytes).digest('hex');
@@ -38,7 +43,7 @@ function readPluginEntries(manifest) {
   if (!Array.isArray(manifest.plugins)) {
     throw new Error('refuse to use install manifest: invalid plugins entries');
   }
-  const knownNames = new Set(PLUGINS.map(({ name }) => name));
+  const knownNames = new Set(MANAGED_PLUGIN_ARTIFACTS.map(({ name }) => name));
   const seen = new Set();
   for (const entry of manifest.plugins) {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry) ||
@@ -54,7 +59,8 @@ function readPluginEntries(manifest) {
 function preflightPlugins(useProject, action, enginePlan) {
   const entries = readPluginEntries(enginePlan.manifest);
   const tracked = entries ? new Map(entries.map((entry) => [entry.path, entry.sha256])) : null;
-  return PLUGINS.map(({ name, bundle, marker }) => {
+  return MANAGED_PLUGIN_ARTIFACTS.map((artifact) => {
+    const { name, bundle, marker } = artifact;
     const target = pluginTarget(useProject, name);
     const stat = maybeStat(target);
     if (stat && (!stat.isFile() || stat.isSymbolicLink())) {
@@ -72,7 +78,7 @@ function preflightPlugins(useProject, action, enginePlan) {
         : 'was not installed by guarana (content differs from bundle)';
       throw new Error(`refuse to ${action}: ${target} ${detail}`);
     }
-    return { name, bundle, target, exists, sha256: hash(fs.readFileSync(bundle)) };
+    return { ...artifact, target, exists, sha256: hash(fs.readFileSync(bundle)) };
   });
 }
 
@@ -95,10 +101,10 @@ function pluginInstall(useProject, { quiet = false, preflight = null, pluginsOnl
   const { engines, plugins, profiles } = plan;
   const profilesEnabled = plan.profilesEnabled !== false;
   const apply = () => {
-    for (const { name, bundle, target, exists } of plugins) {
+    for (const { name, bundle, target, exists, kind = 'plugin' } of plugins) {
       fs.mkdirSync(path.dirname(target), { recursive: true });
       fs.copyFileSync(bundle, target);
-      if (!quiet) stdoutLine(context, `${exists ? 'updated' : 'installed'} plugin ${name.replace(/\.js$/, '')} -> ${target}`);
+      if (!quiet) stdoutLine(context, `${exists ? 'updated' : 'installed'} ${kind} ${name.replace(/\.js$/, '')} -> ${target}`);
     }
     if (profilesEnabled) profileArtifacts.applyInstall(profiles);
     engineArtifacts.applyInstall(
@@ -184,13 +190,13 @@ function pluginUninstall(useProject, preflight = null, { pluginsOnly = false, sk
   const plan = preflight || preflightUninstall(useProject, { pluginsOnly });
   const { engines, plugins, profiles } = plan;
   const apply = () => {
-    for (const { name, target, exists } of plugins) {
+    for (const { name, target, exists, kind = 'plugin' } of plugins) {
       if (!exists) {
         stdoutLine(context, `nothing to uninstall: ${target} does not exist`);
         continue;
       }
       fs.rmSync(target);
-      stdoutLine(context, `uninstalled plugin ${name.replace(/\.js$/, '')} from ${target}`);
+      stdoutLine(context, `uninstalled ${kind} ${name.replace(/\.js$/, '')} from ${target}`);
     }
     if (plan.pluginsOnly) {
       engineArtifacts.applyPluginOnlyUninstall(plan.manifest);
@@ -259,6 +265,15 @@ async function pluginStatus(useProject, context) {
     const installed = fs.existsSync(target);
     const upToDate = installed && filesEqual(target, bundle);
     stdoutLine(context, `- ${name}: ${installed ? (upToDate ? 'ok (up to date)' : 'stale (re-run: guarana plugin install)') : 'not installed'}`);
+    if (installed && !pluginIsOurs(target, bundle, marker)) {
+      stdoutLine(context, `  ! foreign file (not installed by guarana) — manual review required`);
+    }
+  }
+  for (const { name, bundle, marker } of SUPPORT_MODULES) {
+    const target = pluginTarget(useProject, name);
+    const installed = fs.existsSync(target);
+    const upToDate = installed && filesEqual(target, bundle);
+    stdoutLine(context, `- runtime module ${name}: ${installed ? (upToDate ? 'ok (up to date)' : 'stale (re-run: guarana plugin install)') : 'not installed'}`);
     if (installed && !pluginIsOurs(target, bundle, marker)) {
       stdoutLine(context, `  ! foreign file (not installed by guarana) — manual review required`);
     }

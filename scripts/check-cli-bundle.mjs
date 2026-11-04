@@ -17,6 +17,7 @@ const pairs = [
   ['skills/guarana', 'cli/skills/guarana'],
   ['plugin/guarana-telemetry.js', 'cli/plugin/guarana-telemetry.js'],
   ['plugin/guarana-memory.js', 'cli/plugin/guarana-memory.js'],
+  ['plugin/learning-review.js', 'cli/plugin/learning-review.js'],
   ['plugin/guarana-orchestrator.js', 'cli/plugin/guarana-orchestrator.js'],
   ['orchestrator', 'cli/orchestrator'],
   ['dashboard/server', 'cli/dashboard/server'],

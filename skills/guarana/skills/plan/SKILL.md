@@ -16,23 +16,41 @@ edit records in the primary context. Never reconstruct state from memory. Disk i
 truth (ADR-004).
 
 ## Memory
-The orchestrator initializes the project vault and automatically supplies
-relevant confirmed context on task start and resume. Draft atoms remain
-quarantined. Use the `memory_*` tools for deeper retrieval, review, or explicit
-decisions; a completed verified run is recorded automatically.
+The orchestrator may inject only eligible confirmed preference records from the
+current project and Global vault; injection is bounded and controlled by
+`memory.autoInject` (enabled by default unless a project/global setting disables
+it). Other project knowledge stays out of automatic prompt context and is
+retrieved with `memory_*` tools when relevant. Drafts remain quarantined.
 
 ### Cold start (no `.specs/` on disk)
-The orchestrator creates a minimal `.specs/` shell only for a clear mutation request
-or explicit workflow-skill command. Informational questions, audits, reviews,
-inspections, investigations, and reports without a requested repository mutation
-stay read-only and create no task spec, tracker, or project-state entry. Existing
-files are never replaced, and no project-specific ADR is fabricated. The primary
-determines requirements and acceptance; `worker-specs` records only supplied facts.
+Do not create a `.specs/` shell, README, tracker, project-state row, feature spec,
+or ADR just because a project/task begins, because a task is mutating, or because
+a workflow skill was invoked. First inspect the request and relevant code; do not
+load the whole corpus. Create/update a human-readable record only when the user
+explicitly asks or, after requirements discovery is complete, the primary finds
+stable requirements or a durable decision that genuinely needs cross-session
+documentation. Simple/one-off work stays in code and tests. Informational
+questions, audits, reviews, inspections, investigations, and reports without a
+requested repository mutation remain read-only. Preserve existing records and
+never fabricate an ADR. The primary determines requirements and acceptance;
+`worker-specs` records only supplied facts.
+
+### Selective specs context
+
+Specs are on-disk references, not an automatically injected prompt corpus. Use
+targeted search, not a full-file read, to find the relevant row in
+`.specs/README.md` (the tracker can be large), then search for the task's exact feature or terms.
+Read only the relevant feature sections, the specific governing ADR(s), and a
+small state excerpt if needed; do not read `decisions/*` or every feature on each
+run. Give workers the selected paths and relevant criteria, not the whole `.specs`
+tree. If no matching record exists, proceed from the request, source, and tests;
+do not create a placeholder during kickoff.
 
 ## System-of-record writes (mandatory)
 
 The workflow JSON is operational state, not a substitute for a human-readable
-`.specs/` record. The primary owns requirements, acceptance decisions, independent
+`.specs/` record; however, human-readable records are optional and are not created
+solely to start a task. The primary owns requirements, acceptance decisions, independent
 verification, and workflow transitions. It does not edit `.specs` records;
 `worker-specs` owns durable record changes from concise factual handoffs. Dispatch
 it only when a human-readable record will materially change—not for a read-only
@@ -96,9 +114,9 @@ Question policy:
 3. Do not ask questions just to appear thorough. A precise, low-risk task proceeds
    without a questionnaire; record only assumptions that affect the implementation.
 4. **Do not dispatch worker-code or begin implementation while a critical unknown
-   remains unanswered.** Wait for the human, incorporate the answer, and record
-   durable requirements in the feature spec; record a qualifying durable project
-   decision in an ADR only when it meets the ADR threshold above.
+   remains unanswered.** Wait for the human and incorporate the answer. Record
+   durable requirements only when the documentation threshold above is met; record
+   a project decision only when it meets the ADR threshold above.
 5. If the human explicitly authorizes assumptions, write them down with their
    consequence and proceed only when the acceptance condition remains falsifiable.
 6. Ask for permission only when a real privileged access decision is required;

@@ -308,6 +308,7 @@ test('Models provides searchable role comboboxes, model variants, manual fallbac
   assert.deepEqual(failedCatalog, { status: 'error', models: [], error: catalogError });
   const failedCatalogHtml = renderToStaticMarkup(React.createElement(ModelsForm, { ...props, catalog: failedCatalog }));
   assert.match(failedCatalogHtml, /OpenCode discovery timed out\. Try again or enter model IDs manually\. Manual provider and model IDs remain available\./);
+  assert.match(failedCatalogHtml, /<button[^>]*class="models-inherit models-catalog-retry"[^>]*aria-label="Retry OpenCode model discovery"[^>]*>Retry discovery<\/button>/);
   assert.match(failedCatalogHtml, /id="model-primary-provider-search"/);
   assert.match(failedCatalogHtml, /id="model-primary-search"/);
   assert.match(failedCatalogHtml, /id="model-advisor-provider-search"/);
@@ -332,7 +333,21 @@ test('Models provides searchable role comboboxes, model variants, manual fallbac
   assert.match(css, /prefers-reduced-motion: reduce/);
   assert.match(css, /\.models-variant-spinner\s*\{[^}]*animation: models-variant-spin/);
   assert.match(css, /\.models-catalog-status--loading\s*\{[^}]*display: flex[^}]*align-items: center/);
+  assert.match(css, /\.models-catalog-feedback\s*\{[^}]*display:\s*flex/s);
   assert.match(css, /#models \.models-variant-spinner\s*\{\s*animation: none;/);
   assert.match(css, /:focus-visible\s*\{\s*outline: 2px solid var\(--guarana\)/);
   assert.doesNotMatch(css, /\.models-runtime/);
+});
+
+test('retrying model discovery clears the error and increments its request generation', async (t) => {
+  const vite = await createServer({ root: webRoot, server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
+  t.after(() => vite.close());
+  const { retryModelCatalog } = await vite.ssrLoadModule('/src/components/Models.jsx');
+  let catalog;
+  let generation;
+
+  retryModelCatalog((next) => { catalog = next; }, (update) => { generation = update(2); });
+
+  assert.deepEqual(catalog, { status: 'loading', models: [], error: null });
+  assert.equal(generation, 3);
 });
