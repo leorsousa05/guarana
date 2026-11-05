@@ -112,7 +112,6 @@ const COMMANDS = [
       '  guarana plugin status [--project]     Check plugin/engine/vault install health',
     ],
   },
-  { name: 'web', handler: 'web', globalUsage: ['  guarana web [--port N] [--open|--no-open]  Start the dashboard with saved or per-run launch settings'] },
   {
     name: 'advisor',
     handler: 'advisor',

@@ -84,7 +84,7 @@ export function resultFailed(lastResult) {
 //  - event: transition to apply (or null to stay put)
 //  - state: resulting state
 //  - skill: the guarana skill to load for that state
-//  - note: human-readable rationale (for history / dashboard)
+//  - note: human-readable rationale for workflow history
 export function decide({ userText, workflow, lastResult }) {
   const from = workflow && workflow.state ? workflow.state : 'idle';
   const text = (userText || '').trim();

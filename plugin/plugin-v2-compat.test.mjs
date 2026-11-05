@@ -6,7 +6,7 @@ import path from 'node:path';
 import MemoryPlugin, { GuaranaMemory } from './guarana-memory.js';
 import OrchestratorPlugin, { GuaranaOrchestrator } from './guarana-orchestrator.js';
 import TelemetryPlugin, { GuaranaTelemetry } from './guarana-telemetry.js';
-import { summarize } from '../dashboard/server/lib/telemetry.js';
+import { summarize } from '../telemetry/summary.mjs';
 import { apply, createWorkflow, load, save, workflowFile } from '../orchestrator/state.js';
 
 const temporaryDirectories = [];
@@ -374,7 +374,7 @@ describe('hybrid V1/V2 plugin entrypoints', () => {
       activeChild.agent === 'worker-verify' &&
       activeChild.status === 'busy' &&
       Number.isFinite(activeChild.statusTs),
-      'session summary retains the parent-linked running child identity required by Activity',
+      'session summary retains the parent-linked running child identity',
     );
     const idleChild = runs.find((run) => run.sessionID === idleChildSessionID);
     assert.ok(
@@ -383,7 +383,7 @@ describe('hybrid V1/V2 plugin entrypoints', () => {
       idleChild.agent === 'worker-verify' &&
       idleChild.status === 'idle' &&
       Number.isFinite(idleChild.statusTs),
-      'session summary retains a distinct parent-linked idle child for Activity history',
+      'session summary retains a distinct parent-linked idle child',
     );
     cleanup();
     assert.equal(context.subscriptionSignal.aborted, true);

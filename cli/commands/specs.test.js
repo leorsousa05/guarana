@@ -252,7 +252,7 @@ describe('guarana specs record --stdin', () => {
        const stale='| Configurable workflow automation preferences | TASKED | obsolete | |';
        const similar='| Configurable workflow automation preferences archive | IMPLEMENTED | keep | |';
        const workflow='| Workflow preferences | VALIDATED | workflow proof | |';
-       const settings='| Unified dashboard Settings page | VALIDATED | settings proof | |';
+       const settings='| Unified settings page | VALIDATED | settings proof | |';
        let original=fs.readFileSync(trackerPath,'utf8').replace('| api | VALIDATED | | |',`${stale}\n${similar}\n${workflow}\n${settings}\n| api | VALIDATED | | |`);
        original=original.replace('**BLOCKED:** nothing.\n',`**BLOCKED:** nothing.\n\n## Notes\n${stale}\n`);
        fs.writeFileSync(trackerPath,original);

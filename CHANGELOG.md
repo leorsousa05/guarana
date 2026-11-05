@@ -4,6 +4,12 @@ Notable user-facing changes to Guarana are recorded here. Release status and
 source-control delivery are identified per version; registry publication is a
 separate maintainer action.
 
+## [Unreleased]
+
+### Removed
+- The Dashboard web app, server, bundled assets, and `guarana web` command.
+  Existing project data and saved settings are not removed.
+
 ## [1.0.0] - 2026-10-07 (unpublished candidate)
 
 ### Added

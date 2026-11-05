@@ -28,6 +28,4 @@ module.exports = {
   ORCHESTRATOR_ENGINE_NAME: 'orchestrator',
   SKILL_ENGINE_SOURCE: path.join(__dirname, 'skill-engine'),
   SKILL_ENGINE_NAME: 'skill-engine',
-  DASH_SERVER_DIR: path.join(__dirname, 'dashboard', 'server'),
-  DASH_DEFAULT_PORT: 4200,
 };

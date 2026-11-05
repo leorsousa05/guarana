@@ -292,18 +292,6 @@ export function serializeMemoryPayload(memoryContext) {
   return compactMemoryPayload(payload);
 }
 
-// Read-only aggregate used by Dashboard Settings. Keep both the count and byte
-// estimate tied to the exact payload serializer used for automatic injection.
-export function estimateMemoryPayload(memoryContext) {
-  const serialized = serializeMemoryPayload(memoryContext);
-  return {
-    candidateCount: serialized
-      ? PREFERENCE_PAYLOAD_GROUPS.reduce((sum, group) => sum + serialized.payload[group].length, 0)
-      : 0,
-    serializedBytes: serialized ? Buffer.byteLength(serialized.serialized, 'utf8') : 0,
-  };
-}
-
 // Select complete records in trust/priority order. Each candidate is measured
 // against the full compact JSON payload so shared schema and group overhead
 // are included; a non-fitting record is skipped without truncation.

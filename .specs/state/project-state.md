@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-10-31T19:43:05.224Z
+Last updated: 2026-11-05T14:00:22-03:00
 
 ## Per-skill status
 | Skill | Status |
@@ -13,7 +13,7 @@ Last updated: 2026-10-31T19:43:05.224Z
 | guarana:debug | SHIPPED (optional, trigger-only) |
 | guarana:measure | SHIPPED (optional, trigger-only) |
 | guarana CLI | VALIDATED — update output polish |
-| guarana dashboard | VALIDATED — complete eight-view redesign; final actual CLI-served bundle PASS; not shipped |
+| guarana dashboard | REMOVED — 2026-11-05; app, server, CLI bundle, and `guarana web` removed; project/user data and saved settings retained |
 | guarana memory | **VALIDATED** — final gate passed and hardening batch applied; separate memory-hardening follow-up independently verified PASS (8/8); prompt tests establish delivered trust policy, not live model obedience, and the 6,000-character limit applies to serialized records, not surrounding framing |
 | guarana orchestrator | **SPECIFIED → IMPLEMENTED → VALIDATED** |
 | Guarana native worker dispatch | **VALIDATED** |
@@ -25,6 +25,14 @@ Last updated: 2026-10-31T19:43:05.224Z
 
 ## Current step
 Project-scoped preference injection is VALIDATED after final independent PASS; no real vault data was accessed or changed, and shipping has not occurred.
+
+## Product scope update — Dashboard removal — 2026-11-05
+
+The Dashboard web application, server, generated CLI assets, launcher command,
+workspace dependencies, and current UI references were removed. The running
+Guarana server on port 4200 was stopped. Project data, user data, and saved
+settings were not deleted; historical Dashboard specifications and verification
+receipts remain as archive records.
 
 ## Implementation checkpoint — Project-scoped preference injection — 2026-10-31
 

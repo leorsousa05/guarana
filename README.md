@@ -125,8 +125,8 @@ guarana plugin status
 
 ### Primary model defaults
 
-Configure Primary in Guarana Web's Models page or with `guarana advisor set
-primary.provider <provider-id>` and `guarana advisor set primary.model <model-id>`
+Configure Primary with `guarana advisor set primary.provider <provider-id>` and
+`guarana advisor set primary.model <model-id>`
 (optionally `primary.variant`). Project settings override global settings for the
 generated Guarana agent/profile defaults only. Explicit or remembered OpenCode
 session model/variant selections prevail; Guarana does not force request options
@@ -194,17 +194,14 @@ without truncation and later smaller records are still considered.
 Current-project, direct, related, and reached superseded preferences remain separate
 trust groups; related context is exactly one relationship hop from the direct
 group. Injection notices state injected and omitted counts, and no usable
-budget fails closed with no preference text. Dashboard budget presets are Automatic (unset), Less
-(8192), Medium (32768), and More (65536), while custom integer values remain
-supported. New preferences use `agent_behavior`, `workflow`, or
+budget fails closed with no preference text. Configure a positive-integer
+budget with `guarana workflow set memory.preferenceInjectionBudgetTokens`
+and clear it with `guarana workflow clear memory.preferenceInjectionBudgetTokens`.
+New preferences use `agent_behavior`, `workflow`, or
 `communication`; legacy category-less global preferences read as `general`.
-The Dashboard estimate exposes only the aggregate selected-project and Global
-candidate count and serialized byte estimate before budget fitting or session
-deduplication.
 UTF-8 serialized bytes compared with the token budget are an estimate, not exact
 tokenization or remaining conversation capacity.
-Guarana Web's memory graph displays both scopes and their relationships. Normal
-tool activity remains telemetry and never becomes a memory atom.
+Normal tool activity remains telemetry and never becomes a memory atom.
 
 ## Skills
 
@@ -254,8 +251,6 @@ guarana plugin uninstall --plugins-only [--project]
 guarana plugin adopt <plugin-file> --accept-current [--project]
 guarana plugin status [--project]
 
-guarana web [--port N] [--open|--no-open]
-
 guarana advisor models [provider]
 guarana advisor read [--project]
 guarana advisor set <field> <id> [--project]
@@ -294,9 +289,7 @@ guarana --help
 guarana --version
 ```
 
-`guarana web` starts the local dashboard. Saved launch preferences can be
-overridden for one run with `--port N`, `--open`, or `--no-open`. Advisor
-commands list available OpenCode models, inspect or update scoped model settings,
+Advisor commands list available OpenCode models, inspect or update scoped model settings,
 and check managed command/profile health. Workflow settings support `specs`,
 independent `verify`, and `memory.autoInject` for automatic injection of saved
 memory preferences. Setting `memory.autoInject` to `false` disables automatic
@@ -306,13 +299,6 @@ setting restores inheritance or the enabled default. The
 integer, or cleared; project values override global settings, and clearing a
 project value restores global inheritance. `--project` selects the project
 settings.
-
-The Dashboard's **Workflow** screen also shows the current parallel-subtask run,
-when one is bound: its status and update time, plus each task's ID, mode, status,
-and dependencies. This view is read-only, follows the selected project, and may
-continue to show a completed run until a new task or abort starts a new boundary.
-It does not browse run history or expose worktree paths and other private worker
-metadata; task creation and orchestration remain with the primary workflow.
 
 Memory search also accepts `--type <type>`, `--since <date|ms>`,
 `--until <date|ms>`, and `--limit <n>`. `compact` accepts an optional
@@ -353,14 +339,13 @@ orchestrator/           Host-independent workflow engine
 memory/                 Persistent graph and search engine
 plugin/                 OpenCode host adapters
 cli/                    Self-contained installer bundle
-dashboard/              Local telemetry, workflow, and memory dashboard
 docs/reference/         AI Loop Engineering reference material
 .specs/                  Project specification and decision record
 ```
 
 The core skills, plugins, orchestrator, and memory engine are dependency-free.
-The CLI bundles the complete runtime and dashboard so installation does not
-depend on this repository being present afterward.
+The CLI bundles the skills, plugins, and engines needed to operate without this
+repository being present afterward.
 
 ## Development
 
@@ -371,7 +356,7 @@ npm test
 npm run check-cli
 ```
 
-Build the dashboard and refresh the CLI bundle:
+Synchronize canonical runtime sources to the CLI bundle:
 
 ```bash
 npm run build

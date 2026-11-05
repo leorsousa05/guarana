@@ -87,8 +87,3 @@ Only `plugin/guarana-orchestrator.js` touches opencode hooks
 (`chat.message`, `experimental.chat.system.transform`, `tool.execute.after`, plus
 the `workflow_get` / `workflow_tick` tools). All state-machine and decision logic
 lives in the reusable, host-independent `orchestrator/` core.
-
-## Dashboard
-
-The Workflow panel shows the live state strip, current skill/task/goal, and
-transition history, served by `GET /api/workflow/current`.

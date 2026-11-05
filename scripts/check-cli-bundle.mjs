@@ -20,8 +20,6 @@ const pairs = [
   ['plugin/learning-review.js', 'cli/plugin/learning-review.js'],
   ['plugin/guarana-orchestrator.js', 'cli/plugin/guarana-orchestrator.js'],
   ['orchestrator', 'cli/orchestrator'],
-  ['dashboard/server', 'cli/dashboard/server'],
-  ['dashboard/web/dist', 'cli/dashboard/web/dist'],
   ['memory', 'cli/memory'],
   ['skill-engine', 'cli/skill-engine'],
 ];

@@ -1429,8 +1429,8 @@ export const GuaranaOrchestrator = async ({ directory, client, session, sdkVersi
         let memoryNotice;
         let claim = { memories: [], eligible: [], reason: sessionMemory.nextReason };
         let pendingMemoryContext = null;
-        const noInjectionRepair = 'Tell the user that no saved preference text was injected, and do not imply that saved preferences were applied. To enable injection, set or raise `memory.preferenceInjectionBudgetTokens` in Dashboard Settings → Workflow preferences → Current-project + Global preference injection budget (tokens), or run `guarana workflow set memory.preferenceInjectionBudgetTokens <positive-integer>`; add `--project` for a project override.';
-        const raiseBudgetAdvice = 'To include more complete records, raise `memory.preferenceInjectionBudgetTokens` in Dashboard Settings → Workflow preferences → Current-project + Global preference injection budget (tokens), or run `guarana workflow set memory.preferenceInjectionBudgetTokens <positive-integer>`; add `--project` for a project override.';
+        const noInjectionRepair = 'Tell the user that no saved preference text was injected, and do not imply that saved preferences were applied. To enable injection, set or raise `memory.preferenceInjectionBudgetTokens` with `guarana workflow set memory.preferenceInjectionBudgetTokens <positive-integer>`; add `--project` for a project override.';
+        const raiseBudgetAdvice = 'To include more complete records, raise `memory.preferenceInjectionBudgetTokens` with `guarana workflow set memory.preferenceInjectionBudgetTokens <positive-integer>`; add `--project` for a project override.';
         if (preferences.memory?.autoInject === false) {
           memoryNotice = 'Automatic memory preference injection is disabled for this scope. No saved preference text was included. On-demand memory search remains available.';
         } else if (memoryReferences.length) {

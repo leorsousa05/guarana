@@ -26,8 +26,9 @@ current package version.
    reintroducing them as development, CI, or release gates.
 4. The repository ships an MIT license and public changelog; known-issue entries
    are resolved or explicitly classified with current evidence.
-5. `npm run audit` reports zero vulnerabilities for the dashboard build workspace
-   and the standalone dashboard server lockfile.
+5. Historical criterion, superseded 2026-11-05: `npm run audit` reported zero
+   vulnerabilities for the former Dashboard workspaces. Those workspaces and
+   this audit gate were removed with the Dashboard.
 
 ## Definition of done
 

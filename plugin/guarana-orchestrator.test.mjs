@@ -1542,7 +1542,7 @@ describe('GuaranaOrchestrator', () => {
       const injection = output.system.join('\n');
       assert.match(injection, /Tell the user that no saved preference text was injected/i);
       assert.match(injection, /do not imply that saved preferences were applied/i);
-      assert.match(injection, /Dashboard Settings → Workflow preferences → Current-project \+ Global preference injection budget \(tokens\)/);
+      assert.doesNotMatch(injection, /Dashboard Settings|Guarana Web|guarana web/i);
       assert.match(injection, /guarana workflow set memory\.preferenceInjectionBudgetTokens <positive-integer>/);
       assert.match(injection, /add `--project` for a project override/);
     };

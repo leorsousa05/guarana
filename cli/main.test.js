@@ -223,11 +223,10 @@ describe('cli/main dispatch characterization', () => {
     });
   });
 
-  it('routes plugin, web, memory, advisor, and specs diagnostics through the shared TTY formatter', async () => {
+  it('routes plugin, memory, advisor, and specs diagnostics through the shared TTY formatter', async () => {
     await withEnv({ NO_COLOR: undefined, TERM: 'xterm-256color' }, async () => {
       const cases = [
         [['plugin', 'unknown'], 'unknown plugin command: unknown'],
-        [['web', '--port', 'invalid'], 'invalid --port value: invalid'],
         [['memory', 'unknown'], 'unknown memory command: unknown'],
         [['advisor', 'unknown'], 'advisor: usage: guarana advisor <models|read|set|clear|status>'],
         [['specs', 'unknown'], 'unknown specs command: unknown'],
@@ -283,10 +282,6 @@ describe('cli/main dispatch characterization', () => {
         assert.equal(error.output().stderr,
           "unknown command: missing\nRun 'guarana --help' for usage.\n");
 
-        const commandError = createStreams({ stderrTTY: true });
-        assert.equal(await main(['web', '--port', 'invalid'], commandError), 1);
-        assert.equal(commandError.output().stderr,
-          "invalid --port value: invalid\nRun 'guarana --help' for usage.\n");
       });
     }
   });
@@ -439,12 +434,6 @@ describe('cli/main dispatch characterization', () => {
       assert.equal(await REGISTRY.uninstall.run([], context), 0);
       assert.equal(await REGISTRY.uninstall.run([], context), 0);
 
-      const webStreams = createStreams();
-      assert.equal(REGISTRY.web.run(['--port', '0'], webStreams), 1);
-      assert.equal(webStreams.output().stderr, 'invalid --port value: 0\n');
-      const failureStreams = createStreams();
-      assert.equal(REGISTRY.web.run([], { ...failureStreams, serverDir: path.join(project, 'missing-dashboard') }), 1);
-      assert.match(failureStreams.output().stderr, /dashboard not bundled:/);
       assert.ok(streams.output().stdout.length > 0);
       assert.equal(streams.output().stderr, '');
     } finally {
@@ -458,7 +447,7 @@ describe('shared command help metadata', () => {
   it('keeps registry names aligned with the top-level metadata commands', () => {
     assert.deepEqual(
       COMMANDS.map(({ name }) => name).sort(),
-      ['advisor', 'install', 'list', 'memory', 'plugin', 'specs', 'uninstall', 'update', 'web', 'workflow'].sort()
+      ['advisor', 'install', 'list', 'memory', 'plugin', 'specs', 'uninstall', 'update', 'workflow'].sort()
     );
     assert.deepEqual(Object.keys(REGISTRY).sort(), COMMANDS.map(({ name }) => name).sort());
 
@@ -491,12 +480,16 @@ describe('shared command help metadata', () => {
     }
   });
 
-  it('documents saved web launch settings and per-run overrides', () => {
+  it('removes the Dashboard web command from metadata and rejects invocation', () => {
+    assert.equal(COMMANDS.some(({ name }) => name === 'web'), false);
+    assert.equal(Object.hasOwn(REGISTRY, 'web'), false);
     const global = runBin(['--help']);
     assert.equal(global.status, 0, global.stderr);
-    assert.match(global.stdout, /guarana web \[--port N\] \[--open\|--no-open\]/);
-    assert.match(global.stdout, /\.guarana\/web\.json or \$XDG_CONFIG_HOME\/guarana\/web\.json/);
-    assert.match(global.stdout, /--port, --open, and --no-open override them for one run/);
+    assert.doesNotMatch(global.stdout, /guarana web|Dashboard|dashboard/i);
+    const invocation = runBin(['web']);
+    assert.equal(invocation.status, 1);
+    assert.equal(invocation.stderr.trim(), 'unknown command: web');
+    assert.doesNotMatch(invocation.stdout, /guarana web/);
   });
 
   it('documents workflow settings defaults, inheritance, and an example in top-level help', () => {

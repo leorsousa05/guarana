@@ -41,10 +41,9 @@ without a stored category is not eligible.
 The optional positive-integer token budget is `memory.preferenceInjectionBudgetTokens`
 in the existing global workflow settings (`$XDG_CONFIG_HOME/guarana/workflow.json`,
 falling back to `~/.config/guarana/workflow.json`) or project settings
-(`.guarana/workflow.json`); a project value overrides the global value. Set it in
-Dashboard Settings → Workflow preferences → Current-project + Global preference injection budget
-(tokens), or with `guarana workflow set memory.preferenceInjectionBudgetTokens
-<positive-integer>` (`--project` selects the project override). When the setting
+(`.guarana/workflow.json`); a project value overrides the global value. Set it with
+`guarana workflow set memory.preferenceInjectionBudgetTokens <positive-integer>`
+(`--project` selects the project override). When the setting
 is unset, the model context limit is used when available; when both limits are
 available, the lower one applies. If neither a configured budget nor a usable
 model context limit is available, preference injection is omitted and the
@@ -52,15 +51,10 @@ generated prompt directs the assistant to report that no saved preference text
 was injected and how to configure a budget. Injection notices report exact
 injected and omitted record counts; if none fit, they say no preferences were
 injected. With no usable configured or model budget, injection remains visibly
-fail-closed. Dashboard presets are Automatic (unset), Less (8192), Medium
-(32768), and More (65536); custom integer values remain supported. The
-comparison uses UTF-8 serialized byte length against a token count as an
-estimate only, not exact tokenization or remaining conversation capacity.
-
-The Dashboard's aggregate estimate covers the selected project's categorized
-preferences plus Global direct, related, and superseded candidates before budget
-fitting or per-session deduplication; it returns only a candidate count and
-serialized byte estimate.
+fail-closed. The setting accepts a positive integer; clearing it restores
+model-context-based behavior. The comparison uses UTF-8 serialized byte length
+against a token count as an estimate only, not exact tokenization or remaining
+conversation capacity.
 
 New project records include categorized preferences as well as decisions, bugs,
 solutions, and refactors. Legacy uncategorized project preferences, atoms, and
@@ -82,7 +76,7 @@ record, are persisted as vault nodes; normal tool activity remains telemetry.
 The disk tree remains the source of truth.
 
 Automatic preference injection can be disabled per global/project scope with
-`memory.autoInject`. It defaults to enabled; set it through Dashboard Settings or
+`memory.autoInject`. It defaults to enabled; set it with
 `guarana workflow set memory.autoInject false` (add `--project` for a project
 override), and restore inheritance with `guarana workflow clear memory.autoInject`.
 Disabling it omits saved preferences from the automatic prompt, but leaves
@@ -103,9 +97,8 @@ a project value restores inheritance. When configured and a model
 `limit.context` is available, the lower limit applies; when unset, model context
 is used. If neither provides a usable budget, injection fails closed. The hook
 compares UTF-8 serialized byte length with the token budget as an estimate, not
-exact tokenization or remaining conversation capacity. Configure it in
-Dashboard Settings or with `guarana workflow set
-memory.preferenceInjectionBudgetTokens <positive-integer>`; use
+exact tokenization or remaining conversation capacity. Configure it with
+`guarana workflow set memory.preferenceInjectionBudgetTokens <positive-integer>`; use
 `guarana workflow clear memory.preferenceInjectionBudgetTokens` to clear it
 (add `--project` for project settings).
 

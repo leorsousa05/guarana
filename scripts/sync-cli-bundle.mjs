@@ -5,10 +5,10 @@
  * Keeps the `cli/` self-contained bundle in sync with the canonical source:
  *   skills/        -> cli/skills/
  *   plugin/        -> cli/plugin/
- *   dashboard/     -> cli/dashboard/
+ *   orchestrator/  -> cli/orchestrator/
  *
  * This script is the single source-of-truth mechanism for the installer bundle.
- * Run it after any change to skills, plugin, dashboard server, or dashboard web dist.
+ * Run it after any change to skills, plugin, or orchestrator sources.
  */
 
 import fs from 'node:fs';
@@ -109,8 +109,6 @@ const mappings = [
   { from: 'plugin/learning-review.js', to: 'cli/plugin/learning-review.js' },
   { from: 'plugin/guarana-orchestrator.js', to: 'cli/plugin/guarana-orchestrator.js' },
   { from: 'orchestrator', to: 'cli/orchestrator' },
-  { from: 'dashboard/server', to: 'cli/dashboard/server' },
-  { from: 'dashboard/web/dist', to: 'cli/dashboard/web/dist' },
   { from: 'memory', to: 'cli/memory' },
   { from: 'skill-engine', to: 'cli/skill-engine' },
 ];

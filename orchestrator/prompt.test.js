@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { buildInjection, buildSystemBlock, completionAction, estimateMemoryPayload, fitMemoryPayload, resolveSkillBody, serializeMemoryPayload } from './prompt.js';
+import { buildInjection, buildSystemBlock, completionAction, fitMemoryPayload, resolveSkillBody, serializeMemoryPayload } from './prompt.js';
 import { apply, createWorkflow } from './state.js';
 
 test('resolveSkillBody discovers project skills in the OpenCode directory', () => {
@@ -456,24 +456,6 @@ test('compact preference tuples round-trip all fields losslessly, deterministica
   assert.deepEqual(decodePayload(serializedPayloadFrom(buildInjection(createWorkflow(), { memoryContext }))), decoded);
 });
 
-test('preference estimate uses the complete shared compact serialization and UTF-8 bytes', () => {
-  const memoryContext = {
-    project_preferences: [{ id: 'project-☕', type: 'preference', scope: 'project', category: 'workflow', summary: 'Project — ☃' }],
-    global_preferences: [{ id: 'direct-☕', type: 'preference', scope: 'global', summary: 'Direct — ☃' }],
-    related_global_preferences: [{ id: 'related-✓', type: 'preference', scope: 'global', summary: 'Related' }],
-    superseded_global_preferences: [{ id: 'old-∑', type: 'preference', scope: 'global', summary: 'Historical' }],
-  };
-  const serialized = serializeMemoryPayload(memoryContext);
-
-  assert.deepEqual(estimateMemoryPayload(memoryContext), {
-    candidateCount: 4,
-    serializedBytes: Buffer.byteLength(serialized.serialized, 'utf8'),
-  });
-  assert.deepEqual(estimateMemoryPayload({ global_preferences: [] }), {
-    candidateCount: 0,
-    serializedBytes: 0,
-  });
-});
 
 test('compact serialization retains direct, one-hop related, and historical groups without shrinking or dropping text', () => {
   const long = 'context ☃ '.repeat(500);

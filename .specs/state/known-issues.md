@@ -1,5 +1,9 @@
 # Known Issues
 
+Dashboard-specific incidents below are historical records. The Dashboard web
+app and `guarana web` command were removed on 2026-11-05; these entries do not
+describe currently supported UI behavior.
+
 ## 2026-11-01 — Orchestrator misses OpenCode session-compaction completion event
 - **Symptom:** A successful manual compaction is present in the target session history, but the orchestrator records no `session-compacted` diagnostic, does not clear persisted preference claims, and therefore does not reinject previously seen preferences with `reason=compacted`.
 - **Reproduction trigger and bounded evidence:** On OpenCode v2.2.0, manually compact a session whose injection state already contains seen references. The compact endpoint returned exit 0 and history contains a compaction-role message, but target telemetry has no `session-compacted` row and no later `memory-injected` row with `reason=compacted`; persisted state remains `seen=19`, `nextReason=new-memories`. The installed runtime bundle contains `session.compaction.started`, `.delta`, `.ended`, and `.failed` event names, while a bounded scan finds no `session.compacted` event name. The canonical and installed orchestrator files are byte-identical. No session ID, prompt text, or memory content is retained here.

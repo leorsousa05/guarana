@@ -1,7 +1,7 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { GuaranaTelemetry } from './guarana-telemetry.js';
-import { summarize } from '../dashboard/server/lib/telemetry.js';
+import { summarize } from '../telemetry/summary.mjs';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
