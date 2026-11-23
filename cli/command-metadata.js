@@ -47,7 +47,7 @@ const SPECS = {
     },
     {
       rows: ['  guarana specs record --file .specs/state/worker-specs-handoff.json'],
-      details: ['    Read/remove the fixed handoff; status-only v2 touches known-issues.md, combined task+issue writes are atomic.'],
+      details: ['    Read/remove the fixed handoff; status-only v2 touches known-issues.md, combined task+issue writes are atomic.', '    Reject payloads over the 64 KiB handoff limit and symlinked record targets.'],
     },
     { rows: ['  guarana specs --help                  Show this help'] },
     { rows: ['  guarana specs -h                      Show this help'] },

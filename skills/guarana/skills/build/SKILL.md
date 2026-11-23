@@ -109,6 +109,13 @@ claim recovery of an active, foreign-host, changed, or uncertain lock.
    `cancel-requested` and reserves capacity. Do not claim it stopped or reuse its
    slot until the host confirms termination with `parallel_task_confirm_termination`
    or the primary reconciles the actual outcome. Never fabricate termination.
+
+Do not abort, re-plan, or start another top-level task while the bound DAG has a
+running, cancellation-requested, reconciliation-needed, or integration-pending
+task. The orchestrator blocks those transitions; cancel or resolve queued work and
+confirm/reconcile every in-flight task before leaving. A DAG with only undispatched
+tasks can be left as history because no worker is running.
+
 8. Always cross `code_complete` after the manifest is `completed`: all read-only
    tasks completed and every code task was primary-integrated. Even when independent
    verification is disabled, do not use coding-state `verify_skip` to bypass this

@@ -19,6 +19,56 @@ test('resolveSkillBody discovers project skills in the OpenCode directory', () =
   }
 });
 
+test('resolveSkillBody does not load project skill roots redirected outside the project', () => {
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-project-skill-root-'));
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-outside-skill-root-'));
+  const externalSkill = path.join(outside, 'skills', 'plan', 'SKILL.md');
+  const projectSkillRoot = path.join(project, '.opencode', 'skills', 'guarana');
+  fs.mkdirSync(path.dirname(externalSkill), { recursive: true });
+  fs.mkdirSync(path.dirname(projectSkillRoot), { recursive: true });
+  fs.writeFileSync(externalSkill, '# ExternalSkillSentinel: do not load\n', 'utf8');
+  fs.symlinkSync(outside, projectSkillRoot, 'dir');
+
+  try {
+    assert.doesNotMatch(resolveSkillBody('plan', project), /ExternalSkillSentinel/);
+  } finally {
+    fs.rmSync(project, { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test('resolveSkillBody does not load project skill files redirected outside their skill root', () => {
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-project-skill-file-'));
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-outside-skill-file-'));
+  const externalSkill = path.join(outside, 'SKILL.md');
+  const projectSkill = path.join(project, '.opencode', 'skills', 'guarana', 'skills', 'plan', 'SKILL.md');
+  fs.mkdirSync(path.dirname(projectSkill), { recursive: true });
+  fs.writeFileSync(externalSkill, '# ExternalFileSentinel: do not load\n', 'utf8');
+  fs.symlinkSync(externalSkill, projectSkill, 'file');
+
+  try {
+    assert.doesNotMatch(resolveSkillBody('plan', project), /ExternalFileSentinel/);
+  } finally {
+    fs.rmSync(project, { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test('resolveSkillBody rejects skill names that traverse out of the Guarana skill root', () => {
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-skill-name-traversal-'));
+  const guaranaRoot = path.join(project, '.opencode', 'skills', 'guarana');
+  const escapedSkill = path.join(project, '.opencode', 'skills', 'outside', 'SKILL.md');
+  fs.mkdirSync(guaranaRoot, { recursive: true });
+  fs.mkdirSync(path.dirname(escapedSkill), { recursive: true });
+  fs.writeFileSync(escapedSkill, '# TraversalSentinel: do not load\n', 'utf8');
+
+  try {
+    assert.doesNotMatch(resolveSkillBody('../../outside', project), /TraversalSentinel/);
+  } finally {
+    fs.rmSync(project, { recursive: true, force: true });
+  }
+});
+
 function toState(state) {
   let workflow = createWorkflow();
   for (const event of ['new_task', 'plan_complete', 'run_start']) workflow = apply(workflow, event);

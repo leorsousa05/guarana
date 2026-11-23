@@ -194,6 +194,7 @@ describe('guarana specs record --stdin', () => {
   it('documents the versioned v1 task and v2 issue-status contract in help', () => {
     assert.match(specs.HELP, /schema v1 task handoffs or schema v2 known-issue status updates/);
     assert.match(specs.HELP, /status-only v2 touches known-issues\.md, combined task\+issue writes are atomic/);
+    assert.match(specs.HELP, /64 KiB handoff limit/);
   });
   function handoff(overrides = {}) {
     return { schema:'v1', task:{ slug:'api', title:'API', featurePath:'.specs/features/api/api.md', trackerName:'api', status:'IMPLEMENTED', goal:'Expose an API', requirements:[], assumptions:[], scope:[], acceptanceCriteria:['GET returns 200'], currentStep:'Implementing API', pendingWrites:[], next:'Validate API', proof:['npm test'], ...overrides } };
@@ -711,6 +712,7 @@ describe('guarana specs record --stdin', () => {
     try {
       validProject(root);
       const canonical = fs.readFileSync(canonicalPath, 'utf8');
+      assert.match(canonical, /64 KiB in UTF-8 bytes/);
       assert.deepEqual(fs.readFileSync(mirrorPath), fs.readFileSync(canonicalPath));
       const section = canonical.split('### Copyable schema-v1 handoff\n')[1];
       assert.ok(section, 'copyable schema-v1 handoff heading exists');
@@ -789,6 +791,54 @@ describe('guarana specs record --stdin', () => {
     } finally {
       fs.rmSync(root,{recursive:true,force:true});
       fs.rmSync(external,{recursive:true,force:true});
+    }
+  });
+  it('rejects a dangling symlink at a record target without creating a file outside .specs', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-record-dangling-link-'));
+    const external = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-record-external-'));
+    try {
+      validProject(root);
+      const feature = path.join(root, '.specs/features/api/api.md');
+      const outside = path.join(external, 'created.md');
+      const otherFiles = ['README.md', 'state/project-state.md'].map((relative) => path.join(root, '.specs', relative));
+      const before = otherFiles.map((file) => fs.readFileSync(file));
+      fs.unlinkSync(feature);
+      fs.symlinkSync(outside, feature);
+
+      const result = invoke(root, JSON.stringify(handoff()));
+
+      assert.equal(result.status, 1, result.stdout);
+      assert.match(JSON.parse(result.stdout).error, /symlink target is not allowed/);
+      assert.equal(fs.existsSync(outside), false);
+      assert.equal(fs.lstatSync(feature).isSymbolicLink(), true);
+      otherFiles.forEach((file, index) => assert.deepEqual(fs.readFileSync(file), before[index], file));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+      fs.rmSync(external, { recursive: true, force: true });
+    }
+  });
+  it('rejects oversized stdin and file handoffs before writing records', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-record-too-large-'));
+    try {
+      validProject(root);
+      const targets = ['README.md', 'state/project-state.md', 'features/api/api.md']
+        .map((relative) => path.join(root, '.specs', relative));
+      const before = targets.map((file) => fs.readFileSync(file));
+      const payload = JSON.stringify(handoff({ proof: ['x'.repeat(64 * 1024)] }));
+      assert.ok(Buffer.byteLength(payload) > 64 * 1024);
+
+      const stdinResult = invoke(root, payload);
+      assert.equal(stdinResult.status, 1, stdinResult.stdout);
+      assert.equal(JSON.parse(stdinResult.stdout).error, 'handoff exceeds 65536 byte limit');
+      targets.forEach((file, index) => assert.deepEqual(fs.readFileSync(file), before[index], file));
+
+      const fileResult = invokeFile(root, payload);
+      assert.equal(fileResult.status, 1, fileResult.stdout);
+      assert.equal(JSON.parse(fileResult.stdout).error, 'handoff exceeds 65536 byte limit');
+      assert.equal(fs.existsSync(path.join(root, '.specs/state/worker-specs-handoff.json')), false);
+      targets.forEach((file, index) => assert.deepEqual(fs.readFileSync(file), before[index], file));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
     }
   });
   it('preserves feature prose and acceptance while updating either status syntax', () => {

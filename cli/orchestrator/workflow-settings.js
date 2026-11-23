@@ -16,6 +16,32 @@ function assertObject(value, label) {
   }
 }
 
+function lstatIfPresent(file) {
+  try {
+    return fs.lstatSync(file);
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+function assertSafeScopePath(file) {
+  const directory = lstatIfPresent(path.dirname(file));
+  if (directory?.isSymbolicLink()) {
+    throw new Error('Workflow settings scope contains a symlink; refusing access');
+  }
+  if (directory && !directory.isDirectory()) {
+    throw new Error('Workflow settings scope directory is not a directory');
+  }
+  const target = lstatIfPresent(file);
+  if (target?.isSymbolicLink()) {
+    throw new Error('Workflow settings file is a symlink; refusing access');
+  }
+  if (target && !target.isFile()) {
+    throw new Error('Workflow settings target is not a regular file');
+  }
+}
+
 // Settings files are partial: omitted fields inherit from the next scope.
 export function validateWorkflowSettings(settings) {
   assertObject(settings, 'Workflow settings');
@@ -85,6 +111,7 @@ export function workflowSettingsPaths({
 }
 
 function readScope(file) {
+  assertSafeScopePath(file);
   let raw;
   try {
     raw = fs.readFileSync(file, 'utf8');
@@ -149,7 +176,9 @@ function scopeFile(scope, options) {
 
 function atomicWriteJson(file, value) {
   const directory = path.dirname(file);
+  assertSafeScopePath(file);
   fs.mkdirSync(directory, { recursive: true });
+  assertSafeScopePath(file);
   const tempFile = path.join(directory, `.${path.basename(file)}.${process.pid}.${crypto.randomBytes(8).toString('hex')}.tmp`);
   let fd;
   try {
@@ -158,6 +187,7 @@ function atomicWriteJson(file, value) {
     fs.fsyncSync(fd);
     fs.closeSync(fd);
     fd = undefined;
+    assertSafeScopePath(file);
     fs.renameSync(tempFile, file);
   } catch (error) {
     if (fd !== undefined) {

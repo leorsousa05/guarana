@@ -718,6 +718,7 @@ export const GuaranaOrchestrator = async ({ directory, client, session, sdkVersi
   // Latest workflow, recomputed on chat.message / workflow_tick, used to build
   // the injection on the next system transform.
   let latest = null;
+  let pendingWorkflowTransitionNotice = null;
   let memoryContext = null;
   let memoryPromise = null;
   let activeSessionID = null;
@@ -764,8 +765,12 @@ export const GuaranaOrchestrator = async ({ directory, client, session, sdkVersi
     return parallelPromise;
   };
   const parallelTransitionRejection = async (workflow, nextWorkflow) => {
-    if (!['verifying', 'completed'].includes(nextWorkflow?.state)) return null;
-    // Use the pre-transition workflow so verify_pass retains its run binding.
+    const requiresCompletedDag = ['verifying', 'completed'].includes(nextWorkflow?.state);
+    const leavesWorkflowRun = ['planning', 'idle'].includes(nextWorkflow?.state)
+      && ['coding', 'verifying', 'debugging'].includes(workflow?.state);
+    if (!requiresCompletedDag && !leavesWorkflowRun) return null;
+    // Use the pre-transition workflow so finalization retains its run binding
+    // and abandoning transitions cannot hide unresolved DAG work.
     // An imported/legacy completed workflow can also be forced back to verify;
     // derive that run only for this transition, without widening normal
     // parallel_run_* active-run access after completion.
@@ -816,10 +821,15 @@ export const GuaranaOrchestrator = async ({ directory, client, session, sdkVersi
         runStatus: 'missing',
       };
     }
-    if (manifest.status !== 'completed') {
+    const hasUnresolvedTasks = manifest.tasks.some((task) => [
+      'running', 'integration-pending', 'cancel-requested', 'needs-reconciliation',
+    ].includes(task.status));
+    if (requiresCompletedDag ? manifest.status !== 'completed' : hasUnresolvedTasks) {
       return {
         ok: false,
-        error: `Parallel DAG ${runId} must be completed and integrated before entering ${nextWorkflow.state}`,
+        error: requiresCompletedDag
+          ? `Parallel DAG ${runId} must be completed and integrated before entering ${nextWorkflow.state}`
+          : `Parallel DAG ${runId} is ${manifest.status}; cancel or resolve it and reconcile any in-flight tasks before leaving ${workflow.state} or starting a new workflow`,
         state: workflow.state,
         runStatus: manifest.status,
       };
@@ -972,7 +982,12 @@ export const GuaranaOrchestrator = async ({ directory, client, session, sdkVersi
         });
         if (applied) {
           const rejected = await parallelTransitionRejection(wf, applied);
-          if (rejected) return;
+          if (rejected) {
+            latest = wf;
+            pendingWorkflowTransitionNotice = rejected.error;
+            return;
+          }
+          pendingWorkflowTransitionNotice = null;
           next = applied;
           c.state.save(directory, next);
           appendWorkflowEvent({
@@ -1077,7 +1092,12 @@ export const GuaranaOrchestrator = async ({ directory, client, session, sdkVersi
             return { ok: false, error: `illegal transition ${action} from ${wf.state}`, state: wf.state };
           }
           const rejected = await parallelTransitionRejection(wf, applied);
-          if (rejected) return rejected;
+          if (rejected) {
+            latest = wf;
+            pendingWorkflowTransitionNotice = rejected.error;
+            return rejected;
+          }
+          pendingWorkflowTransitionNotice = null;
           c.state.save(directory, applied);
           latest = applied;
           memoryContext = await loadContext(applied.goal || applied.activeTask || '');
@@ -1403,6 +1423,7 @@ export const GuaranaOrchestrator = async ({ directory, client, session, sdkVersi
     'experimental.chat.system.transform': async (input, output) => {
       try {
         const sessionID = input?.sessionID || sessionIdFrom(input) || activeSessionID || 'unknown';
+        const transitionNotice = pendingWorkflowTransitionNotice;
         if (isWorkerContext(sessionID, input?.agent)) return;
         const cacheKey = sessionCacheKey(sessionID);
         let sessionMemory = injectedMemoryBySession.get(cacheKey);
@@ -1463,7 +1484,13 @@ export const GuaranaOrchestrator = async ({ directory, client, session, sdkVersi
           }
         }
         const pendingMemory = { memories: claim.memories, context: pendingMemoryContext };
-        const injection = `${ORCHESTRATOR_INJECTION_MARKER}\n${c.prompt.buildInjection(wf, { memoryContext: pendingMemory.context, memoryNotice, directory, preferences })}`;
+        const injection = `${ORCHESTRATOR_INJECTION_MARKER}\n${c.prompt.buildInjection(wf, {
+          memoryContext: pendingMemory.context,
+          memoryNotice,
+          workflowTransitionNotice: transitionNotice,
+          directory,
+          preferences,
+        })}`;
         if (!Array.isArray(output.system)) output.system = [];
         if (output.system.length > 0) {
           output.system[output.system.length - 1] += '\n\n' + injection;
@@ -1481,6 +1508,9 @@ export const GuaranaOrchestrator = async ({ directory, client, session, sdkVersi
             memories: pendingMemory.memories,
           });
           sessionMemory.nextReason = 'new-memories';
+        }
+        if (transitionNotice && pendingWorkflowTransitionNotice === transitionNotice) {
+          pendingWorkflowTransitionNotice = null;
         }
       } catch (err) {
         append({ ts: Date.now(), type: 'orchestrator-error', error: String(err && err.message ? err.message : err) });

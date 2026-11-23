@@ -207,6 +207,29 @@ test('workflow settings writes atomically and removes temporary files on rename 
   assert.deepEqual(fs.readFileSync(advisorFile), advisorBytes);
 });
 
+test('workflow setting writes reject a symlinked project scope without touching its target', () => {
+  const root = tmp();
+  const external = path.join(root, 'external');
+  const project = path.join(root, 'project');
+  const target = path.join(external, 'workflow.json');
+  const original = Buffer.from('{"specs":{"enabled":true}}\n');
+  try {
+    fs.mkdirSync(external, { recursive: true });
+    fs.mkdirSync(project, { recursive: true });
+    fs.writeFileSync(target, original);
+    fs.symlinkSync(external, path.join(project, '.guarana'));
+
+    assert.throws(() => setWorkflowPreference('project', 'specs', false, {
+      directory: project,
+      env: { XDG_CONFIG_HOME: path.join(root, 'xdg') },
+      home: path.join(root, 'home'),
+    }), /symlink.*refusing access/i);
+    assert.deepEqual(fs.readFileSync(target), original);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 function toVerifying() {
   let w = createWorkflow();
   for (const e of ['new_task', 'plan_complete', 'run_start', 'code_complete']) w = apply(w, e);

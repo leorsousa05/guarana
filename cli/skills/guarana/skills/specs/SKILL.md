@@ -84,8 +84,10 @@ state yourself. Git status/rev-parse preflight belongs to the primary.
    file or many. Preserve all existing and legacy names, as well as material not
    superseded by supplied facts.
  2. Formulate a schema v1 JSON handoff with all required task fields from the
-    command contract. Use edit to write it to
-    `.specs/state/worker-specs-handoff.json`, then invoke exactly
+    command contract. A handoff is limited to 64 KiB in UTF-8 bytes; do not split
+    an oversized transaction to bypass the limit. The recorder writes only its
+    fixed project-local records and rejects symlinked record targets. Use edit to
+    write it to `.specs/state/worker-specs-handoff.json`, then invoke exactly
     `guarana specs record --file .specs/state/worker-specs-handoff.json` (or
     `node bin/guarana.js specs record --file .specs/state/worker-specs-handoff.json`).
     This recorder invocation (or the documented node equivalent) is the only

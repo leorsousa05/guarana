@@ -3,7 +3,8 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const { validateSpecs } = require('../lib/specs-validator.js');
-const { recordSpecs } = require('../lib/spec-record.js');
+const { MAX_HANDOFF_BYTES, recordSpecs } = require('../lib/spec-record.js');
+const { TextDecoder } = require('node:util');
 const { SPECS, renderDetailedHelp } = require('../command-metadata.js');
 const { stdoutLine, stderrLine, writeStdout } = require('../lib/io.js');
 
@@ -11,6 +12,33 @@ const HELP = renderDetailedHelp(SPECS);
 const RECORD_USAGE = 'usage: guarana specs record --stdin | --file .specs/state/worker-specs-handoff.json';
 const VALIDATE_USAGE = 'usage: guarana specs validate [project-root] [--json]';
 const HANDOFF_FILE = '.specs/state/worker-specs-handoff.json';
+
+function readBounded(fd) {
+  const chunks = [];
+  const buffer = Buffer.alloc(8192);
+  let total = 0;
+  while (true) {
+    const bytesRead = fs.readSync(fd, buffer, 0, Math.min(buffer.length, MAX_HANDOFF_BYTES + 1 - total), null);
+    if (bytesRead === 0) break;
+    total += bytesRead;
+    if (total > MAX_HANDOFF_BYTES) throw new Error(`handoff exceeds ${MAX_HANDOFF_BYTES} byte limit`);
+    chunks.push(Buffer.from(buffer.subarray(0, bytesRead)));
+  }
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks, total));
+  } catch {
+    throw new Error('handoff must be valid UTF-8');
+  }
+}
+
+function lstatIfPresent(file) {
+  try {
+    return fs.lstatSync(file);
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  }
+}
 
 function parseSpecsArgs(args = []) {
   const [sub, ...rest] = args;
@@ -52,27 +80,43 @@ function run(args, context = {}) {
   }
   if (parsed.type === 'record') {
     let handoffFile;
+    let handoffFd;
+    let handoffIdentity;
     try {
       let input;
-      if (parsed.source === 'stdin') input = fs.readFileSync(0,'utf8');
+      if (parsed.source === 'stdin') input = readBounded(0);
       else {
         const root = process.cwd();
         const candidate = path.join(root, parsed.file);
         let current = root;
         for (const part of ['.specs','state']) {
           current = path.join(current, part);
-          if (fs.existsSync(current) && fs.lstatSync(current).isSymbolicLink()) throw new Error('symlink path is not allowed');
+          if (lstatIfPresent(current)?.isSymbolicLink()) throw new Error('symlink path is not allowed');
         }
         const stat = fs.lstatSync(candidate);
         if (stat.isSymbolicLink() || !stat.isFile()) throw new Error('handoff must be a regular file');
+        handoffFd = fs.openSync(candidate, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+        const opened = fs.fstatSync(handoffFd);
+        if (!opened.isFile() || opened.dev !== stat.dev || opened.ino !== stat.ino) {
+          throw new Error('handoff changed while opening');
+        }
         handoffFile = candidate;
-        input = fs.readFileSync(handoffFile, 'utf8');
+        handoffIdentity = { dev: opened.dev, ino: opened.ino };
+        input = readBounded(handoffFd);
       }
       stdoutLine(context, JSON.stringify(recordSpecs(input,process.cwd())));
     } catch (error) { stdoutLine(context, JSON.stringify({ok:false,changed:[],error:error.message,validator:null})); return 1; }
     finally {
+      if (handoffFd !== undefined) {
+        try { fs.closeSync(handoffFd); } catch { /* preserve the command result */ }
+      }
       if (handoffFile) {
-        try { if (fs.lstatSync(handoffFile).isFile()) fs.unlinkSync(handoffFile); } catch (error) { if (error.code !== 'ENOENT') { /* preserve command result */ } }
+        try {
+          const current = fs.lstatSync(handoffFile);
+          if (current.isFile() && current.dev === handoffIdentity.dev && current.ino === handoffIdentity.ino) {
+            fs.unlinkSync(handoffFile);
+          }
+        } catch (error) { if (error.code !== 'ENOENT') { /* preserve command result */ } }
       }
     }
     return 0;

@@ -2231,6 +2231,67 @@ describe('GuaranaOrchestrator', () => {
     assert.equal(resumed.goal, 'Implement a project-shared workflow');
   });
 
+  it('refuses to leave a workflow while a DAG has active or unintegrated work', async () => {
+    const repository = path.join(tmpDir, 'parallel-abort-repo');
+    initGitRepo(repository);
+    const hooks = await GuaranaOrchestrator({ directory: repository });
+    const { runId } = setCodingWorkflow(repository);
+    const created = await parallelCall(hooks, 'parallel_run_create', {
+      subtasks: [{ id: 'audit', mode: 'read-only', ownedPaths: [], goal: 'Inspect safely', condition: 'Evidence returned' }],
+    });
+    assert.equal(created.ok, true);
+    const started = await parallelCall(hooks, 'parallel_task_start', {
+      runId, taskId: 'audit', goal: 'Inspect safely', condition: 'Evidence returned',
+    });
+    assert.equal(started.run.status, 'running');
+
+    const workflowPath = workflowFile(repository);
+    const before = fs.readFileSync(workflowPath);
+    for (const request of [
+      { action: 'abort' },
+      { action: 'new_task', goal: 'A different task' },
+    ]) {
+      const rejected = await parallelCall(hooks, 'workflow_tick', request);
+      assert.equal(rejected.ok, false, request.action);
+      assert.match(rejected.error, /cancel.*reconcil|unfinished.*DAG/i, request.action);
+      assert.equal(rejected.runStatus, 'running', request.action);
+      assert.equal(load(repository).state, 'coding', request.action);
+      assert.deepEqual(fs.readFileSync(workflowPath), before, `${request.action} must preserve workflow state/history`);
+      const stillBound = await parallelCall(hooks, 'parallel_run_get', { runId });
+      assert.equal(stillBound.ok, true, request.action);
+      assert.equal(stillBound.run.status, 'running', request.action);
+    }
+  });
+
+  it('surfaces a blocked new-task request while a DAG worker is in flight', async () => {
+    const repository = path.join(tmpDir, 'parallel-replan-repo');
+    initGitRepo(repository);
+    const hooks = await GuaranaOrchestrator({ directory: repository });
+    const { runId } = setCodingWorkflow(repository);
+    const created = await parallelCall(hooks, 'parallel_run_create', {
+      subtasks: [{ id: 'audit', mode: 'read-only', ownedPaths: [], goal: 'Inspect safely', condition: 'Evidence returned' }],
+    });
+    assert.equal(created.ok, true);
+    const started = await parallelCall(hooks, 'parallel_task_start', {
+      runId, taskId: 'audit', goal: 'Inspect safely', condition: 'Evidence returned',
+    });
+    assert.equal(started.run.status, 'running');
+
+    await hooks['chat.message'](
+      { sessionID: 'parallel-replan-session', messageID: 'new-task', agent: 'guarana' },
+      { parts: parts('Implement an unrelated follow-up') },
+    );
+    assert.equal(load(repository).state, 'coding');
+    const output = { system: [] };
+    await hooks['experimental.chat.system.transform'](
+      { sessionID: 'parallel-replan-session', agent: 'guarana' }, output,
+    );
+    const injection = output.system.join('\\n');
+    assert.match(injection, /workflow transition blocked/i);
+    assert.match(injection, /unfinished.*DAG|parallel DAG.*running/i);
+    assert.match(injection, /tell the user|explain this/i);
+  });
+
   it('primary parallel tools create and inspect a deterministic DAG without persisting task instructions or changing workflow v1', async () => {
     const repository = path.join(tmpDir, 'parallel-primary-repo');
     initGitRepo(repository);

@@ -41,14 +41,40 @@ function skillDirs(projectDir) {
   });
 }
 
+function pathIsWithin(basePath, targetPath) {
+  const relative = path.relative(basePath, targetPath);
+  return relative !== '' && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+}
+
 // Resolve the SKILL.md body for a skill name (e.g. 'plan' -> SKILL.md contents).
 // Returns the file text, or '' when no body can be found.
 export function resolveSkillBody(skill, projectDir) {
-  if (!skill) return '';
-  const rel = path.join('skills', `${skill}`, 'SKILL.md');
+  if (typeof skill !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(skill)) return '';
+  const rel = path.join('skills', skill, 'SKILL.md');
+  const projectSkillRoot = projectDir
+    ? path.resolve(projectDir, '.opencode', 'skills', 'guarana')
+    : null;
+  const homeDir = os.homedir();
+  const globalSkillRoot = path.resolve(homeDir, '.agents', 'skills', 'guarana');
+  let projectRealPath;
+  let homeRealPath;
   for (const dir of skillDirs(projectDir)) {
-    const file = path.join(dir, rel);
     try {
+      const root = fs.realpathSync(dir);
+      const resolvedDir = path.resolve(dir);
+      if (projectSkillRoot && resolvedDir === projectSkillRoot) {
+        const rootStat = fs.lstatSync(dir);
+        if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) continue;
+        projectRealPath ??= fs.realpathSync(projectDir);
+        if (!pathIsWithin(projectRealPath, root)) continue;
+      } else if (resolvedDir === globalSkillRoot) {
+        const rootStat = fs.lstatSync(dir);
+        if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) continue;
+        homeRealPath ??= fs.realpathSync(homeDir);
+        if (!pathIsWithin(homeRealPath, root)) continue;
+      }
+      const file = fs.realpathSync(path.join(root, rel));
+      if (!pathIsWithin(root, file)) continue;
       return fs.readFileSync(file, 'utf8');
     } catch {
       /* try next candidate */
@@ -364,14 +390,19 @@ function renderMemoryContext(memoryContext) {
 
 // The injected context for the current state: orchestration block + the active
 // skill's full SKILL.md body + a closing line naming the completion action.
-export function buildInjection(workflow, { memoryContext, memoryNotice, directory, preferences } = {}) {
+export function buildInjection(workflow, {
+  memoryContext, memoryNotice, workflowTransitionNotice, directory, preferences,
+} = {}) {
   const skill = skillForState(workflow.state);
   const block = buildSystemBlock(workflow, preferences);
   const policy = preferenceOverrides(preferences, workflow.verificationOverride);
   const renderedMemory = renderMemoryContext(memoryContext);
   const memory = renderedMemory ? `\n\n${renderedMemory}` : '';
   const notice = memoryNotice ? `\n\n## Preference injection notice\n${memoryNotice}` : '';
-  if (!skill || TASK_STATES.has(workflow.state)) return block + memory + notice + policy;
+  const transitionNotice = typeof workflowTransitionNotice === 'string' && workflowTransitionNotice.trim()
+    ? `\n\n## Workflow transition blocked\n${workflowTransitionNotice}\nExplain this rejection to the user, keep the current workflow state, and do not proceed with the blocked transition.`
+    : '';
+  if (!skill || TASK_STATES.has(workflow.state)) return block + memory + notice + transitionNotice + policy;
   const body = resolveSkillBody(skill, directory);
   const action = completionAction(workflow.state, preferences, workflow.verificationOverride);
   const close = action
@@ -379,7 +410,7 @@ export function buildInjection(workflow, { memoryContext, memoryNotice, director
       ? '\n\nWorkflow: after `guarana:plan` discovery is closed and any required `worker-specs` write is reported complete, call `workflow_tick` with action `start_task` and explicit nonempty `goal` and `condition`. This does not skip discovery or required spec-record work; do not ask the user to accept a shortcut.'
       : `\n\nWorkflow: when this step completes, call \`workflow_tick\` with action \`${action}\`.`
     : '';
-  return [block + memory + notice, body ? `\n\n<!-- guarana:${skill} (injected) -->\n${body}${close}` : '', policy]
+  return [block + memory + notice + transitionNotice, body ? `\n\n<!-- guarana:${skill} (injected) -->\n${body}${close}` : '', policy]
     .filter(Boolean)
     .join('\n');
 }

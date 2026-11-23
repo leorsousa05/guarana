@@ -7,6 +7,16 @@ const { validateSpecs } = require('./specs-validator.js');
 const STATUSES = ['SPECIFIED', 'TASKED', 'IMPLEMENTED', 'VALIDATED', 'SHIPPED'];
 const START = '<!-- guarana:record:start -->';
 const END = '<!-- guarana:record:end -->';
+const MAX_HANDOFF_BYTES = 64 * 1024;
+
+function lstatIfPresent(file) {
+  try {
+    return fs.lstatSync(file);
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  }
+}
 
 function splitLines(bytes) {
   const lines = [];
@@ -101,6 +111,9 @@ function updateKnownIssueStatuses(bytes, updates, fail) {
 
 function recordSpecs(input, root) {
   const fail = (message) => { const error = new Error(message); error.invalid = true; throw error; };
+  if (typeof input !== 'string' || Buffer.byteLength(input, 'utf8') > MAX_HANDOFF_BYTES) {
+    fail(`handoff exceeds ${MAX_HANDOFF_BYTES} byte limit`);
+  }
   let data;
   try { data = JSON.parse(input); } catch { fail('invalid JSON'); }
   const schema = data?.schema;
@@ -209,8 +222,12 @@ function recordSpecs(input, root) {
     const resolved = path.resolve(file);
     if (resolved !== root && !resolved.startsWith(`${path.resolve(root)}${path.sep}`)) fail('target escapes project root');
     let current = path.resolve(root);
-    for (const part of path.relative(current, path.dirname(file)).split(path.sep)) { if (!part || part === '.') continue; current = path.join(current,part); if (fs.existsSync(current) && fs.lstatSync(current).isSymbolicLink()) fail('symlink target is not allowed'); }
-    if (fs.existsSync(file) && fs.lstatSync(file).isSymbolicLink()) fail('symlink target is not allowed');
+    for (const part of path.relative(current, path.dirname(file)).split(path.sep)) {
+      if (!part || part === '.') continue;
+      current = path.join(current, part);
+      if (lstatIfPresent(current)?.isSymbolicLink()) fail('symlink target is not allowed');
+    }
+    if (lstatIfPresent(file)?.isSymbolicLink()) fail('symlink target is not allowed');
   };
   for (const file of targets) ensureContained(file);
   const old = new Map(targets.map((f) => [f, fs.existsSync(f) ? fs.readFileSync(f) : null]));
@@ -316,4 +333,4 @@ function recordSpecs(input, root) {
   }
 }
 
-module.exports = { recordSpecs };
+module.exports = { MAX_HANDOFF_BYTES, recordSpecs };
