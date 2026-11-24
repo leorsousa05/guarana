@@ -58,3 +58,26 @@ it('syncs generated files while preserving destination node_modules', (t) => {
   assert.deepEqual(fs.readFileSync(path.join(destNestedModules, 'sentinel.bin')), preservedNestedSentinel);
   assert.deepEqual(fs.readFileSync(path.join(staleOutputModules, 'sentinel.bin')), preservedStaleTreeSentinel);
 });
+
+it('syncs learning-review into memory and rejects plugin-directory helper copies', (t) => {
+  const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sync-cli-learning-review-'));
+  t.after(() => fs.rmSync(fixtureRoot, { recursive: true, force: true }));
+
+  const source = path.join(fixtureRoot, 'memory', 'learning-review.js');
+  const bundled = path.join(fixtureRoot, 'cli', 'memory', 'learning-review.js');
+  fs.mkdirSync(path.dirname(source), { recursive: true });
+  fs.writeFileSync(source, 'export const runtime = true;\n');
+  syncCliBundle(fixtureRoot, [{ from: 'memory/learning-review.js', to: 'cli/memory/learning-review.js' }]);
+  assert.deepEqual(fs.readFileSync(bundled), fs.readFileSync(source));
+
+  const legacyBundle = path.join(fixtureRoot, 'cli', 'plugin', 'learning-review.js');
+  fs.mkdirSync(path.dirname(legacyBundle), { recursive: true });
+  fs.writeFileSync(legacyBundle, 'old generated plugin copy\n');
+  syncCliBundle(fixtureRoot, []);
+  assert.equal(fs.existsSync(legacyBundle), false);
+
+  const misplacedSource = path.join(fixtureRoot, 'plugin', 'learning-review.js');
+  fs.mkdirSync(path.dirname(misplacedSource), { recursive: true });
+  fs.writeFileSync(misplacedSource, 'must not be canonicalized under plugin\n');
+  assert.throws(() => syncCliBundle(fixtureRoot, []), /must not live under plugins/);
+});

@@ -1,0 +1,42 @@
+# Feature spec: Guarana checkout source-candidate delivery
+
+**Status: TASKED**
+
+## Goal
+Record the explicitly authorized Guarana 1.5.3 unpublished, untagged GitHub source-candidate delivery and its exact checkout scope and gates before any version or source edits.
+
+## Requirements
+- The user explicitly authorized a patch bump to 1.5.3 and a normal Conventional Commit and normal push to origin/main, including all current tracked and untracked changes in the candidate checkout, including the existing TTY/CLI edits, completed OpenCode V2 worker-permission changes, and completed learning-review runtime relocation.
+- The exact pre-existing checkout changes in scope are: .specs/README.md; .specs/features/orchestrator/spec-update-isolation.md; .specs/state/known-issues.md; cli/commands/advisor.test.js; cli/commands/install.js; cli/commands/install.test.js; cli/commands/plugin.js; cli/commands/plugin.test.js; cli/commands/specs.test.js; cli/commands/transaction.test.js; cli/commands/uninstall.test.js; cli/commands/update.js; cli/commands/update.test.js; cli/commands/workflow.test.js; cli/constants.js; cli/lib/agents.js; cli/lib/agents.test.js; cli/lib/artifact-transaction.js; cli/lib/io.js; cli/lib/paths.js; cli/lib/paths.test.js; cli/lib/terminal.js; cli/main.js; cli/main.test.js; cli/orchestrator/prompt.test.js; cli/plugin/guarana-memory.js; cli/plugin/learning-review.js (deleted); cli/skills/guarana/skills/plan/SKILL.md; orchestrator/prompt.test.js; plugin/guarana-memory.deploy.test.mjs; plugin/guarana-memory.js; plugin/learning-review.js (deleted); plugin/learning-review.test.mjs; scripts/check-cli-bundle.mjs; scripts/sync-cli-bundle.mjs; scripts/sync-cli-bundle.test.mjs; skills/guarana/skills/plan/SKILL.md; .specs/features/cli/learning-review-runtime-module.md (untracked); cli/lib/terminal.test.js (untracked); cli/memory/learning-review.js (untracked); memory/learning-review.js (untracked). Include only these pre-existing checkout changes; candidate-required metadata and Specs records are additive.
+- Before any package-version, README, changelog, or source edit, this feature record and its TASKED tracker row must exist. The tracker row has no proof and no change receipt at planning.
+- Candidate metadata must set the package version to 1.5.3 and consistently identify the README source-candidate badge/prose and dated CHANGELOG entry as an unpublished, untagged 1.5.3 source candidate. Retain [Unreleased], historical changelog entries, and stable 1.5.0 instructions. Describe all changes delivered since 1.5.2 together with the authorized checkout changes, without claiming npm publication or formal package release.
+- Review and account for every staged current-checkout path; include no ignored, external, or local-private paths and no changes outside the repository checkout. The recent global install under ~/.config/opencode is excluded.
+- Before commit, require npm test; npm run build; npm run check-cli; npm run specs:validate -- --json; git diff --check; npm pack --dry-run --json as inventory only with no tarball; and a fresh independent worker-verify PASS of the exact candidate.
+- Before commit, the primary checks the live remote state. Commit normally on main using a Conventional Commit and push normally to origin/main. Verify with git ls-remote origin refs/heads/main that the advertised ref equals the exact pushed SHA. Do not claim SHIPPED before exact remote confirmation.
+- Only after exact remote proof, update this source-delivery record and the helper-migration and OpenCode V2 permission feature records/tracker with that proof, then revalidate Specs. If closeout is separately committed and pushed, verify origin/main equals the final closeout SHA.
+- Do not create a Git tag, npm publication or dist-tag, GitHub Release, formal package release, force-push, or run retired smoke tests. Do not create a change receipt until candidate gates pass. Do not update the implementation-record status before remote proof.
+
+## Assumptions and scope
+- Planning checkpoint date is 2026-11-24. Candidate checkout is /home/arch/Projects/active/guarana on branch main at HEAD 0ae04b37041fee8e48c919212cbbf0ce344a9cda. Local refs reported origin/main equal to that HEAD; the primary will check the remote live before commit.
+- The 1.5.2 precedent is .specs/features/release/dashboard-parallel-subtasks-source-candidate.md; reuse its source-candidate gate pattern while preserving its historical record. The learning-review runtime module placement and OpenCode V2 worker-agent permissions implementation records are currently VALIDATED, with corresponding tracker rows VALIDATED; do not change those statuses before exact remote proof.
+- Use the ADR-005 budget defaults documented by the 1.5.2 source-candidate precedent: main thread at most 8k steady-state tokens; worker-code 8k, worker-verify 4k, and worker-debug 6k per dispatch; per-run hard cap 32k tokens and 15 minutes.
+- This is a bounded unpublished, untagged GitHub source-candidate delivery for the complete authorized checkout, not a package publication or formal release.
+- Pre-existing candidate scope is exactly the listed tracked and untracked checkout changes in Requirements. Add only candidate-required version/candidate metadata and Specs records; do not include other pre-existing changes, ignored paths, external/private paths, or the global install.
+- Candidate metadata surfaces are the root package version, root README source-candidate badge/prose, and dated CHANGELOG entry. Preserve [Unreleased], historical entries, and stable 1.5.0 instructions.
+- Source delivery ends with ordinary commit/push and exact remote-ref confirmation, followed by factual Specs closeout. No ADR is required.
+- Budget (ADR-005 defaults): main-thread at most 8k steady-state tokens; worker-code 8k, worker-verify 4k, and worker-debug 6k per dispatch; per-run hard cap 32k tokens and 15 minutes.
+
+## Acceptance criteria
+1. Before any version or source edit, .specs/features/release/checkout-source-candidate-delivery.md exists with status TASKED and .specs/README.md has its tracker row with blank proof and change fields.
+2. Before candidate commit, package.json is version 1.5.3; README source-candidate badge/prose and the dated CHANGELOG entry consistently identify an unpublished, untagged 1.5.3 source candidate; [Unreleased], historical entries, and stable 1.5.0 instructions remain; the candidate description accounts for all changes delivered since 1.5.2 and the authorized checkout changes without claiming publication or formal release.
+3. Every staged current-checkout path is reviewed and accounted for. The pre-existing candidate paths are exactly those enumerated in Requirements, with only necessary additive candidate metadata and Specs records beyond that list; no ignored, external, local-private, or outside-checkout changes are included.
+4. Before source commit and push, npm test, npm run build, npm run check-cli, npm run specs:validate -- --json, git diff --check, and npm pack --dry-run --json inventory-only all pass; the pack dry-run creates no tarball; fresh independent worker-verify returns PASS for the exact candidate.
+5. A normal Conventional Commit is created on main and pushed normally to origin/main; git ls-remote origin refs/heads/main equals the exact pushed SHA before SHIPPED status or post-push record closeout.
+6. After exact remote proof, this delivery record and the helper-migration and OpenCode V2 permission records/tracker are updated only with that proof and Specs validation passes. If this closeout is separately pushed, origin/main is verified equal to the final closeout SHA.
+7. No tag, npm publication or dist-tag, GitHub Release, formal package release, force-push, or retired smoke test occurs; no change receipt is created before candidate gates pass.
+
+<!-- guarana:record:start -->
+Status: TASKED
+Proof: none
+Change: none
+<!-- guarana:record:end -->

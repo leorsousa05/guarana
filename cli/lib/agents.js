@@ -11,55 +11,64 @@ function skillInstructions(skill) {
   return content.replace(/^---\s*\r?\n[\s\S]*?\r?\n---\s*\r?\n/, '').trim();
 }
 
-function profileText(worker, useProject) {
-  const readOnlyResearch = worker.name === 'worker-research';
-  const bashPermission = worker.name === 'worker-specs'
-      ? '  bash:\n    "*": deny\n    "guarana specs record --file .specs/state/worker-specs-handoff.json": allow\n    "node bin/guarana.js specs record --file .specs/state/worker-specs-handoff.json": allow\n'
-      : readOnlyResearch
-      ? '  bash: deny\n'
-      : '  bash: allow\n';
-  const editPermission = worker.name === 'worker-code'
-      ? '  edit: allow\n'
-      : worker.name === 'worker-debug'
-      ? '  edit:\n    "*": deny\n    ".specs/state/known-issues.md": allow\n'
-      : worker.name === 'worker-specs'
-       ? '  edit:\n    "*": deny\n    ".specs/README.md": allow\n    ".specs/architecture.md": allow\n    ".specs/conventions.md": allow\n    ".specs/decisions/*.md": allow\n    ".specs/state/*.md": allow\n    ".specs/state/worker-specs-handoff.json": allow\n    ".specs/features/*.md": allow\n    ".specs/changes/*.md": allow\n'
-       : '  edit: deny\n';
-  const permissionField = readOnlyResearch ? 'permissions:' : 'permission:';
-  const permissionRules = readOnlyResearch
-    ? [
-      '  - action: "*"',
-      '    resource: "*"',
-      '    effect: deny',
-      '  - action: external_directory',
-      '    resource: "*"',
-      '    effect: deny',
-      '  - action: read',
-      '    resource: "*"',
-      '    effect: allow',
-      '  - action: glob',
-      '    resource: "*"',
-      '    effect: allow',
-      '  - action: grep',
-      '    resource: "*"',
-      '    effect: allow',
-    ]
-    : [
-      '  task: deny',
-      '  workflow_tick: deny',
-      '  read: allow',
-      '  grep: allow',
-      '  glob: allow',
-      bashPermission.trimEnd(),
-      editPermission.trimEnd(),
+function permissionRules(worker) {
+  const common = [
+    ['subagent', '*', 'deny'],
+    ['workflow_tick', '*', 'deny'],
+    ['read', '*', 'allow'],
+    ['grep', '*', 'allow'],
+    ['glob', '*', 'allow'],
+  ];
+  if (worker.name === 'worker-research') {
+    return [
+      ['*', '*', 'deny'],
+      ['external_directory', '*', 'deny'],
+      ['read', '*', 'allow'],
+      ['glob', '*', 'allow'],
+      ['grep', '*', 'allow'],
     ];
+  }
+
+  const shell = worker.name === 'worker-specs'
+    ? [
+      ['shell', '*', 'deny'],
+      ['shell', 'guarana specs record --file .specs/state/worker-specs-handoff.json', 'allow'],
+      ['shell', 'node bin/guarana.js specs record --file .specs/state/worker-specs-handoff.json', 'allow'],
+    ]
+    : [['shell', '*', 'allow']];
+  const edit = worker.name === 'worker-code'
+    ? [['edit', '*', 'allow']]
+    : worker.name === 'worker-debug'
+      ? [
+        ['edit', '*', 'deny'],
+        ['edit', '.specs/state/known-issues.md', 'allow'],
+      ]
+      : worker.name === 'worker-specs'
+        ? [
+          ['edit', '*', 'deny'],
+          ['edit', '.specs/README.md', 'allow'],
+          ['edit', '.specs/state/*.md', 'allow'],
+          ['edit', '.specs/features/*.md', 'allow'],
+          ['edit', '.specs/changes/*.md', 'allow'],
+        ]
+        : [['edit', '*', 'deny']];
+
+  return [...common, ...shell, ...edit];
+}
+
+function profileText(worker, useProject) {
+  const permissionLines = permissionRules(worker).flatMap(([action, resource, effect]) => [
+    `  - action: ${action === '*' ? '"*"' : action}`,
+    `    resource: ${JSON.stringify(resource)}`,
+    `    effect: ${effect}`,
+  ]);
   return [
     '---',
     `description: ${worker.description}`,
     'mode: subagent',
     'hidden: false',
-    permissionField,
-    ...permissionRules,
+    'permissions:',
+    ...permissionLines,
     '---',
     WORKER_MARKER,
     `# ${worker.name}`,

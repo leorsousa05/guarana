@@ -10,8 +10,10 @@ const BIN = path.join(__dirname, '..', 'bin', 'guarana.js');
 const VERSION = require('../package.json').version;
 const REGISTRY = require('./commands/registry.js');
 const { main } = require('./main.js');
-const { COMMANDS, MEMORY, SPECS, WORKFLOW } = require('./command-metadata.js');
+const { COMMANDS, MEMORY, SPECS, WORKFLOW, renderDetailedHelp } = require('./command-metadata.js');
 const { stderrLine } = require('./lib/io.js');
+const { SKILLS, PLUGIN_NAME, MEMORY_PLUGIN_NAME, ORCHESTRATOR_PLUGIN_NAME } = require('./constants.js');
+const { targetDir, pluginTarget } = require('./lib/paths.js');
 
 const CHILD_BOOTSTRAP = String.raw`
 const Module = require('node:module');
@@ -199,10 +201,77 @@ describe('cli/main dispatch characterization', () => {
       const streams = createStreams({ stdoutTTY: true });
       assert.equal(await main(['--help'], streams), 0);
       const { stdout, stderr } = streams.output();
-      assert.ok(stdout.includes('\u001b[1;36mUsage:\u001b[39m'));
-      assert.match(stdout, /\u001b\[1;36mExamples:\u001b\[39m\n  guarana --help\n  guarana memory search "term" --project HASH\n  guarana workflow set specs false --project\n$/);
+      assert.ok(stdout.includes('\u001b[1;36mUsage:\u001b[0m'));
+      assert.match(stdout, /\u001b\[1;36mExamples:\u001b\[0m\n  guarana --help\n  guarana memory search "term" --project HASH\n  guarana workflow set specs false --project\n$/);
+      assert.match(stdout, new RegExp(`^\\u001b\\[1;35mguarana ${VERSION.replace(/\./g, '\\.')} — installer for the guarana skill suite \\(OpenCode\\)\\u001b\\[0m$`, 'm'));
+      const escapes = stdout.match(/\u001b\[[0-9;]+m/g) || [];
+      assert.equal(escapes.length % 2, 0);
+      assert.equal((stdout.match(/\u001b\[0m/g) || []).length, escapes.length / 2);
       assert.equal(stderr, '');
     });
+  });
+
+  it('styles detailed memory, specs, and workflow help through the shared TTY formatter', async () => {
+    await withEnv({ NO_COLOR: undefined, TERM: 'xterm-256color' }, async () => {
+      for (const [command, expected] of [
+        ['memory', renderDetailedHelp(MEMORY)],
+        ['specs', require('./commands/specs.js').HELP],
+        ['workflow', require('./commands/workflow.js').HELP],
+      ]) {
+        const tty = createStreams({ stdoutTTY: true });
+        assert.equal(await main([command, '--help'], tty), 0);
+        const output = tty.output().stdout;
+        assert.equal(output.replace(/\u001b\[[0-9;]+m/g, ''), expected);
+        assert.match(output, /^\u001b\[1;35mguarana /);
+        assert.match(output, /^\u001b\[1;36mUsage:\u001b\[0m$/m);
+        assert.equal(tty.output().stderr, '');
+      }
+    });
+  });
+
+  it('groups list collections on TTY while preserving redirected and no-color output', async () => {
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-list-presentation-'));
+    const originalCwd = process.cwd();
+    try {
+      process.chdir(project);
+      REGISTRY.install.run([], { useProject: true, quiet: true });
+
+      const redirected = createStreams();
+      assert.equal(await main(['list', '--project'], redirected), 0);
+      const expected = [
+        `guarana ${VERSION} at ${targetDir(true)}`,
+        ...SKILLS.map((name) => `  guarana:${name}`),
+        ...[PLUGIN_NAME, MEMORY_PLUGIN_NAME, ORCHESTRATOR_PLUGIN_NAME].map((name) =>
+          `  plugin: ${name.replace(/\.js$/, '')} installed (${pluginTarget(true, name)})`),
+        '',
+      ].join('\n');
+      assert.equal(redirected.output().stdout, expected);
+
+      await withEnv({ NO_COLOR: undefined, TERM: 'xterm-256color' }, async () => {
+        const tty = createStreams({ stdoutTTY: true });
+        assert.equal(await main(['list', '--project'], tty), 0);
+        const colored = tty.output().stdout;
+        const plain = colored.replace(/\u001b\[[0-9;]+m/g, '');
+        assert.match(colored, /\u001b\[1;35mguarana /);
+        assert.match(plain, /^\|-- guarana:plan$/m);
+        assert.match(tty.output().stdout, /\u001b\[32minstalled\u001b\[0m/);
+      });
+
+      for (const env of [
+        { NO_COLOR: '1', TERM: 'xterm-256color' },
+        { NO_COLOR: undefined, TERM: 'dumb' },
+      ]) {
+        await withEnv(env, async () => {
+          const tty = createStreams({ stdoutTTY: true });
+          assert.equal(await main(['list', '--project'], tty), 0);
+          assert.doesNotMatch(tty.output().stdout, /\u001b\[/);
+          assert.match(tty.output().stdout, /^\|-- guarana:plan$/m);
+        });
+      }
+    } finally {
+      process.chdir(originalCwd);
+      fs.rmSync(project, { recursive: true, force: true });
+    }
   });
 
   it('adds an actionable hint and colors diagnostics only on an interactive error stream', async () => {
@@ -211,14 +280,14 @@ describe('cli/main dispatch characterization', () => {
       assert.equal(await main(['not-a-command'], streams), 1);
       assert.deepEqual(streams.output(), {
         stdout: require('./help.js').HELP,
-        stderr: '\u001b[31munknown command: not-a-command\u001b[39m\nRun \'guarana --help\' for usage.\n',
+        stderr: '\u001b[31munknown command: not-a-command\u001b[0m\nRun \'guarana --help\' for usage.\n',
       });
 
       await withInstallHandler(() => { throw new Error('handler failed'); }, async () => {
         const caught = createStreams({ stderrTTY: true });
         assert.equal(await main(['install'], caught), 1);
         assert.equal(caught.output().stderr,
-          '\u001b[31mhandler failed\u001b[39m\nRun \'guarana --help\' for usage.\n');
+          '\u001b[31mhandler failed\u001b[0m\nRun \'guarana --help\' for usage.\n');
       });
     });
   });
@@ -239,7 +308,7 @@ describe('cli/main dispatch characterization', () => {
         assert.equal(await main(args, tty), 1, args.join(' '));
         assert.equal(tty.output().stdout, baseline.output().stdout, `${args.join(' ')} stdout`);
         assert.equal(tty.output().stderr,
-          `\u001b[31m${message}\u001b[39m\nRun 'guarana --help' for usage.\n`, args.join(' '));
+          `\u001b[31m${message}\u001b[0m\nRun 'guarana --help' for usage.\n`, args.join(' '));
       }
     });
   });
@@ -259,7 +328,7 @@ describe('cli/main dispatch characterization', () => {
           assert.equal(await main([command, '--project'], streams), 1, command);
           assert.deepEqual(streams.output(), {
             stdout: '',
-            stderr: `\u001b[31m${message}\u001b[39m\nRun 'guarana --help' for usage.\n`,
+            stderr: `\u001b[31m${message}\u001b[0m\nRun 'guarana --help' for usage.\n`,
           });
         }
       });
@@ -296,7 +365,7 @@ describe('cli/main dispatch characterization', () => {
       const hint = "Run 'guarana --help' for usage.";
       const tty = createStreams({ stderrTTY: true });
       stderrLine({ stderr: tty.stderr }, `failure\n${hint}`);
-      assert.equal(tty.output().stderr, `\u001b[31mfailure\n${hint}\u001b[39m\n`);
+      assert.equal(tty.output().stderr, `\u001b[31mfailure\n${hint}\u001b[0m\n`);
       assert.equal(tty.output().stderr.split(hint).length - 1, 1);
     });
   });
@@ -310,7 +379,8 @@ describe('cli/main dispatch characterization', () => {
 
     const help = createStreams({ stdoutTTY: true, stderrTTY: true });
     assert.equal(await main(['specs', '--help'], help), 0);
-    assert.equal(help.output().stdout, require('./commands/specs.js').HELP);
+    assert.equal(help.output().stdout.replace(/\u001b\[[0-9;]+m/g, ''), require('./commands/specs.js').HELP);
+    assert.match(help.output().stdout, /^\u001b\[1;35mguarana specs /);
     assert.equal(help.output().stderr, '');
   });
 

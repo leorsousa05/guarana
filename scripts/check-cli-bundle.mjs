@@ -7,6 +7,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -17,14 +18,26 @@ const pairs = [
   ['skills/guarana', 'cli/skills/guarana'],
   ['plugin/guarana-telemetry.js', 'cli/plugin/guarana-telemetry.js'],
   ['plugin/guarana-memory.js', 'cli/plugin/guarana-memory.js'],
-  ['plugin/learning-review.js', 'cli/plugin/learning-review.js'],
   ['plugin/guarana-orchestrator.js', 'cli/plugin/guarana-orchestrator.js'],
+  ['memory/learning-review.js', 'cli/memory/learning-review.js'],
   ['orchestrator', 'cli/orchestrator'],
   ['memory', 'cli/memory'],
   ['skill-engine', 'cli/skill-engine'],
 ];
 
 let ok = true;
+for (const relative of ['plugin/learning-review.js', 'cli/plugin/learning-review.js']) {
+  if (fs.existsSync(path.join(root, relative))) {
+    ok = false;
+    console.error(`learning-review runtime module must not live under plugins/: ${relative}`);
+  }
+}
+for (const relative of ['plugin/guarana-memory.js', 'cli/plugin/guarana-memory.js']) {
+  if (!fs.readFileSync(path.join(root, relative), 'utf8').includes("from '../memory/learning-review.js'")) {
+    ok = false;
+    console.error(`memory plugin must import its sibling runtime module: ${relative}`);
+  }
+}
 for (const [from, to] of pairs) {
   const res = spawnSync(
     'diff',

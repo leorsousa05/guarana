@@ -18,7 +18,7 @@ module.exports = {
   PLUGIN_NAME: 'guarana-telemetry.js',
   MEMORY_PLUGIN_BUNDLE: path.join(__dirname, 'plugin', 'guarana-memory.js'),
   MEMORY_PLUGIN_NAME: 'guarana-memory.js',
-  LEARNING_REVIEW_BUNDLE: path.join(__dirname, 'plugin', 'learning-review.js'),
+  LEARNING_REVIEW_BUNDLE: path.join(__dirname, 'memory', 'learning-review.js'),
   LEARNING_REVIEW_NAME: 'learning-review.js',
   ORCHESTRATOR_PLUGIN_BUNDLE: path.join(__dirname, 'plugin', 'guarana-orchestrator.js'),
   ORCHESTRATOR_PLUGIN_NAME: 'guarana-orchestrator.js',

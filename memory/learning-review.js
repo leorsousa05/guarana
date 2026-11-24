@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { isSensitive, sanitize } from '../memory/security.js';
+import { isSensitive, sanitize } from './security.js';
 
 export const MAX_REVIEW_SUMMARY_CHARS = 2_000;
 export const MAX_REVIEW_PATHS = 30;

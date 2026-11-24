@@ -199,6 +199,11 @@ Before a worker-code dispatch, confirm the requirements discovery gate above is
 closed and the primary has decided the acceptance condition. Have `worker-specs`
 record it when a durable human-readable update is needed.
 
+Before dispatching `worker-specs` or another worker with repo-relative permission
+allowlists, make the active OpenCode Location the target repository or assigned
+worktree root and pass root-relative paths. If it differs, move the session first;
+never broaden a reusable allowlist to compensate.
+
 ## 4. Stop
 After a `worker-specs` dispatch, wait for its changed-path/validation summary. Do
 not create a dispatch or validator run when no human-readable record changed.

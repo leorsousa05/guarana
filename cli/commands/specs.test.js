@@ -58,24 +58,24 @@ See [ADR-001](../../decisions/ADR-001-api-shape.md).
 `);
 }
 
-function captureOutput(callback) {
+function captureOutput(callback, { stdoutTTY = false, stderrTTY = false } = {}) {
   let stdout = '';
   let stderr = '';
   const streams = {
-    stdout: { write: (chunk) => { stdout += chunk.toString(); } },
-    stderr: { write: (chunk) => { stderr += chunk.toString(); } },
+    stdout: { isTTY: stdoutTTY, write: (chunk) => { stdout += chunk.toString(); } },
+    stderr: { isTTY: stderrTTY, write: (chunk) => { stderr += chunk.toString(); } },
   };
   const result = callback(streams);
   return { result, stdout, stderr };
 }
 
-function runDirect(root, args) {
+function runDirect(root, args, streamOptions) {
   const cwd = process.cwd();
   const previousExitCode = process.exitCode;
   process.chdir(root);
   process.exitCode = 23;
   try {
-    const output = captureOutput((streams) => specs.run(args, streams));
+    const output = captureOutput((streams) => specs.run(args, streams), streamOptions);
     assert.equal(process.exitCode, 23, `process.exitCode changed while running specs ${args.join(' ')}`);
     return output;
   } finally {
@@ -167,6 +167,15 @@ No actual criterion here.
       assert.equal(invalid.result, 1);
       assert.equal(invalid.stdout, `${JSON.stringify(validateSpecs(invalidRoot), null, 2)}\n`);
       assert.equal(invalid.stderr, '');
+
+      const ttyJson = runDirect(validRoot, ['validate', validRoot, '--json'], { stdoutTTY: true });
+      assert.equal(ttyJson.stdout, `${JSON.stringify(validateSpecs(validRoot), null, 2)}\n`);
+      assert.doesNotMatch(ttyJson.stdout, /\u001b\[/);
+
+      const ttyRecordError = runDirect(validRoot, ['record', '--stdin', 'extra'], { stdoutTTY: true });
+      assert.equal(ttyRecordError.stdout,
+        '{"ok":false,"changed":[],"error":"usage: guarana specs record --stdin | --file .specs/state/worker-specs-handoff.json","validator":null}\n');
+      assert.doesNotMatch(ttyRecordError.stdout, /\u001b\[/);
 
       const noArgs = runDirect(validRoot, []);
       assert.equal(noArgs.result, 0);

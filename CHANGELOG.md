@@ -6,6 +6,23 @@ separate maintainer action.
 
 ## [Unreleased]
 
+## [1.5.3] - 2026-11-24 (unpublished, untagged candidate)
+
+### Added
+- Project-scoped preference context with fail-closed preference-injection
+  budgets.
+- The learning-review runtime helper is deployed with the memory engine outside
+  `plugins/`; owned legacy helper copies migrate safely.
+
+### Changed
+- Generated worker agents use OpenCode V2 permissions with role-specific
+  least-privilege policies.
+- Interactive CLI output uses consistent color and tree summaries while
+  preserving JSON and redirected output.
+
+### Fixed
+- Active workflow and Specs writes are guarded against conflicting updates.
+
 ### Removed
 - The Dashboard web app, server, bundled assets, and `guarana web` command.
   Existing project data and saved settings are not removed.

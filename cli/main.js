@@ -4,7 +4,7 @@ const { VERSION, SKILLS } = require('./constants.js');
 const { HELP } = require('./help.js');
 const COMMANDS = require('./commands/registry.js');
 const { parseArgs } = require('./lib/args.js');
-const { isTTY, colorize } = require('./lib/terminal.js');
+const { isTTY, formatHelp } = require('./lib/terminal.js');
 const { stderrLine } = require('./lib/io.js');
 
 const HELP_EXAMPLES = [
@@ -22,10 +22,7 @@ function writeHelp(stdout) {
     return;
   }
 
-  let help = `${HELP}${HELP_EXAMPLES}`;
-  help = help.replace(/^(Usage:|Targets:|Memory vault and search filter:|Plugin targets:|Examples:)$/gm,
-    (heading) => colorize(heading, stdout, '1;36'));
-  stdout.write(help);
+  stdout.write(formatHelp(`${HELP}${HELP_EXAMPLES}`, stdout));
 }
 
 async function main(args, { stdout = process.stdout, stderr = process.stderr } = {}) {

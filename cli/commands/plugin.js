@@ -9,7 +9,9 @@ const {
   ORCHESTRATOR_PLUGIN_BUNDLE, ORCHESTRATOR_PLUGIN_NAME,
 } = require('../constants.js');
 const { pluginIsOurs, PLUGIN_MARKER, MEMORY_PLUGIN_MARKER, LEARNING_REVIEW_MARKER, ORCHESTRATOR_PLUGIN_MARKER } = require('../lib/guard.js');
-const { pluginTarget, memoryEngineTarget, orchestratorEngineTarget, skillEngineTarget, installManifestTarget } = require('../lib/paths.js');
+const {
+  pluginTarget, memoryEngineTarget, memoryModuleTarget, orchestratorEngineTarget, skillEngineTarget, installManifestTarget,
+} = require('../lib/paths.js');
 const engineArtifacts = require('../lib/engine-artifacts.js');
 const agents = require('../lib/agents.js');
 const advisorProfiles = require('../lib/advisor-profiles.js');
@@ -22,10 +24,7 @@ const PLUGINS = [
   { name: MEMORY_PLUGIN_NAME, bundle: MEMORY_PLUGIN_BUNDLE, marker: MEMORY_PLUGIN_MARKER },
   { name: ORCHESTRATOR_PLUGIN_NAME, bundle: ORCHESTRATOR_PLUGIN_BUNDLE, marker: ORCHESTRATOR_PLUGIN_MARKER },
 ];
-const SUPPORT_MODULES = [
-  { name: LEARNING_REVIEW_NAME, bundle: LEARNING_REVIEW_BUNDLE, marker: LEARNING_REVIEW_MARKER, kind: 'runtime module' },
-];
-const MANAGED_PLUGIN_ARTIFACTS = [...PLUGINS, ...SUPPORT_MODULES];
+const LEGACY_PLUGIN_NAMES = new Set([LEARNING_REVIEW_NAME]);
 
 function hash(bytes) {
   return crypto.createHash('sha256').update(bytes).digest('hex');
@@ -43,7 +42,7 @@ function readPluginEntries(manifest) {
   if (!Array.isArray(manifest.plugins)) {
     throw new Error('refuse to use install manifest: invalid plugins entries');
   }
-  const knownNames = new Set(MANAGED_PLUGIN_ARTIFACTS.map(({ name }) => name));
+  const knownNames = new Set([...PLUGINS.map(({ name }) => name), ...LEGACY_PLUGIN_NAMES]);
   const seen = new Set();
   for (const entry of manifest.plugins) {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry) ||
@@ -59,7 +58,7 @@ function readPluginEntries(manifest) {
 function preflightPlugins(useProject, action, enginePlan) {
   const entries = readPluginEntries(enginePlan.manifest);
   const tracked = entries ? new Map(entries.map((entry) => [entry.path, entry.sha256])) : null;
-  return MANAGED_PLUGIN_ARTIFACTS.map((artifact) => {
+  return PLUGINS.map((artifact) => {
     const { name, bundle, marker } = artifact;
     const target = pluginTarget(useProject, name);
     const stat = maybeStat(target);
@@ -82,6 +81,27 @@ function preflightPlugins(useProject, action, enginePlan) {
   });
 }
 
+function preflightLegacyLearningReview(useProject, action, manifest) {
+  const entries = readPluginEntries(manifest);
+  const tracked = entries?.find(({ path: name }) => name === LEARNING_REVIEW_NAME);
+  const target = pluginTarget(useProject, LEARNING_REVIEW_NAME);
+  const stat = maybeStat(target);
+  if (stat && (!stat.isFile() || stat.isSymbolicLink())) {
+    throw new Error(`refuse to ${action}: ${target} is not a regular plugin file`);
+  }
+  const exists = Boolean(stat);
+  if (!exists) return { name: LEARNING_REVIEW_NAME, target, exists: false };
+
+  const bytes = fs.readFileSync(target);
+  if (tracked && hash(bytes) !== tracked.sha256) {
+    throw new Error(`refuse to ${action}: managed plugin file was modified: ${target}`);
+  }
+  if (!tracked && !bytes.toString('utf8', 0, 512).includes(LEARNING_REVIEW_MARKER)) {
+    throw new Error(`refuse to ${action}: ${target} was not installed by guarana (content differs from bundle)`);
+  }
+  return { name: LEARNING_REVIEW_NAME, target, exists: true };
+}
+
 function preflightInstall(useProject, { pluginsOnly = false } = {}) {
   if (!pluginsOnly) {
     agents.assertInstallable(useProject);
@@ -89,18 +109,23 @@ function preflightInstall(useProject, { pluginsOnly = false } = {}) {
   }
   const engines = engineArtifacts.preflight(useProject, 'install');
   const plugins = preflightPlugins(useProject, 'install', engines);
+  const legacyLearningReview = preflightLegacyLearningReview(useProject, 'install', engines.manifest);
   const profiles = pluginsOnly
     ? { action: 'install', workers: [], advisor: [], groups: {}, removePaths: [] }
     : profileArtifacts.preflight(useProject, 'install', engines);
-  return { engines, plugins, profiles, profilesEnabled: !pluginsOnly };
+  return { engines, plugins, legacyLearningReview, profiles, profilesEnabled: !pluginsOnly };
 }
 
 function pluginInstall(useProject, { quiet = false, preflight = null, pluginsOnly = false, skipTransaction = false, stdout = process.stdout } = {}) {
   const context = { stdout };
   const plan = preflight || preflightInstall(useProject, { pluginsOnly });
-  const { engines, plugins, profiles } = plan;
+  const { engines, plugins, legacyLearningReview, profiles } = plan;
   const profilesEnabled = plan.profilesEnabled !== false;
   const apply = () => {
+    if (legacyLearningReview.exists) {
+      fs.rmSync(legacyLearningReview.target);
+      if (!quiet) stdoutLine(context, `removed legacy runtime module ${legacyLearningReview.name.replace(/\.js$/, '')} from ${legacyLearningReview.target}`);
+    }
     for (const { name, bundle, target, exists, kind = 'plugin' } of plugins) {
       fs.mkdirSync(path.dirname(target), { recursive: true });
       fs.copyFileSync(bundle, target);
@@ -138,12 +163,14 @@ function preflightUninstall(useProject, { pluginsOnly = false } = {}) {
     const state = engineArtifacts.manifestState(manifestFile);
     const manifest = { ...state, manifestFile, manifestExists: state.exists };
     const plugins = preflightPlugins(useProject, 'uninstall', manifest);
-    return { manifest, plugins, pluginsOnly: true };
+    const legacyLearningReview = preflightLegacyLearningReview(useProject, 'uninstall', manifest.manifest);
+    return { manifest, plugins, legacyLearningReview, pluginsOnly: true };
   }
   const engines = engineArtifacts.preflight(useProject, 'uninstall');
   const plugins = preflightPlugins(useProject, 'uninstall', engines);
+  const legacyLearningReview = preflightLegacyLearningReview(useProject, 'uninstall', engines.manifest);
   const profiles = profileArtifacts.preflight(useProject, 'uninstall', engines);
-  return { engines, plugins, profiles };
+  return { engines, plugins, legacyLearningReview, profiles };
 }
 
 function adoptPlugin(useProject, args, { stdout = process.stdout } = {}) {
@@ -188,7 +215,7 @@ function adoptPlugin(useProject, args, { stdout = process.stdout } = {}) {
 function pluginUninstall(useProject, preflight = null, { pluginsOnly = false, skipTransaction = false, stdout = process.stdout } = {}) {
   const context = { stdout };
   const plan = preflight || preflightUninstall(useProject, { pluginsOnly });
-  const { engines, plugins, profiles } = plan;
+  const { engines, plugins, legacyLearningReview, profiles } = plan;
   const apply = () => {
     for (const { name, target, exists, kind = 'plugin' } of plugins) {
       if (!exists) {
@@ -197,6 +224,10 @@ function pluginUninstall(useProject, preflight = null, { pluginsOnly = false, sk
       }
       fs.rmSync(target);
       stdoutLine(context, `uninstalled ${kind} ${name.replace(/\.js$/, '')} from ${target}`);
+    }
+    if (legacyLearningReview.exists) {
+      fs.rmSync(legacyLearningReview.target);
+      stdoutLine(context, `uninstalled legacy runtime module ${legacyLearningReview.name.replace(/\.js$/, '')} from ${legacyLearningReview.target}`);
     }
     if (plan.pluginsOnly) {
       engineArtifacts.applyPluginOnlyUninstall(plan.manifest);
@@ -226,6 +257,7 @@ function pluginUninstall(useProject, preflight = null, { pluginsOnly = false, sk
     const targets = [
       ...(plan.manifest.manifestExists ? [plan.manifest.manifestFile] : []),
       ...plugins.filter(({ exists }) => exists).map(({ target }) => target),
+      ...(legacyLearningReview.exists ? [legacyLearningReview.target] : []),
     ];
     return artifactTransaction.run(targets, apply);
   }
@@ -269,20 +301,20 @@ async function pluginStatus(useProject, context) {
       stdoutLine(context, `  ! foreign file (not installed by guarana) — manual review required`);
     }
   }
-  for (const { name, bundle, marker } of SUPPORT_MODULES) {
-    const target = pluginTarget(useProject, name);
-    const installed = fs.existsSync(target);
-    const upToDate = installed && filesEqual(target, bundle);
-    stdoutLine(context, `- runtime module ${name}: ${installed ? (upToDate ? 'ok (up to date)' : 'stale (re-run: guarana plugin install)') : 'not installed'}`);
-    if (installed && !pluginIsOurs(target, bundle, marker)) {
-      stdoutLine(context, `  ! foreign file (not installed by guarana) — manual review required`);
-    }
-  }
+  const legacyTarget = pluginTarget(useProject, LEARNING_REVIEW_NAME);
+  if (fs.existsSync(legacyTarget))
+    stdoutLine(context, `- legacy learning-review file (${legacyTarget}): migration pending`);
   const engineTarget = memoryEngineTarget(useProject);
   const hasEngine = fs.existsSync(path.join(engineTarget, 'tools.js')) &&
     fs.existsSync(path.join(engineTarget, 'vault.js')) &&
     fs.existsSync(path.join(engineTarget, 'graph.js'));
   stdoutLine(context, `- memory engine (${engineTarget}): ${hasEngine ? 'deployed' : 'not deployed (re-run: guarana plugin install)'}`);
+  const reviewModuleTarget = memoryModuleTarget(useProject, LEARNING_REVIEW_NAME);
+  const reviewModuleInstalled = fs.existsSync(reviewModuleTarget);
+  const reviewModuleUpToDate = reviewModuleInstalled && filesEqual(reviewModuleTarget, LEARNING_REVIEW_BUNDLE);
+  stdoutLine(context, `- learning-review runtime module (${reviewModuleTarget}): ${reviewModuleInstalled
+    ? (reviewModuleUpToDate ? 'ok (up to date)' : 'stale (re-run: guarana plugin install)')
+    : 'not installed (re-run: guarana plugin install)'}`);
   const vaultDir = path.join(process.cwd(), '.guarana', 'memory');
   const vaultInit = fs.existsSync(path.join(vaultDir, 'nodes.jsonl'));
   stdoutLine(context, `- vault (${vaultDir}): ${vaultInit ? 'initialized' : 'not initialized (created automatically on first task)'}`);

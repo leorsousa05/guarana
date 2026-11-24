@@ -4,7 +4,10 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { ORCHESTRATOR_PLUGIN_NAME } = require('../constants.js');
-const { targetDir, opencodeConfigDir, pluginTarget, workerAgentsTarget, advisorCommandTarget, installManifestTarget } = require('./paths.js');
+const {
+  targetDir, opencodeConfigDir, pluginTarget, memoryEngineTarget, memoryModuleTarget,
+  workerAgentsTarget, advisorCommandTarget, installManifestTarget,
+} = require('./paths.js');
 
 describe('targetDir', () => {
   let dir;
@@ -45,6 +48,13 @@ describe('targetDir', () => {
     assert.equal(pluginTarget(false, ORCHESTRATOR_PLUGIN_NAME), path.join(root, 'plugins', ORCHESTRATOR_PLUGIN_NAME));
     assert.equal(advisorCommandTarget(false), path.join(root, 'commands', 'guarana-advisor.md'));
     assert.equal(workerAgentsTarget(false), path.join(root, 'agents'));
+  });
+
+  it('places memory runtime modules beside their engine under each OpenCode root', () => {
+    assert.equal(memoryModuleTarget(true, 'learning-review.js'),
+      path.join(memoryEngineTarget(true), 'learning-review.js'));
+    assert.equal(memoryModuleTarget(false, 'learning-review.js'),
+      path.join(memoryEngineTarget(false), 'learning-review.js'));
   });
 
   it('uses a project-local engine install manifest', () => {

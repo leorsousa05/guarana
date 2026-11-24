@@ -5,10 +5,7 @@ const { VERSION, SKILLS, WORKER_AGENTS } = require('../constants.js');
 const { STAMP } = require('../lib/guard.js');
 const { targetDir } = require('../lib/paths.js');
 const { stdoutLine } = require('../lib/io.js');
-
-function colorEnabled(stdout = process.stdout) {
-  return Boolean(stdout.isTTY && !process.env.NO_COLOR && process.env.TERM !== 'dumb');
-}
+const { colorEnabled } = require('../lib/terminal.js');
 
 function paint(text, code, enabled) {
   return enabled ? `\u001b[${code}m${text}\u001b[0m` : text;
@@ -38,14 +35,31 @@ function formatSummary({ target, useProject, previousVersion, useColor = false }
   ].join('\n');
 }
 
+function formatTtySummary({ target, useProject, previousVersion }) {
+  const version = previousVersion && previousVersion !== VERSION
+    ? `${previousVersion} → ${VERSION}`
+    : VERSION;
+  return [
+    'Guarana update',
+    '+-- Status: Update complete',
+    `+-- Version: ${version}`,
+    `+-- Target: ${useProject ? 'Project' : 'Global'} · ${target}`,
+    `+-- Refreshed: ${SKILLS.length} skills · 3 plugins · 3 engines · ${WORKER_AGENTS.length} worker profiles`,
+    `\\-- Next: Restart OpenCode to load the updated skills`,
+  ].join('\n');
+}
+
 function run(args, { useProject, stdout = process.stdout, stderr = process.stderr } = {}) {
   const target = targetDir(useProject);
   const stamp = path.join(target, STAMP);
   const previousVersion = fs.existsSync(stamp) ? fs.readFileSync(stamp, 'utf8').trim() : null;
 
   install.run(args, { useProject, quiet: true, stdout, stderr });
-  stdoutLine({ stdout, stderr }, formatSummary({ target, useProject, previousVersion, useColor: colorEnabled(stdout) }));
+  const summary = stdout.isTTY
+    ? formatTtySummary({ target, useProject, previousVersion })
+    : formatSummary({ target, useProject, previousVersion });
+  stdoutLine({ stdout, stderr }, summary);
   return 0;
 }
 
-module.exports = { run, formatSummary, colorEnabled };
+module.exports = { run, formatSummary, formatTtySummary, colorEnabled };

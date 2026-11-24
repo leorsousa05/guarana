@@ -1,11 +1,12 @@
 'use strict';
 
-const { isTTY, colorize } = require('./terminal.js');
+const { isTTY, colorize, formatHelp, formatHumanText } = require('./terminal.js');
 
 const DIAGNOSTIC_HINT = "Run 'guarana --help' for usage.";
 
 function writeStdout(context, text) {
-  (context?.stdout || process.stdout).write(text);
+  const stdout = context?.stdout || process.stdout;
+  stdout.write(formatHelp(text, stdout));
 }
 
 function writeStderr(context, text) {
@@ -13,7 +14,8 @@ function writeStderr(context, text) {
 }
 
 function stdoutLine(context, text) {
-  writeStdout(context, `${text}\n`);
+  const stdout = context?.stdout || process.stdout;
+  stdout.write(`${formatHumanText(text, stdout)}\n`);
 }
 
 function stderrLine(context, text) {

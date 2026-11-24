@@ -8,12 +8,12 @@ const path = require('node:path');
 const workflow = require('./workflow.js');
 const { main } = require('../main.js');
 
-function streams() {
+function streams({ stdoutTTY = false, stderrTTY = false } = {}) {
   let stdout = '';
   let stderr = '';
   return {
-    stdout: { write: (chunk) => { stdout += chunk.toString(); } },
-    stderr: { write: (chunk) => { stderr += chunk.toString(); } },
+    stdout: { isTTY: stdoutTTY, write: (chunk) => { stdout += chunk.toString(); } },
+    stderr: { isTTY: stderrTTY, write: (chunk) => { stderr += chunk.toString(); } },
     output: () => ({ stdout, stderr }),
   };
 }
@@ -40,8 +40,8 @@ async function isolated(callback) {
   }
 }
 
-async function invoke(args) {
-  const output = streams();
+async function invoke(args, streamOptions) {
+  const output = streams(streamOptions);
   const status = await main(args, output);
   return { status, ...output.output() };
 }
@@ -68,6 +68,11 @@ test('workflow read reports scoped partial settings, enabled defaults, and per-f
       effective: { specs: { enabled: true }, verify: { enabled: true }, memory: { preferenceInjectionBudgetTokens: null } },
       sources: { specs: 'default', verify: 'default', memory: { preferenceInjectionBudgetTokens: 'default' } },
     });
+    const ttyRead = await invoke(['workflow', 'read'], { stdoutTTY: true, stderrTTY: true });
+    assert.equal(ttyRead.status, 0);
+    assert.equal(ttyRead.stdout, `${JSON.stringify(JSON.parse(ttyRead.stdout), null, 2)}\n`);
+    assert.doesNotMatch(ttyRead.stdout, /\u001b\[/);
+    assert.equal(ttyRead.stderr, '');
 
     assert.deepEqual(parsedOutput(await invoke(['workflow', 'read', '--project'])), {
       scope: 'project',

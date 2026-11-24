@@ -5,10 +5,11 @@
  * Keeps the `cli/` self-contained bundle in sync with the canonical source:
  *   skills/        -> cli/skills/
  *   plugin/        -> cli/plugin/
+ *   memory/        -> cli/memory/
  *   orchestrator/  -> cli/orchestrator/
  *
  * This script is the single source-of-truth mechanism for the installer bundle.
- * Run it after any change to skills, plugin, or orchestrator sources.
+ * Run it after any change to skills, plugin, memory, or orchestrator sources.
  */
 
 import fs from 'node:fs';
@@ -18,6 +19,8 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
 const EXCLUDED_DIRECTORIES = new Set(['node_modules']);
+const MISPLACED_LEARNING_REVIEW_SOURCE = 'plugin/learning-review.js';
+const LEGACY_LEARNING_REVIEW_BUNDLE = 'cli/plugin/learning-review.js';
 
 function lstatIfExists(target) {
   try {
@@ -106,14 +109,23 @@ const mappings = [
   { from: 'skills/guarana', to: 'cli/skills/guarana' },
   { from: 'plugin/guarana-telemetry.js', to: 'cli/plugin/guarana-telemetry.js' },
   { from: 'plugin/guarana-memory.js', to: 'cli/plugin/guarana-memory.js' },
-  { from: 'plugin/learning-review.js', to: 'cli/plugin/learning-review.js' },
   { from: 'plugin/guarana-orchestrator.js', to: 'cli/plugin/guarana-orchestrator.js' },
   { from: 'orchestrator', to: 'cli/orchestrator' },
+  { from: 'memory/learning-review.js', to: 'cli/memory/learning-review.js' },
   { from: 'memory', to: 'cli/memory' },
   { from: 'skill-engine', to: 'cli/skill-engine' },
 ];
 
 export function syncCliBundle(syncRoot = root, syncMappings = mappings) {
+  if (lstatIfExists(path.join(syncRoot, MISPLACED_LEARNING_REVIEW_SOURCE))) {
+    throw new Error(`learning-review runtime module must not live under plugins/: ${MISPLACED_LEARNING_REVIEW_SOURCE}`);
+  }
+  const legacyBundle = path.join(syncRoot, LEGACY_LEARNING_REVIEW_BUNDLE);
+  const legacyBundleStat = lstatIfExists(legacyBundle);
+  if (legacyBundleStat && (!legacyBundleStat.isFile() || legacyBundleStat.isSymbolicLink())) {
+    throw new Error(`refuse to remove non-regular legacy learning-review bundle: ${LEGACY_LEARNING_REVIEW_BUNDLE}`);
+  }
+  if (legacyBundleStat) fs.unlinkSync(legacyBundle);
   for (const { from, to } of syncMappings) {
     const src = path.join(syncRoot, from);
     const dest = path.join(syncRoot, to);

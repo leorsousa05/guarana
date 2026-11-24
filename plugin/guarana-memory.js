@@ -10,7 +10,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHash, randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { isSensitive, sanitize } from '../memory/security.js';
-import { normalizeReviewRequest, runOpenCodeReview } from './learning-review.js';
+import { normalizeReviewRequest, runOpenCodeReview } from '../memory/learning-review.js';
 
 const pluginDir = path.dirname(fileURLToPath(import.meta.url));
 

@@ -8,10 +8,12 @@ const crypto = require('node:crypto');
 const plugin = require('./plugin.js');
 const agents = require('../lib/agents.js');
 const {
-  pluginTarget, workerAgentsTarget, advisorCommandTarget, advisorAgentsTarget, advisorSubagentTarget,
+  pluginTarget, memoryModuleTarget, workerAgentsTarget, advisorCommandTarget, advisorAgentsTarget, advisorSubagentTarget,
   legacyAdvisorAgentsTarget, advisorSettingsTarget, openCodeRootTarget, installManifestTarget,
 } = require('../lib/paths.js');
-const { PLUGIN_NAME, MEMORY_PLUGIN_NAME, LEARNING_REVIEW_NAME, ORCHESTRATOR_PLUGIN_NAME } = require('../constants.js');
+const {
+  PLUGIN_NAME, MEMORY_PLUGIN_NAME, LEARNING_REVIEW_BUNDLE, LEARNING_REVIEW_NAME, ORCHESTRATOR_PLUGIN_NAME,
+} = require('../constants.js');
 const { PLUGIN_MARKER, MEMORY_PLUGIN_MARKER, ORCHESTRATOR_PLUGIN_MARKER } = require('../lib/guard.js');
 const BIN = path.join(__dirname, '..', '..', 'bin', 'guarana.js');
 const PLUGIN_MARKERS = new Map([
@@ -94,18 +96,22 @@ it('deploys, reports, and removes the skill engine with the plugin set', async (
   const originalCwd = process.cwd();
   const project = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-plugin-skills-'));
   const installedEngine = path.join(project, '.opencode', 'skill-engine', 'index.js');
+  const reviewModule = memoryModuleTarget(true, LEARNING_REVIEW_NAME, project);
   try {
     process.chdir(project);
     plugin.install(true, { quiet: true });
     assert.ok(fs.existsSync(installedEngine));
+    assert.deepEqual(fs.readFileSync(reviewModule), fs.readFileSync(LEARNING_REVIEW_BUNDLE));
 
     const output = captureStreams();
     await plugin.run(['status'], { useProject: true, ...output });
     assert.ok(output.output().stdout.includes('skill engine') && output.output().stdout.includes('deployed'));
     assert.match(output.output().stdout, /engine health: ok/);
+    assert.ok(output.output().stdout.includes(reviewModule));
 
     plugin.uninstall(true, null, { stdout: output.stdout });
     assert.equal(fs.existsSync(path.dirname(installedEngine)), false);
+    assert.equal(fs.existsSync(reviewModule), false);
   } finally {
     process.chdir(originalCwd);
     fs.rmSync(project, { recursive: true, force: true });
@@ -125,6 +131,10 @@ it('installs and updates the three engines through a project ownership manifest,
     const memoryFile = path.join(project, '.opencode', 'memory', 'capture.js');
     assert.equal(first.engines.memory.find((file) => file.path === 'capture.js').sha256,
       crypto.createHash('sha256').update(fs.readFileSync(memoryFile)).digest('hex'));
+    const reviewModule = memoryModuleTarget(true, LEARNING_REVIEW_NAME, project);
+    assert.deepEqual(fs.readFileSync(reviewModule), fs.readFileSync(LEARNING_REVIEW_BUNDLE));
+    assert.ok(first.engines.memory.some((file) => file.path === LEARNING_REVIEW_NAME));
+    assert.ok(!first.plugins.some((entry) => entry.path === LEARNING_REVIEW_NAME));
 
     const extra = path.join(project, '.opencode', 'memory', 'local-extra.txt');
     fs.writeFileSync(extra, 'preserve me\n');
@@ -143,6 +153,7 @@ it('installs and updates the three engines through a project ownership manifest,
 
     plugin.uninstall(true);
     assert.equal(fs.existsSync(memoryFile), false);
+    assert.equal(fs.existsSync(reviewModule), false);
     assert.equal(fs.existsSync(path.join(project, '.opencode', 'orchestrator', 'state.js')), false);
     assert.equal(fs.existsSync(path.join(project, '.opencode', 'skill-engine', 'index.js')), false);
     assert.equal(fs.readFileSync(extra, 'utf8'), 'preserve me\n');
@@ -171,6 +182,8 @@ it('installs project plugins and engines only without creating native profiles',
       assert.ok(fs.existsSync(path.join(project, '.opencode', 'plugins', name)));
     }
     assert.ok(fs.existsSync(path.join(project, '.opencode', 'memory', 'capture.js')));
+    const reviewModule = memoryModuleTarget(true, LEARNING_REVIEW_NAME, project);
+    assert.deepEqual(fs.readFileSync(reviewModule), fs.readFileSync(LEARNING_REVIEW_BUNDLE));
     assert.ok(fs.existsSync(path.join(project, '.opencode', 'orchestrator', 'state.js')));
     assert.ok(fs.existsSync(path.join(project, '.opencode', 'skill-engine', 'index.js')));
     assert.equal(fs.existsSync(path.join(workerAgentsTarget(true, project), 'worker-specs.md')), false);
@@ -180,16 +193,29 @@ it('installs project plugins and engines only without creating native profiles',
     assert.ok(manifest.plugins);
     assert.equal(manifest.workers, undefined);
     assert.equal(manifest.advisor, undefined);
+    assert.ok(manifest.engines.memory.some((file) => file.path === LEARNING_REVIEW_NAME));
+    assert.ok(!manifest.plugins.some((entry) => entry.path === LEARNING_REVIEW_NAME));
+
+    const legacyTarget = path.join(project, '.opencode', 'plugins', LEARNING_REVIEW_NAME);
+    const legacyBytes = Buffer.from('// guarana learning review runtime module\nlegacy plugin copy\n');
+    fs.writeFileSync(legacyTarget, legacyBytes);
+    manifest.plugins.push({
+      path: LEARNING_REVIEW_NAME,
+      sha256: crypto.createHash('sha256').update(legacyBytes).digest('hex'),
+    });
+    fs.writeFileSync(installManifestTarget(true, project), `${JSON.stringify(manifest, null, 2)}\n`);
 
     const uninstalled = spawnSync(process.execPath, [BIN, 'plugin', 'uninstall', '--plugins-only', '--project'], {
       cwd: project,
       encoding: 'utf8',
     });
     assert.equal(uninstalled.status, 0, uninstalled.stderr);
+    assert.equal(fs.existsSync(legacyTarget), false);
     for (const name of [PLUGIN_NAME, MEMORY_PLUGIN_NAME, ORCHESTRATOR_PLUGIN_NAME]) {
       assert.equal(fs.existsSync(path.join(project, '.opencode', 'plugins', name)), false);
     }
     assert.ok(fs.existsSync(path.join(project, '.opencode', 'memory', 'capture.js')));
+    assert.ok(fs.existsSync(reviewModule));
     assert.ok(fs.existsSync(path.join(project, '.opencode', 'orchestrator', 'state.js')));
     assert.ok(fs.existsSync(path.join(project, '.opencode', 'skill-engine', 'index.js')));
     const afterUninstall = JSON.parse(fs.readFileSync(installManifestTarget(true, project), 'utf8'));
@@ -225,6 +251,13 @@ it('uninstalls only plugins in project and global scopes, preserving modified pr
       const before = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
       before.skills = { guarana: [{ path: 'skills/keep.md', sha256: 'a'.repeat(64) }] };
       before.future = { installMetadata: { enabled: true } };
+      const legacyTarget = pluginTarget(useProject, LEARNING_REVIEW_NAME);
+      const legacyBytes = Buffer.from('// guarana learning review runtime module\nlegacy plugin copy\n');
+      fs.writeFileSync(legacyTarget, legacyBytes);
+      before.plugins.push({
+        path: LEARNING_REVIEW_NAME,
+        sha256: crypto.createHash('sha256').update(legacyBytes).digest('hex'),
+      });
       fs.writeFileSync(manifestFile, `${JSON.stringify(before, null, 2)}\n`);
       const preservedGroups = Object.fromEntries(['engines', 'workers', 'advisor', 'skills', 'future']
         .map((group) => [group, before[group]]));
@@ -236,6 +269,7 @@ it('uninstalls only plugins in project and global scopes, preserving modified pr
       for (const name of [PLUGIN_NAME, MEMORY_PLUGIN_NAME, ORCHESTRATOR_PLUGIN_NAME]) {
         assert.equal(fs.existsSync(pluginTarget(useProject, name)), false);
       }
+      assert.equal(fs.existsSync(legacyTarget), false);
       assert.deepEqual(fs.readFileSync(worker), workerBytes);
       assert.deepEqual(fs.readFileSync(advisor), advisorBytes);
       assert.deepEqual(['memory', 'orchestrator', 'skill-engine'].map((name) =>
@@ -590,7 +624,6 @@ it('refuses install and uninstall when a tracked engine file changed, without ch
     const plugins = [
       pluginTarget(true, 'guarana-telemetry.js'),
       pluginTarget(true, 'guarana-memory.js'),
-      pluginTarget(true, 'learning-review.js'),
       pluginTarget(true, 'guarana-orchestrator.js'),
     ].map((file) => fs.readFileSync(file));
 
@@ -600,7 +633,6 @@ it('refuses install and uninstall when a tracked engine file changed, without ch
     for (const [index, file] of [
       pluginTarget(true, 'guarana-telemetry.js'),
       pluginTarget(true, 'guarana-memory.js'),
-      pluginTarget(true, 'learning-review.js'),
       pluginTarget(true, 'guarana-orchestrator.js'),
     ].entries()) assert.deepEqual(fs.readFileSync(file), plugins[index]);
   } finally {
@@ -628,6 +660,59 @@ it('refuses modified manifest-tracked plugins before install or uninstall mutati
   } finally {
     process.chdir(originalCwd);
     fs.rmSync(project, { recursive: true, force: true });
+  }
+});
+
+it('refuses unsafe legacy learning-review files before project or global install and uninstall mutations', () => {
+  const originalCwd = process.cwd();
+  const oldHome = process.env.HOME;
+  const oldXdg = process.env.XDG_CONFIG_HOME;
+  for (const useProject of [true, false]) {
+    for (const scenario of ['tracked hash mismatch', 'foreign markerless']) {
+      for (const action of ['install', 'uninstall']) {
+        const home = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-review-migration-home-'));
+        const project = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-review-migration-project-'));
+        const xdg = path.join(home, 'xdg');
+        try {
+          process.env.HOME = home;
+          process.env.XDG_CONFIG_HOME = xdg;
+          process.chdir(project);
+          plugin.install(useProject, { quiet: true });
+
+          const target = pluginTarget(useProject, LEARNING_REVIEW_NAME);
+          const manifestFile = installManifestTarget(useProject);
+          const bytes = scenario === 'tracked hash mismatch'
+            ? Buffer.from('// guarana learning review runtime module\nlocally changed\n')
+            : Buffer.from('foreign markerless runtime file\n');
+          fs.writeFileSync(target, bytes);
+          if (scenario === 'tracked hash mismatch') {
+            const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+            manifest.plugins.push({ path: LEARNING_REVIEW_NAME, sha256: 'a'.repeat(64) });
+            fs.writeFileSync(manifestFile, `${JSON.stringify(manifest, null, 2)}\n`);
+          }
+          const scopeRoot = useProject ? project : home;
+          const before = snapshotTree(scopeRoot);
+          const refusal = scenario === 'tracked hash mismatch'
+            ? /managed plugin file was modified/
+            : /was not installed by guarana/;
+
+          assert.throws(() => {
+            if (action === 'install') plugin.install(useProject, { quiet: true });
+            else plugin.uninstall(useProject);
+          }, refusal, `${scenario} must refuse ${action} in ${useProject ? 'project' : 'global'} scope`);
+          assert.deepEqual(snapshotTree(scopeRoot), before);
+          assert.deepEqual(fs.readFileSync(target), bytes);
+        } finally {
+          process.chdir(originalCwd);
+          if (oldHome === undefined) delete process.env.HOME;
+          else process.env.HOME = oldHome;
+          if (oldXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+          else process.env.XDG_CONFIG_HOME = oldXdg;
+          fs.rmSync(home, { recursive: true, force: true });
+          fs.rmSync(project, { recursive: true, force: true });
+        }
+      }
+    }
   }
 });
 
@@ -891,7 +976,7 @@ it('documents the explicit one-plugin ownership transition in help and README', 
   }
 });
 
-it('adopts marker-owned legacy plugins and preserves unknown plugin-directory extras', () => {
+it('adopts marker-owned legacy plugins and helper copies while preserving unknown extras', () => {
   const originalCwd = process.cwd();
   const project = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-plugin-legacy-adoption-'));
   const unknown = path.join(project, '.opencode', 'plugins', 'my-local-plugin.js');
@@ -899,18 +984,22 @@ it('adopts marker-owned legacy plugins and preserves unknown plugin-directory ex
   try {
     process.chdir(project);
     const legacy = pluginTarget(true, PLUGIN_NAME);
+    const legacyReview = pluginTarget(true, LEARNING_REVIEW_NAME);
     fs.mkdirSync(path.dirname(unknown), { recursive: true });
     fs.writeFileSync(unknown, 'keep this extra plugin\n');
     fs.writeFileSync(legacy, legacyBytes);
+    fs.writeFileSync(legacyReview, '// guarana learning review runtime module\nold untracked copy\n');
 
     plugin.install(true, { quiet: true });
     const manifest = JSON.parse(fs.readFileSync(installManifestTarget(true), 'utf8'));
     assert.deepEqual(manifest.plugins.map((entry) => entry.path).sort(),
-      [PLUGIN_NAME, MEMORY_PLUGIN_NAME, LEARNING_REVIEW_NAME, ORCHESTRATOR_PLUGIN_NAME].sort());
+      [PLUGIN_NAME, MEMORY_PLUGIN_NAME, ORCHESTRATOR_PLUGIN_NAME].sort());
+    assert.equal(fs.existsSync(legacyReview), false);
     assert.equal(fs.readFileSync(unknown, 'utf8'), 'keep this extra plugin\n');
 
     plugin.uninstall(true);
     assert.equal(fs.existsSync(legacy), false);
+    assert.equal(fs.existsSync(legacyReview), false);
     assert.equal(fs.readFileSync(unknown, 'utf8'), 'keep this extra plugin\n');
     const uninstalled = JSON.parse(fs.readFileSync(installManifestTarget(true), 'utf8'));
     assert.equal(uninstalled.plugins, undefined);
@@ -930,7 +1019,7 @@ it('preflights every engine before plugin mutations and refuses an ambiguous leg
     fs.mkdirSync(path.dirname(conflictingFile), { recursive: true });
     fs.writeFileSync(conflictingFile, conflictingBytes);
     assert.throws(() => plugin.install(true, { quiet: true }), /existing Guarana plugin .* is required/);
-    for (const name of ['guarana-telemetry.js', 'guarana-memory.js', 'learning-review.js', 'guarana-orchestrator.js']) {
+    for (const name of ['guarana-telemetry.js', 'guarana-memory.js', 'guarana-orchestrator.js']) {
       assert.equal(fs.existsSync(pluginTarget(true, name)), false);
     }
     assert.equal(fs.existsSync(path.join(project, '.opencode', 'memory')), false);
@@ -987,7 +1076,9 @@ it('deploys Task subagents, reports their health, and removes Guarana-owned prof
     const output = captureStreams();
     await plugin.run(['status'], { useProject: true, ...output });
     assert.equal(output.output().stdout.split('\n').filter((line) => line.includes('subagent') && line.includes('ok (up to date)')).length, expectedAgents.length);
-    assert.ok(output.output().stdout.includes('runtime module learning-review.js: ok (up to date)'));
+    assert.ok(output.output().stdout.includes(
+      `learning-review runtime module (${memoryModuleTarget(true, LEARNING_REVIEW_NAME)}): ok (up to date)`,
+    ));
 
     const foreign = path.join(agentDir, 'my-worker.md');
     fs.writeFileSync(foreign, 'foreign profile\n');
@@ -1000,7 +1091,7 @@ it('deploys Task subagents, reports their health, and removes Guarana-owned prof
   }
 });
 
-it('deploys global plugins, agents, and the setup command under XDG_CONFIG_HOME/opencode', () => {
+it('deploys global plugins, engines, and the setup command under XDG_CONFIG_HOME/opencode', async () => {
   const oldHome = process.env.HOME;
   const oldXdg = process.env.XDG_CONFIG_HOME;
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-plugin-xdg-home-'));
@@ -1012,6 +1103,14 @@ it('deploys global plugins, agents, and the setup command under XDG_CONFIG_HOME/
     plugin.install(false, { quiet: true });
 
     const root = path.join(xdg, 'opencode');
+    const reviewModule = memoryModuleTarget(false, LEARNING_REVIEW_NAME);
+    const manifest = JSON.parse(fs.readFileSync(installManifestTarget(false), 'utf8'));
+    assert.deepEqual(fs.readFileSync(reviewModule), fs.readFileSync(LEARNING_REVIEW_BUNDLE));
+    assert.ok(manifest.engines.memory.some((entry) => entry.path === LEARNING_REVIEW_NAME));
+    assert.ok(!manifest.plugins.some((entry) => entry.path === LEARNING_REVIEW_NAME));
+    const status = captureStreams();
+    await plugin.run(['status'], { useProject: false, ...status });
+    assert.ok(status.output().stdout.includes(reviewModule));
     assert.ok(fs.existsSync(path.join(xdg, 'guarana', 'install-manifest.json')));
     assert.ok(fs.existsSync(pluginTarget(false)));
     assert.ok(fs.existsSync(path.join(root, 'plugins', path.basename(pluginTarget(false)))));

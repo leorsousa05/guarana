@@ -27,6 +27,11 @@ function memoryEngineTarget(useProject) {
   return path.join(pluginsParent, 'memory');
 }
 
+function memoryModuleTarget(useProject, name, projectRoot = process.cwd()) {
+  const root = useProject ? path.join(projectRoot, '.opencode', 'memory') : memoryEngineTarget(false);
+  return path.join(root, name);
+}
+
 // Orchestrator core engine, deployed next to the plugin at the same relative
 // path the plugin resolves (pluginDir/../orchestrator).
 function orchestratorEngineTarget(useProject) {
@@ -83,6 +88,7 @@ module.exports = {
   openCodeRootTarget,
   pluginTarget,
   memoryEngineTarget,
+  memoryModuleTarget,
   orchestratorEngineTarget,
   skillEngineTarget,
   installManifestTarget,

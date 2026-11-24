@@ -220,6 +220,7 @@ test('canonical plan, build, and code prompts preserve research scope and child 
   assert.match(planning, /worker-code \| worker-research \| worker-verify/);
   assert.match(planning, /Assign `mode: read-only` only to bounded research[\s\S]*`worker-research`/);
   assert.match(planning, /worker-research` may inspect[\s\S]*using `read`, `grep`, and `glob`[\s\S]*must never edit, run\s+bash\/shell commands, launch nested tasks, or call `workflow_tick`/);
+  assert.match(planning, /Before dispatching `worker-specs` or another worker with repo-relative permission\s+allowlists, make the active OpenCode Location the target repository or assigned\s+worktree root and pass root-relative paths\. If it differs, move the session first;\s+never broaden a reusable allowlist to compensate\./);
   assert.match(building, /one verifiable condition[\s\S]*call native \*\*Task\*\* with `worker-code`,\s+one exact/);
   assert.match(building, /single bounded read-only research condition, use one `worker-research` Task instead/);
   assert.match(building, /ready` list[\s\S]*capped at \*\*2 active tasks total\*\*/);

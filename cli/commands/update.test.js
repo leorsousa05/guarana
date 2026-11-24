@@ -8,12 +8,12 @@ const install = require('./install.js');
 const { VERSION, SKILLS, WORKER_AGENTS, PLUGIN_NAME, MEMORY_PLUGIN_NAME, ORCHESTRATOR_PLUGIN_NAME } = require('../constants.js');
 const { installManifestTarget } = require('../lib/paths.js');
 
-function captureStreams() {
+function captureStreams({ stdoutTTY = false, stderrTTY = false } = {}) {
   let stdout = '';
   let stderr = '';
   return {
-    stdout: { write: (chunk) => { stdout += chunk.toString(); } },
-    stderr: { write: (chunk) => { stderr += chunk.toString(); } },
+    stdout: { isTTY: stdoutTTY, write: (chunk) => { stdout += chunk.toString(); } },
+    stderr: { isTTY: stderrTTY, write: (chunk) => { stderr += chunk.toString(); } },
     output: () => ({ stdout, stderr }),
   };
 }
@@ -70,6 +70,47 @@ it('adds ANSI styling only when explicitly formatting for a capable terminal', (
   });
   assert.match(summary, /\u001b\[36;1m/);
   assert.match(summary, /\u001b\[32;1m/);
+});
+
+it('uses the shared ASCII lifecycle summary on TTY and honors no-color environment flags', async () => {
+  const originalCwd = process.cwd();
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-update-tty-'));
+  try {
+    process.chdir(project);
+    install.run([], { useProject: true, quiet: true, ...captureStreams() });
+    const previous = { NO_COLOR: process.env.NO_COLOR, TERM: process.env.TERM };
+    try {
+      delete process.env.NO_COLOR;
+      process.env.TERM = 'xterm-256color';
+      const tty = captureStreams({ stdoutTTY: true });
+      update.run([], { useProject: true, ...tty });
+      assert.match(tty.output().stdout, /^\u001b\[1;35mGuarana update\u001b\[0m$/m);
+      assert.match(tty.output().stdout, /^\u001b\[36m\+--\u001b\[0m Status: Update \u001b\[32mcomplete\u001b\[0m$/m);
+      assert.match(tty.output().stdout, /^\u001b\[36m\\--\u001b\[0m Next: Restart OpenCode/m);
+      assert.doesNotMatch(tty.output().stdout, /╭|╰|│/);
+
+      for (const env of [
+        { NO_COLOR: '1', TERM: 'xterm-256color' },
+        { NO_COLOR: undefined, TERM: 'dumb' },
+      ]) {
+        if (env.NO_COLOR === undefined) delete process.env.NO_COLOR;
+        else process.env.NO_COLOR = env.NO_COLOR;
+        process.env.TERM = env.TERM;
+        const noColor = captureStreams({ stdoutTTY: true });
+        update.run([], { useProject: true, ...noColor });
+        assert.doesNotMatch(noColor.output().stdout, /\u001b\[/);
+        assert.match(noColor.output().stdout, /^\+-- Status: Update complete$/m);
+      }
+    } finally {
+      if (previous.NO_COLOR === undefined) delete process.env.NO_COLOR;
+      else process.env.NO_COLOR = previous.NO_COLOR;
+      if (previous.TERM === undefined) delete process.env.TERM;
+      else process.env.TERM = previous.TERM;
+    }
+  } finally {
+    process.chdir(originalCwd);
+    fs.rmSync(project, { recursive: true, force: true });
+  }
 });
 
 it('detects color capability from the injected stdout stream', () => {

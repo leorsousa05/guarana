@@ -11,7 +11,7 @@ import {
   parseReviewResponse,
   resolveOpenCodeModel,
   runOpenCodeReview,
-} from './learning-review.js';
+} from '../memory/learning-review.js';
 
 const tempRoots = [];
 afterEach(() => {

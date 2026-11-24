@@ -128,8 +128,59 @@ unrelated worktree changes.
 
 Next step: fresh independent worker-verify of this implementation.
 
+## Authorized follow-up: OpenCode V2 worker-agent permissions
+
+This follow-up is VALIDATED. Fresh independent worker-verify returned overall
+PASS for criteria 1–5. No live install, reload, deployment, commit, or shipping
+is claimed; the global profile remains unchanged.
+
+### Scope and boundaries
+
+- Change generated worker-agent profiles to OpenCode V2 `permissions` ordered
+  action/resource/effect rules instead of the legacy `permission:` field.
+- Preserve role-specific permission behavior. For `worker-specs`, retain
+  default-deny edits and allow only the established project-root-relative
+  `.specs` records: `.specs/README.md`, `.specs/state/*.md`,
+  `.specs/features/*.md`, and `.specs/changes/*.md`. Do not add a broad
+  absolute-prefix permission.
+- Worker dispatches must run from the target repository root and use
+  project-root-relative paths for the existing narrow allowlist.
+- Cover generated project and global profile scopes in tests. Do not modify
+  the installed/customized global `worker-specs` profile.
+
+### Acceptance criteria
+
+1. Every generated worker-agent profile uses a V2 `permissions` ordered
+   action/resource/effect list; no generated profile uses legacy `permission:`.
+2. Generated profiles preserve role-specific behavior, including
+   `worker-specs` default-deny edits and grants limited to the existing
+   project-root-relative `.specs` record allowlist above, with no broad
+   absolute-prefix permission.
+3. Tests assert V2 frontmatter, allowed and forbidden edit-path cases, and both
+   project and global profile scopes.
+4. Worker dispatch instructions run from the target repository root and use
+   root-relative paths for the existing narrow `.specs` allowlist.
+
+### Validation proof
+
+- Independent worker-verify confirmed V2 permissions for all five profiles;
+  `worker-specs` remains default-deny with exactly `.specs/README.md`,
+  `.specs/state/*.md`, `.specs/features/*.md`, and `.specs/changes/*.md`
+  edit grants. Architecture, conventions, decisions, handoff JSON, neighboring,
+  unlisted, traversal, absolute, and foreign paths are denied. Only the two
+  fixed shell recorder commands are permitted.
+- It also confirmed canonical and CLI repo-root dispatch guidance, generated
+  and installed project/global policy tests, and no global profile change.
+- Focused agents tests: 4/4 PASS; prompt tests: 52/52 PASS; `npm run check-cli`,
+  `git diff --check`, and `guarana specs validate ... --json` PASS (261 files,
+  302 links, 0 issues). Primary `npm test`: 623/623 PASS.
+- Implementation paths: `cli/lib/agents.js`, `cli/lib/agents.test.js`,
+  `skills/guarana/skills/plan/SKILL.md`,
+  `cli/skills/guarana/skills/plan/SKILL.md`,
+  `orchestrator/prompt.test.js`, and `cli/orchestrator/prompt.test.js`.
+
 <!-- guarana:record:start -->
 Status: VALIDATED
-Proof: Independent worker-verify overall AND PASS 6/6: read-only status inquiries, durable record cadence, ADR/known-issue boundaries, compact prompt, generated worker profiles/role isolation/permission regression, and ownership/current records all passed.; npm test PASS 497/497 across 55 suites; nonfatal WebSocket port-in-use warnings only.; npm run check-cli PASS; CLI bundle matches canonical sources.; guarana specs validate . --json PASS: 184 files, 67 feature specs, 30 ADRs, 207 links, 0 issues.; git diff --check PASS.; The confirmed status-inquiry bug is fixed for all three variants and is resolved by this overall proof.; Recorder cleanup remains as approved: no duplicate Deterministic .specs Record Command row; canonical Guarana spec record automation row retains VALIDATED / PASS 19/19. The 19/19 update and duplicate removal remain accepted changes.; The spec-record-command baseline receipt/tracker and pending cli/lib/spec-record.js and cli/commands/specs.test.js recorder source/test work are preserved; optional-currentStep compatibility was verified in this follow-up.; Only the project-local worker-specs profile was refreshed with approval; global profile and deployment were untouched. No commit, push, version, tag, publish, release, or shipping occurred.
+Proof: Fresh independent worker-verify overall PASS, criteria 1–5; independently confirmed V2 permissions for all five profiles, exact worker-specs allowlist, default-deny and denials for architecture, conventions, decisions, handoff JSON, neighboring/unlisted/traversal/absolute/foreign paths, only two fixed shell recorder commands, canonical/CLI repo-root dispatch guidance, generated and installed project/global policy tests, and no global profile change.; Independent focused agents tests 4/4 PASS and prompt tests 52/52 PASS; npm run check-cli PASS; git diff --check PASS; guarana specs validate ... --json PASS (261 files, 302 links, 0 issues). Primary npm test PASS 623/623.; Implementation paths: cli/lib/agents.js, cli/lib/agents.test.js, skills/guarana/skills/plan/SKILL.md, cli/skills/guarana/skills/plan/SKILL.md, orchestrator/prompt.test.js, cli/orchestrator/prompt.test.js.; No live install, reload, deployment, commit, or shipping occurred; the global profile remains unchanged.
 Change: none
 <!-- guarana:record:end -->

@@ -1,5 +1,13 @@
 # Known Issues
 
+## 2026-11-24 — Generated worker-specs profile overgrants edit paths
+- **Symptom:** The generated OpenCode V2 `worker-specs` profile allows edits to `.specs/architecture.md`, `.specs/conventions.md`, `.specs/decisions/*.md`, and `.specs/state/worker-specs-handoff.json`, outside the current follow-up's specified edit allowlist.
+- **Reproduction trigger:** Generate worker profiles with `cli/lib/agents.js` and inspect the `worker-specs` edit rules. Independent verification reproduced the mismatch at criterion 2; `cli/lib/agents.test.js` currently asserts these extra edit grants as allowed. The two exact shell commands for recording the handoff are separate rules and are not implicated.
+- **Root cause:** The V2 permission generator and regression test carried forward a broader prior edit policy instead of applying the current follow-up's explicit `.specs/README.md`, `.specs/state/*.md`, `.specs/features/*.md`, and `.specs/changes/*.md` edit allowlist.
+- **Classification:** Unclassified in the Guarana debug failure-mode matrix; this confirmed permission-scope defect matches none of runaway, oscillation, context loss, unbounded transient retry, or loop-as-terrier.
+- **Narrow mitigation:** Remove only those four extra edit grants and update the tests to assert the specified allowlist exactly and deny the excluded paths. Preserve default-deny edits and the two exact shell commands that record the handoff JSON.
+- **Status:** RESOLVED — Removed only the four extra edit grants; retained default-deny and the two fixed shell recorder commands. Fresh independent worker-verify overall PASS, criteria 1–5, confirmed the exact narrow allowlist and all specified denials. Focused agents tests 4/4 and prompt tests 52/52 PASS; npm run check-cli, git diff --check, and specs validation (261 files, 302 links, 0 issues) PASS. No live install, reload, deployment, commit, or shipping occurred; the global profile remains unchanged.
+
 Dashboard-specific incidents below are historical records. The Dashboard web
 app and `guarana web` command were removed on 2026-11-05; these entries do not
 describe currently supported UI behavior.

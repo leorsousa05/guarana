@@ -174,6 +174,7 @@ function pluginTargets(plan) {
   return [
     ...(plan.engines.action === 'install' || plan.engines.manifestExists ? [plan.engines.manifestFile] : []),
     ...plan.plugins.filter(({ exists }) => plan.engines.action === 'install' || exists).map(({ target }) => target),
+    ...(plan.legacyLearningReview?.exists ? [plan.legacyLearningReview.target] : []),
     ...plan.engines.engines.flatMap((item) => [
       ...(plan.engines.action === 'install'
         ? item.bundleFiles.map(({ path: relative }) => path.join(item.root, ...relative.split('/')))

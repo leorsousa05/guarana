@@ -7,10 +7,8 @@ import { pathToFileURL } from 'node:url';
 import { initVault } from '../memory/vault.js';
 
 // ADR-004 deployability: an INSTALLED copy of the plugin (plugin/guarana-memory.js
-// copied verbatim to a foreign <config>/plugins/) must resolve the memory engine
-// from its sibling <config>/memory/ (plugin's `../memory` resolution), not rely on
-// the repo calling-into layout. Regression for the "memory engine not available"
-// bug that only surfaced with standalone installs.
+// copied verbatim to a foreign <config>/plugins/) must resolve both the memory
+// engine and learning-review runtime module from sibling <config>/memory/.
 describe('GuaranaMemory standalone deploy (ADR-004)', () => {
   let tmpDir;
   let pluginsDir;
@@ -24,13 +22,10 @@ describe('GuaranaMemory standalone deploy (ADR-004)', () => {
     fs.mkdirSync(pluginsDir, { recursive: true });
     fs.mkdirSync(memoryDir, { recursive: true });
     fs.writeFileSync(path.join(pluginsDir, 'package.json'), '{"type":"module"}\n');
+    fs.writeFileSync(path.join(memoryDir, 'package.json'), '{"type":"module"}\n');
     fs.copyFileSync(
       path.resolve('plugin/guarana-memory.js'),
       path.join(pluginsDir, 'guarana-memory.js')
-    );
-    fs.copyFileSync(
-      path.resolve('plugin/learning-review.js'),
-      path.join(pluginsDir, 'learning-review.js')
     );
     for (const f of fs.readdirSync(path.resolve('memory'))) {
       const s = path.resolve('memory', f);
@@ -45,10 +40,20 @@ describe('GuaranaMemory standalone deploy (ADR-004)', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('an installed plugin writes a confirmed decision via its sibling engine', async () => {
+  it('an installed plugin loads its sibling runtime module and writes via its sibling engine', async () => {
     const { GuaranaMemory } = await import(
       pathToFileURL(path.join(pluginsDir, 'guarana-memory.js')).href
     );
+    const { normalizeReviewRequest } = await import(
+      pathToFileURL(path.join(memoryDir, 'learning-review.js')).href
+    );
+    assert.deepEqual(normalizeReviewRequest({
+      summary: 'Reviewed the installed layout.',
+      changedPaths: ['plugins/guarana-memory.js'],
+    }), {
+      summary: 'Reviewed the installed layout.',
+      changedPaths: ['plugins/guarana-memory.js'],
+    });
     const api = await GuaranaMemory({ directory: projDir });
     const raw = await api.tool.memory_save_decision.execute(
       {

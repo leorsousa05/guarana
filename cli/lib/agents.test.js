@@ -6,13 +6,13 @@ const path = require('node:path');
 const agents = require('./agents.js');
 const { workerAgentsTarget } = require('./paths.js');
 
-function parseResearchPermissions(content) {
+function parseWorkerPermissions(content) {
   const frontmatter = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
-  assert.ok(frontmatter, 'worker-research must have valid frontmatter boundaries');
+  assert.ok(frontmatter, 'worker profile must have valid frontmatter boundaries');
   const lines = frontmatter[1].split(/\r?\n/);
   assert.equal(lines.some((line) => /^permission\s*:/.test(line)), false, 'V2 profile must not use legacy permission');
   const policyIndex = lines.indexOf('permissions:');
-  assert.notEqual(policyIndex, -1, 'worker-research must declare V2 permissions');
+  assert.notEqual(policyIndex, -1, 'worker profile must declare V2 permissions');
   assert.equal(lines.filter((line) => line === 'permissions:').length, 1);
 
   const scalar = (value) => {
@@ -38,8 +38,19 @@ function parseResearchPermissions(content) {
   return permissions;
 }
 
+function resourceMatches(pattern, resource) {
+  const glob = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+  return new RegExp(`^${glob}$`).test(resource);
+}
+
+function effectFor(permissions, action, resource = '*') {
+  return permissions
+    .filter((rule) => (rule.action === '*' || rule.action === action) && resourceMatches(rule.resource, resource))
+    .at(-1)?.effect;
+}
+
 function assertReadOnlyResearchPermissions(content) {
-  const permissions = parseResearchPermissions(content);
+  const permissions = parseWorkerPermissions(content);
   assert.deepEqual(permissions, [
     { action: '*', resource: '*', effect: 'deny' },
     { action: 'external_directory', resource: '*', effect: 'deny' },
@@ -47,18 +58,98 @@ function assertReadOnlyResearchPermissions(content) {
     { action: 'glob', resource: '*', effect: 'allow' },
     { action: 'grep', resource: '*', effect: 'allow' },
   ]);
-  const effectForAction = (action) => permissions
-    .filter((rule) => rule.action === '*' || rule.action === action)
-    .at(-1)?.effect;
   for (const action of ['read', 'glob', 'grep']) {
-    assert.equal(effectForAction(action), 'allow', `${action} must be allowed`);
+    assert.equal(effectFor(permissions, action), 'allow', `${action} must be allowed`);
   }
   for (const action of [
-    'external_directory', 'bash', 'edit', 'write', 'apply_patch', 'patch', 'task',
-    'subagent', 'workflow_tick', 'execute', 'webfetch', 'websearch', 'list',
+    'external_directory', 'shell', 'edit', 'write', 'apply_patch', 'patch', 'subagent',
+    'workflow_tick', 'execute', 'webfetch', 'websearch', 'list',
     'question', 'skill', 'todowrite', 'lsp', 'doom_loop',
   ]) {
-    assert.equal(effectForAction(action), 'deny', `${action} must be denied by default or explicitly`);
+    assert.equal(effectFor(permissions, action), 'deny', `${action} must be denied by default or explicitly`);
+  }
+}
+
+function assertWorkerProfilePermissions(profiles) {
+  for (const { name, content } of profiles) {
+    const permissions = parseWorkerPermissions(content);
+    assert.equal(permissions.some(({ action }) => ['task', 'bash'].includes(action)), false, `${name} must use V2 action names`);
+
+    for (const action of ['subagent', 'workflow_tick']) {
+      assert.equal(effectFor(permissions, action), 'deny', `${name} must deny ${action}`);
+    }
+    for (const action of ['read', 'grep', 'glob']) {
+      assert.equal(effectFor(permissions, action), 'allow', `${name} must allow ${action}`);
+    }
+
+    if (name === 'worker-research') {
+      assertReadOnlyResearchPermissions(content);
+    } else {
+      assert.equal(effectFor(permissions, 'shell', 'npm test'), name === 'worker-specs' ? 'deny' : 'allow');
+    }
+    if (name === 'worker-code') {
+      assert.equal(effectFor(permissions, 'edit', 'src/index.js'), 'allow');
+    } else if (name === 'worker-verify') {
+      assert.equal(effectFor(permissions, 'edit', '.specs/README.md'), 'deny');
+    } else if (name === 'worker-debug') {
+      assert.equal(effectFor(permissions, 'edit', '.specs/state/known-issues.md'), 'allow');
+      assert.equal(effectFor(permissions, 'edit', '.specs/README.md'), 'deny');
+    } else if (name === 'worker-specs') {
+      const allowedPaths = [
+        '.specs/README.md',
+        '.specs/state/project-state.md',
+        '.specs/features/orchestrator.md',
+        '.specs/features/orchestrator/spec-update-isolation.md',
+        '.specs/changes/2026-10-09-worker-specs-permissions.md',
+      ];
+      const editAllows = permissions
+        .filter(({ action, effect }) => action === 'edit' && effect === 'allow')
+        .map(({ resource }) => resource);
+      assert.deepEqual(editAllows, [
+        '.specs/README.md',
+        '.specs/state/*.md',
+        '.specs/features/*.md',
+        '.specs/changes/*.md',
+      ]);
+      assert.deepEqual(permissions.find(({ action }) => action === 'edit'), {
+        action: 'edit',
+        resource: '*',
+        effect: 'deny',
+      });
+      const shellAllows = permissions
+        .filter(({ action, effect }) => action === 'shell' && effect === 'allow')
+        .map(({ resource }) => resource);
+      assert.deepEqual(shellAllows, [
+        'guarana specs record --file .specs/state/worker-specs-handoff.json',
+        'node bin/guarana.js specs record --file .specs/state/worker-specs-handoff.json',
+      ]);
+      for (const requestedPath of allowedPaths) {
+        assert.equal(effectFor(permissions, 'edit', requestedPath), 'allow', `${requestedPath} must be allowed`);
+      }
+      for (const requestedPath of [
+        'README.md',
+        '.specs/architecture.md',
+        '.specs/architecture.md.bak',
+        '.specs/architecture/subsystem.md',
+        '.specs/conventions.md',
+        '.specs/conventions.md.bak',
+        '.specs/conventions/naming.md',
+        '.specs/decisions/ADR-001-example.md',
+        '.specs/state/worker-specs-handoff.json',
+        '.specs/features/unlisted.txt',
+        '.specs/changes/unlisted.txt',
+        '.specs/unlisted.md',
+        '.specs/../README.md',
+        '../other-project/.specs/README.md',
+        '/tmp/foreign-project/.specs/README.md',
+        '/home/user/project/.specs/README.md',
+        'other-project/.specs/README.md',
+      ]) {
+        assert.equal(effectFor(permissions, 'edit', requestedPath), 'deny', `${requestedPath} must be denied`);
+      }
+      assert.equal(effectFor(permissions, 'shell', 'guarana specs record --file .specs/state/worker-specs-handoff.json'), 'allow');
+      assert.equal(effectFor(permissions, 'shell', 'node bin/guarana.js specs record --file .specs/state/worker-specs-handoff.json'), 'allow');
+    }
   }
 }
 
@@ -77,6 +168,8 @@ function inProject(callback) {
 test('worker profiles include canonical skill procedures and distinct permissions', () => {
   const generated = agents.profiles(true);
   assert.deepEqual(generated.map(({ name }) => name), ['worker-code', 'worker-verify', 'worker-research', 'worker-debug', 'worker-specs']);
+  assertWorkerProfilePermissions(generated);
+  assertWorkerProfilePermissions(agents.profiles(false));
   for (const { content } of generated) {
     assert.match(content, /mode: subagent/);
     assert.match(content, /^hidden: false$/m);
@@ -84,16 +177,12 @@ test('worker profiles include canonical skill procedures and distinct permission
 
   const code = generated[0].content;
   assert.match(code, /mode: subagent/);
-  assert.match(code, /task: deny/);
-  assert.match(code, /workflow_tick: deny/);
-  assert.match(code, /edit: allow/);
   assert.match(code, /Read before edit/);
   assert.match(code, /diff \(or exact file list\)/);
   assert.match(code, /smallest ordinary checks mapped to changed acceptance criteria/i);
   assert.match(code, /Do not run smoke tests/i);
 
   const verify = generated[1].content;
-  assert.match(verify, /edit: deny/);
   assert.match(verify, /Independent verifier/);
   assert.match(verify, /per-criterion PASS\/FAIL \+ proof path/);
   assert.match(verify, /bounded searches of supported authoritative and alternative sources/i);
@@ -111,59 +200,10 @@ test('worker profiles include canonical skill procedures and distinct permission
   assert.match(skillIndex, /guarana:research.*read-only.*\[skills\/research\/SKILL\.md\]/i);
 
   const debug = generated[3].content;
-  assert.match(debug, /"\*": deny/);
-  assert.match(debug, /"\.specs\/state\/known-issues\.md": allow/);
-  assert.doesNotMatch(debug, /\*\*\//);
   assert.match(debug, /Failure-mode matrix/);
 
   const specs = generated[4].content;
   assert.match(specs, /mode: subagent/);
-  assert.match(specs, /task: deny/);
-  assert.match(specs, /workflow_tick: deny/);
-  assert.doesNotMatch(specs, /^  bash: allow$/m);
-  const specsBashRules = specs.split('  bash:\n')[1].split('\n  edit:')[0];
-  assert.deepEqual(specsBashRules.split('\n'), [
-    '    "*": deny',
-    '    "guarana specs record --file .specs/state/worker-specs-handoff.json": allow',
-    '    "node bin/guarana.js specs record --file .specs/state/worker-specs-handoff.json": allow',
-  ]);
-  assert.match(specs, /"\*": deny/);
-  const specsEditRules = specs.split('  edit:\n')[1].split('\n---')[0];
-  assert.doesNotMatch(specsEditRules, /\*\*\//);
-  const allowedSpecsPaths = [
-    '.specs/README.md',
-    '.specs/architecture.md',
-    '.specs/conventions.md',
-    '.specs/decisions/ADR-001-example.md',
-    '.specs/state/project-state.md',
-    '.specs/state/worker-specs-handoff.json',
-    '.specs/features/orchestrator.md',
-    '.specs/features/orchestrator/spec-update-isolation.md',
-    '.specs/changes/2026-10-09-worker-specs-permissions.md',
-  ];
-  const isAllowedByRule = (requestedPath) => specsEditRules.split('\n').some((rule) => {
-    const match = rule.match(/^\s+"(.+)": allow$/);
-    if (!match) return false;
-    const glob = match[1].replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
-    return new RegExp(`^${glob}$`).test(requestedPath);
-  });
-  for (const requestedPath of allowedSpecsPaths) {
-    assert.equal(isAllowedByRule(requestedPath), true, `${requestedPath} must be allowed by a worker-specs edit rule`);
-  }
-  assert.match(specsEditRules, /"\.specs\/conventions\.md": allow/);
-  const forbiddenSpecsVariants = [
-    'README.md',
-    '.specs/architecture.md.bak',
-    '.specs/architecture/subsystem.md',
-    '.specs/conventions.md.bak',
-    '.specs/conventions/naming.md',
-  ];
-  for (const requestedPath of forbiddenSpecsVariants) {
-    assert.equal(isAllowedByRule(requestedPath), false, `${requestedPath} must not be allowed by worker-specs`);
-  }
-  assert.match(specsEditRules, /"\*": deny/);
-  assert.doesNotMatch(specsBashRules, /--stdin|<<|heredoc/i);
-  assert.doesNotMatch(specs, /edit:\s*allow\s*$/m);
   assert.match(specs, /Do not invent requirements, acceptance decisions/);
   assert.match(specs, /dispatched only when a durable human-readable `.specs` record will\s+change/i);
   assert.match(specs, /material\s+alternatives/i);
@@ -207,6 +247,10 @@ test('project install is idempotent, status detects profiles, and uninstall pres
   inProject((project) => {
     const installed = agents.installWorkerAgents(true);
     assert.equal(installed.length, 5);
+    assertWorkerProfilePermissions(installed.map(({ name, target }) => ({
+      name,
+      content: fs.readFileSync(target, 'utf8'),
+    })));
     for (const profile of agents.workerAgentStatus(true)) assert.equal(profile.status, 'ok (up to date)');
     agents.installWorkerAgents(true);
 
@@ -247,6 +291,10 @@ test('global worker profiles deploy below the OpenCode agents root', () => {
     }
     const installed = agents.installWorkerAgents(false);
     assert.equal(path.dirname(installed[0].target), path.join(home, '.config', 'opencode', 'agents'));
+    assertWorkerProfilePermissions(installed.map(({ name, target }) => ({
+      name,
+      content: fs.readFileSync(target, 'utf8'),
+    })));
     for (const { target } of installed) {
       assert.match(fs.readFileSync(target, 'utf8'), /^hidden: false$/m);
     }

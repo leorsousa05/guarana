@@ -2,6 +2,7 @@
 
 const { it } = require('node:test');
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -9,7 +10,7 @@ const install = require('./install.js');
 const update = require('./update.js');
 const uninstall = require('./uninstall.js');
 const plugin = require('./plugin.js');
-const { PLUGIN_NAME, STAMP } = require('../constants.js');
+const { PLUGIN_NAME, LEARNING_REVIEW_NAME, STAMP } = require('../constants.js');
 const { targetDir, pluginTarget, advisorSettingsTarget, installManifestTarget } = require('../lib/paths.js');
 
 function treeSnapshot(root, relative = '', result = new Map()) {
@@ -161,6 +162,27 @@ for (const useProject of [true, false]) {
     } finally {
       fault.restore();
     }
+    assertRestored(roots, before);
+  }));
+
+  it(`rolls back ${scope} legacy runtime migration after a plugin write fails`, () => withScope(useProject, ({ roots }) => {
+    plugin.install(useProject, { quiet: true });
+    const legacyTarget = pluginTarget(useProject, LEARNING_REVIEW_NAME);
+    const legacyBytes = Buffer.from('// guarana learning review runtime module\nlegacy copy\n');
+    fs.writeFileSync(legacyTarget, legacyBytes);
+    const manifest = JSON.parse(fs.readFileSync(installManifestTarget(useProject), 'utf8'));
+    manifest.plugins.push({
+      path: LEARNING_REVIEW_NAME,
+      sha256: crypto.createHash('sha256').update(legacyBytes).digest('hex'),
+    });
+    fs.writeFileSync(installManifestTarget(useProject), `${JSON.stringify(manifest, null, 2)}\n`);
+    const before = snapshotRoots(roots);
+    const pluginFile = pluginTarget(useProject, PLUGIN_NAME);
+    const fault = injectAfter('copyFileSync', (_source, destination) => destination === pluginFile);
+    try {
+      assert.throws(() => plugin.install(useProject, { quiet: true }), /injected after copyFileSync/);
+      assert.ok(fault.injected);
+    } finally { fault.restore(); }
     assertRestored(roots, before);
   }));
 

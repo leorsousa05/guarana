@@ -14,12 +14,12 @@ const { advisorSettingsTarget, advisorCommandTarget, advisorAgentsTarget, adviso
 
 const BIN = path.join(__dirname, '..', '..', 'bin', 'guarana.js');
 
-async function captureOutput(callback) {
+async function captureOutput(callback, { stdoutTTY = false, stderrTTY = false } = {}) {
   let stdout = '';
   let stderr = '';
   const streams = {
-    stdout: { write: (chunk) => { stdout += chunk.toString(); } },
-    stderr: { write: (chunk) => { stderr += chunk.toString(); } },
+    stdout: { isTTY: stdoutTTY, write: (chunk) => { stdout += chunk.toString(); } },
+    stderr: { isTTY: stderrTTY, write: (chunk) => { stderr += chunk.toString(); } },
   };
   const result = await callback(streams);
   return { result, stdout, stderr };
@@ -108,6 +108,24 @@ test('advisor model discovery and caught exceptions return numeric statuses with
       assert.equal(caughtError.stdout, '');
       assert.equal(caughtError.stderr, 'advisor: catalog failed\n');
       assert.equal(process.exitCode, 23);
+    } finally {
+      modelCatalog.discoverModels = originalDiscoverModels;
+    }
+  });
+});
+
+test('advisor models keeps its JSON payload ANSI-free on a color-capable TTY', async () => {
+  await isolated(async () => {
+    const originalDiscoverModels = modelCatalog.discoverModels;
+    try {
+      const models = [{ id: 'openai/gpt-5' }];
+      modelCatalog.discoverModels = async () => ({ models, error: null });
+      const result = await captureOutput((streams) =>
+        advisor.run(['models', 'openai'], { useProject: false, ...streams }),
+      { stdoutTTY: true, stderrTTY: true });
+      assert.equal(result.result, 0);
+      assert.equal(result.stdout, `${JSON.stringify(models, null, 2)}\n`);
+      assert.equal(result.stderr, '');
     } finally {
       modelCatalog.discoverModels = originalDiscoverModels;
     }
