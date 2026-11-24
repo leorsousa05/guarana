@@ -178,6 +178,9 @@ is claimed; the global profile remains unchanged.
   `skills/guarana/skills/plan/SKILL.md`,
   `cli/skills/guarana/skills/plan/SKILL.md`,
   `orchestrator/prompt.test.js`, and `cli/orchestrator/prompt.test.js`.
+- Implementation validation remains recorded here; source shipment for commit
+  `00f427b03bcbca837686bc84ae259cd6efe02918` is tracked separately in the
+  [dedicated OpenCode V2 worker-agent permissions record](opencode-v2-worker-agent-permissions.md).
 
 <!-- guarana:record:start -->
 Status: VALIDATED

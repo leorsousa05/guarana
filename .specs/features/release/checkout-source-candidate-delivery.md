@@ -1,6 +1,6 @@
 # Feature spec: Guarana checkout source-candidate delivery
 
-**Status: TASKED**
+**Status: SHIPPED**
 
 ## Goal
 Record the explicitly authorized Guarana 1.5.3 unpublished, untagged GitHub source-candidate delivery and its exact checkout scope and gates before any version or source edits.
@@ -36,7 +36,7 @@ Record the explicitly authorized Guarana 1.5.3 unpublished, untagged GitHub sour
 7. No tag, npm publication or dist-tag, GitHub Release, formal package release, force-push, or retired smoke test occurs; no change receipt is created before candidate gates pass.
 
 <!-- guarana:record:start -->
-Status: TASKED
-Proof: none
+Status: SHIPPED
+Proof: Source commit 00f427b03bcbca837686bc84ae259cd6efe02918 (chore(release): prepare Guarana 1.5.3 source candidate), parent 0ae04b37041fee8e48c919212cbbf0ce344a9cda. Normal push to https://github.com/leorsousa05/guarana.git reported 0ae04b3..00f427b main -> main. Immediately after push, git ls-remote origin refs/heads/main returned exactly 00f427b03bcbca837686bc84ae259cd6efe02918, equal to local HEAD; checkout was clean.; Fresh independent worker-verify gate before push: overall PASS, criteria 1–5, for the exact candidate. npm run build PASS; npm test PASS (628/628); npm run check-cli PASS; Specs validation PASS (263 files, 103 features, 48 ADRs, 302 links, 0 issues); both diff checks PASS. npm pack --dry-run --json was inventory-only for guarana@1.5.3: 105 files, LICENSE/CHANGELOG.md/RELEASING.md included, no node_modules, and no tarball.; Local and remote candidate tags were absent; GitHub releases API was empty; npm view guarana@1.5.3 returned E404. No tag, npm publication or dist-tag, GitHub Release, formal release, force push, or retired smoke was performed. Source remains unpublished and untagged.
 Change: none
 <!-- guarana:record:end -->
