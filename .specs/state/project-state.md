@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-11-05T14:00:22-03:00
+Last updated: 2026-11-25T06:04:58.610Z
 
 ## Per-skill status
 | Skill | Status |
@@ -13,7 +13,7 @@ Last updated: 2026-11-05T14:00:22-03:00
 | guarana:debug | SHIPPED (optional, trigger-only) |
 | guarana:measure | SHIPPED (optional, trigger-only) |
 | guarana CLI | VALIDATED — update output polish |
-| guarana dashboard | REMOVED — 2026-11-05; app, server, CLI bundle, and `guarana web` removed; project/user data and saved settings retained |
+| guarana dashboard | VALIDATED — reintroduced 2026-11-24; the 2026-11-05 removal remains historical; not SHIPPED |
 | guarana memory | **VALIDATED** — final gate passed and hardening batch applied; separate memory-hardening follow-up independently verified PASS (8/8); prompt tests establish delivered trust policy, not live model obedience, and the 6,000-character limit applies to serialized records, not surrounding framing |
 | guarana orchestrator | **SPECIFIED → IMPLEMENTED → VALIDATED** |
 | Guarana native worker dispatch | **VALIDATED** |
@@ -24,7 +24,7 @@ Last updated: 2026-11-05T14:00:22-03:00
 | Guarana optional model advisor | **VALIDATED** — UI criteria 11–14 and ADR-027 runtime proof |
 
 ## Current step
-Project-scoped preference injection is VALIDATED after final independent PASS; no real vault data was accessed or changed, and shipping has not occurred.
+Dashboard detail workspace redesign is VALIDATED, not SHIPPED, after final independent browser PASS for criteria 1–5. Dashboard reintroduction, Fieldstation visual identity, and page-flow rework remain VALIDATED, not SHIPPED. This UI follow-up made no server/API/schema/storage contract changes; pre-existing Dashboard server/API files are not attributed to it. No commit, push, release, deployment, publication, or shipping is claimed.
 
 ## Product scope update — Dashboard removal — 2026-11-05
 

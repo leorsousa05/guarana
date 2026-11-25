@@ -23,6 +23,8 @@ const pairs = [
   ['orchestrator', 'cli/orchestrator'],
   ['memory', 'cli/memory'],
   ['skill-engine', 'cli/skill-engine'],
+  ['dashboard/server', 'cli/dashboard/server'],
+  ['dashboard/web/dist', 'cli/dashboard/web/dist'],
 ];
 
 let ok = true;

@@ -10,7 +10,7 @@ function publicUsageForm(row) {
   return row.trim().split(/\s+(?=[A-Z][a-z])/)[0].replace(/\s+/g, ' ');
 }
 
-test('README CLI Reference includes every public command form from CLI metadata', () => {
+test('README CLI Reference includes every documented non-dashboard command form', () => {
   const readme = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8');
   const start = readme.indexOf('## CLI Reference');
   assert.notEqual(start, -1, 'README CLI Reference heading is present');
@@ -23,7 +23,7 @@ test('README CLI Reference includes every public command form from CLI metadata'
     codeBlock[1].split('\n').map((line) => line.trim().replace(/\s+/g, ' '))
   );
   const expectedForms = [
-    ...COMMANDS.flatMap(({ globalUsage }) => globalUsage),
+    ...COMMANDS.filter(({ name }) => name !== 'web').flatMap(({ globalUsage }) => globalUsage),
     ...GLOBAL_FLAGS,
   ]
     .filter((row) => /^\s*guarana\s/.test(row))

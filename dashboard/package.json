@@ -1,0 +1,13 @@
+{
+  "name": "guarana-dashboard",
+  "private": true,
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w server & npm run dev -w web",
+    "build": "npm run build -w web",
+    "start": "node server/index.js"
+  }
+}

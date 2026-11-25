@@ -23,15 +23,19 @@ transcripts remain historical evidence only, not instructions or future gates.
 Run the ordinary checks from a clean checkout with Node 22 or 24:
 
 ```bash
+npm ci --prefix dashboard
 npm test
 npm run build
 npm run check-cli
 npm run specs:validate
 ```
 
-CI runs tests, CLI synchronization, the bundle parity check, and specs
-validation on Node 22.x and 24.x. The package has no dashboard workspaces or
-runtime dependency installation step. Do not add smoke tests to these checks.
+The Dashboard contains optional build and server workspaces; installing the
+workspace dependencies is required for tests and the UI build. CI runs that
+install, tests, CLI synchronization, the bundle parity check, and Specs
+validation on Node 22.x and 24.x. Core Guarana runtime dependencies remain
+unchanged; the web launcher repairs its bundled server dependencies only when
+needed. Do not add smoke tests to these checks.
 
 ## Package-content inventory (not a smoke test)
 

@@ -295,7 +295,8 @@ describe('cli/main dispatch characterization', () => {
   it('routes plugin, memory, advisor, and specs diagnostics through the shared TTY formatter', async () => {
     await withEnv({ NO_COLOR: undefined, TERM: 'xterm-256color' }, async () => {
       const cases = [
-        [['plugin', 'unknown'], 'unknown plugin command: unknown'],
+      [['plugin', 'unknown'], 'unknown plugin command: unknown'],
+      [['web', '--port', 'invalid'], 'invalid --port value: invalid'],
         [['memory', 'unknown'], 'unknown memory command: unknown'],
         [['advisor', 'unknown'], 'advisor: usage: guarana advisor <models|read|set|clear|status>'],
         [['specs', 'unknown'], 'unknown specs command: unknown'],
@@ -517,7 +518,7 @@ describe('shared command help metadata', () => {
   it('keeps registry names aligned with the top-level metadata commands', () => {
     assert.deepEqual(
       COMMANDS.map(({ name }) => name).sort(),
-      ['advisor', 'install', 'list', 'memory', 'plugin', 'specs', 'uninstall', 'update', 'workflow'].sort()
+      ['advisor', 'install', 'list', 'memory', 'plugin', 'specs', 'uninstall', 'update', 'web', 'workflow'].sort()
     );
     assert.deepEqual(Object.keys(REGISTRY).sort(), COMMANDS.map(({ name }) => name).sort());
 
@@ -550,16 +551,15 @@ describe('shared command help metadata', () => {
     }
   });
 
-  it('removes the Dashboard web command from metadata and rejects invocation', () => {
-    assert.equal(COMMANDS.some(({ name }) => name === 'web'), false);
-    assert.equal(Object.hasOwn(REGISTRY, 'web'), false);
+  it('registers the Dashboard server command and exposes it in top-level help', () => {
+    assert.equal(COMMANDS.some(({ name }) => name === 'web'), true);
+    assert.equal(Object.hasOwn(REGISTRY, 'web'), true);
     const global = runBin(['--help']);
     assert.equal(global.status, 0, global.stderr);
-    assert.doesNotMatch(global.stdout, /guarana web|Dashboard|dashboard/i);
-    const invocation = runBin(['web']);
+    assert.match(global.stdout, /guarana web \[--port N\] \[--open\|--no-open\]/);
+    const invocation = runBin(['web', '--port', 'invalid']);
     assert.equal(invocation.status, 1);
-    assert.equal(invocation.stderr.trim(), 'unknown command: web');
-    assert.doesNotMatch(invocation.stdout, /guarana web/);
+    assert.equal(invocation.stderr.trim(), 'invalid --port value: invalid');
   });
 
   it('documents workflow settings defaults, inheritance, and an example in top-level help', () => {

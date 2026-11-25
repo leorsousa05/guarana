@@ -8,9 +8,20 @@
 - **Narrow mitigation:** Remove only those four extra edit grants and update the tests to assert the specified allowlist exactly and deny the excluded paths. Preserve default-deny edits and the two exact shell commands that record the handoff JSON.
 - **Status:** RESOLVED — Removed only the four extra edit grants; retained default-deny and the two fixed shell recorder commands. Fresh independent worker-verify overall PASS, criteria 1–5, confirmed the exact narrow allowlist and all specified denials. Focused agents tests 4/4 and prompt tests 52/52 PASS; npm run check-cli, git diff --check, and specs validation (261 files, 302 links, 0 issues) PASS. No live install, reload, deployment, commit, or shipping occurred; the global profile remains unchanged.
 
-Dashboard-specific incidents below are historical records. The Dashboard web
-app and `guarana web` command were removed on 2026-11-05; these entries do not
-describe currently supported UI behavior.
+## 2026-11-24 — Specs decision Accept/Reject rejects pending paths
+- **Symptom:** Accept and Reject in Specs returned HTTP 400 for decision paths returned by the pending-decisions GET endpoint.
+- **Reproduction trigger:** GET `/api/decisions/pending` returned a selected-project-root-relative path such as `.specs/decisions/ADR-X.md`; POST resolution passed it to `resolveAllowed`, which already rooted paths under `.specs/decisions` or `.specs/features/guarana`, duplicating the prefix and rejecting the path.
+- **Root cause:** The GET response's path contract included the selected project's exact allowlisted directory prefix, while POST resolution treated the value as relative to that directory.
+- **Narrow mitigation:** Match the exact selected-project allowlisted directory prefix and pass only the remainder to `resolveAllowed`; preserve bare-basename compatibility and rejection of absolute, traversal, outside, symlink, and non-Markdown paths. Add exact GET-path Accept/Reject round-trip regressions with pending-row removal and project-isolation checks; keep the canonical server synchronized to the CLI bundle.
+- **Classification:** Unclassified in the Guarana debug failure-mode matrix; this confirmed Specs path-contract defect matches none of the listed modes.
+- **Resolution and independent verification:** `dashboard/server/routes/decisions.js` now strips only the exact selected-project allowlisted directory prefix before resolution. `dashboard/server/app.test.js` round-trips exact GET paths for Accept and Reject. Fresh independent browser verification against the actual CLI-served local bundle passed both actions (HTTP 200; pending rows 2→1→0), six malicious decision requests (HTTP 400), path-bearing registration (HTTP 400), path-as-project-ID (HTTP 404), and selected synthetic-project isolation; other-project and outside/symlink targets remained unchanged. The final server-only fix was synchronized to the CLI bundle. Report: `/tmp/opencode/dashboard-reverify-criteria.json`.
+- **Status:** RESOLVED — independent browser reverify passed the fixed decision interaction and retained path-security boundaries. Synthetic temporary projects only; no real project/global data or external service was accessed. No shipping claim.
+
+Older Dashboard-specific incidents below are pre-removal historical records. The
+Dashboard web app and `guarana web` command were removed on 2026-11-05 and have
+since been reintroduced; the complete dashboard is now VALIDATED, not SHIPPED
+(2026-11-24). Those older entries retain their contemporaneous status and do not
+describe the reintroduced UI unless a later proof explicitly says otherwise.
 
 ## 2026-11-01 — Orchestrator misses OpenCode session-compaction completion event
 - **Symptom:** A successful manual compaction is present in the target session history, but the orchestrator records no `session-compacted` diagnostic, does not clear persisted preference claims, and therefore does not reinject previously seen preferences with `reason=compacted`.

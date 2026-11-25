@@ -123,6 +123,28 @@ guarana list
 guarana plugin status
 ```
 
+### Local dashboard
+
+Run the dashboard from a project root:
+
+```bash
+guarana web
+```
+
+It opens `http://127.0.0.1:4200` and serves only on loopback. The dashboard
+provides Overview, Activity, Runs, Specs, Workflow, Memory, Skills, and Settings.
+Project switching is limited to server-allowlisted roots; “Add this project”
+registers the project from which Guarana was launched, not a browser-supplied
+path. Settings can manage Primary and Advisor models plus scoped Workflow and
+web preferences without merging their existing configuration files. If the
+bundled server dependencies are missing, the first launch repairs them with
+`npm ci --omit=dev`.
+
+Use `guarana web --port 4300` to select another port or `--no-open` to keep the
+browser closed. Web preferences are stored separately in
+`.guarana/web.json` for a project and `$XDG_CONFIG_HOME/guarana/web.json`
+(normally `~/.config/guarana/web.json`) globally.
+
 ### Primary model defaults
 
 Configure Primary with `guarana advisor set primary.provider <provider-id>` and
@@ -256,6 +278,8 @@ guarana advisor read [--project]
 guarana advisor set <field> <id> [--project]
 guarana advisor clear [field] [--project]
 guarana advisor status [--project]
+
+guarana web [--port N] [--no-open]
 
 guarana memory <sub>
 guarana memory init

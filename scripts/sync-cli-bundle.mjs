@@ -7,9 +7,11 @@
  *   plugin/        -> cli/plugin/
  *   memory/        -> cli/memory/
  *   orchestrator/  -> cli/orchestrator/
+ *   dashboard/server/ -> cli/dashboard/server/
+ *   dashboard/web/dist/ -> cli/dashboard/web/dist/
  *
  * This script is the single source-of-truth mechanism for the installer bundle.
- * Run it after any change to skills, plugin, memory, or orchestrator sources.
+ * Run it after any change to skills, plugin, memory, orchestrator, or dashboard sources.
  */
 
 import fs from 'node:fs';
@@ -114,6 +116,8 @@ const mappings = [
   { from: 'memory/learning-review.js', to: 'cli/memory/learning-review.js' },
   { from: 'memory', to: 'cli/memory' },
   { from: 'skill-engine', to: 'cli/skill-engine' },
+  { from: 'dashboard/server', to: 'cli/dashboard/server' },
+  { from: 'dashboard/web/dist', to: 'cli/dashboard/web/dist' },
 ];
 
 export function syncCliBundle(syncRoot = root, syncMappings = mappings) {

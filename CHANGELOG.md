@@ -6,6 +6,10 @@ separate maintainer action.
 
 ## [Unreleased]
 
+### Added
+- Reintroduced the loopback-only `guarana web` dashboard with Overview,
+  Activity, Runs, Specs, Workflow, Memory, Skills, and scoped Settings.
+
 ## [1.5.3] - 2026-11-24 (unpublished, untagged candidate)
 
 ### Added
