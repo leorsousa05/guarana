@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/leorsousa05/guarana"><img src="https://img.shields.io/github/stars/leorsousa05/guarana?style=for-the-badge&logo=github&logoColor=white&color=f59e0b" alt="GitHub stars"></a>
-  <a href="https://github.com/leorsousa05/guarana/tree/main"><img src="https://img.shields.io/badge/source-v1.5.3%20candidate-f59e0b?style=for-the-badge&logo=github&logoColor=white" alt="GitHub main source candidate v1.5.3, unpublished and untagged"></a>
+  <a href="https://github.com/leorsousa05/guarana/tree/main"><img src="https://img.shields.io/badge/source-v1.5.4%20candidate-f59e0b?style=for-the-badge&logo=github&logoColor=white" alt="GitHub main source candidate v1.5.4, unpublished and untagged"></a>
   <img src="https://img.shields.io/badge/core_dependencies-zero-059669?style=for-the-badge" alt="Zero core runtime dependencies">
   <br>
   <a href="https://opencode.ai/"><img src="https://img.shields.io/badge/runtime-OpenCode-111827?style=for-the-badge" alt="OpenCode runtime"></a>
@@ -29,7 +29,7 @@ and memory, while the important state stays inspectable on disk.
   <img src="https://img.shields.io/badge/license-MIT-2563eb?style=flat-square" alt="MIT license">
 </p>
 
-**Current source candidate:** `1.5.3` is unpublished and untagged; its source is on [`main`](https://github.com/leorsousa05/guarana/tree/main). The stable installation instructions below remain for the `v1.5.0` tag.
+**Current source candidate:** `1.5.4` is unpublished and untagged; its source is on [`main`](https://github.com/leorsousa05/guarana/tree/main). The stable installation instructions below remain for the `v1.5.0` tag.
 
 ## What's New in 1.5.0
 

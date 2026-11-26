@@ -6,9 +6,15 @@ separate maintainer action.
 
 ## [Unreleased]
 
+## [1.5.4] - 2026-11-26 (unpublished, untagged candidate)
+
 ### Added
 - Reintroduced the loopback-only `guarana web` dashboard with Overview,
   Activity, Runs, Specs, Workflow, Memory, Skills, and scoped Settings.
+
+### Fixed
+- Worker-specs record-write permissions are scoped to the paths declared in the
+  worker dispatch.
 
 ## [1.5.3] - 2026-11-24 (unpublished, untagged candidate)
 
