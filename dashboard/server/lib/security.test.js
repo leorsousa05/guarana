@@ -42,4 +42,10 @@ describe('resolveAllowed', () => {
   it('rejects missing files', () => {
     assert.equal(resolveAllowed('missing.md', [root], { requireExt: '.md' }), null);
   });
+
+  it('rejects a symlinked allowed root', () => {
+    const alias = path.join(tmp, 'root-alias');
+    fs.symlinkSync(root, alias, 'dir');
+    assert.equal(resolveAllowed('ok.md', [alias], { requireExt: '.md' }), null);
+  });
 });

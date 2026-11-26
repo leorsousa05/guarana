@@ -78,9 +78,15 @@ function parseProviders(output) {
     const isAlignedAuthRow = !TABLE_DELIMITER.test(line)
       && alignedColumns.length >= 3
       && AUTH_METHOD.test(alignedColumns[1]);
+    const isAlignedStoredAuthRow = !TABLE_DELIMITER.test(line)
+      && alignedColumns.length === 3
+      && /^stored$/i.test(alignedColumns[2])
+      && PROVIDER_LABEL.test(alignedColumns[0])
+      && PROVIDER_LABEL.test(alignedColumns[1])
+      && normalizedProviderName(alignedColumns[0]) === normalizedProviderName(alignedColumns[1]);
     const cells = TABLE_DELIMITER.test(line)
       ? line.split(TABLE_DELIMITER).map((cell) => cell.trim()).filter(Boolean)
-      : isAlignedAuthRow ? [alignedColumns[0]] : [plainLine];
+      : isAlignedAuthRow || isAlignedStoredAuthRow ? [alignedColumns[0]] : [plainLine];
     if (cells.some(isCredentialsWrapper)) continue;
     if (cells.some((cell) => PROVIDER_HEADER.test(cell))
       || cells.length === 1 && /^(?:(?:provider|providers|type|auth|method|status|authentication)\s*)+$/i.test(cells[0])) continue;

@@ -14,9 +14,19 @@ test('web argument parser normalizes documented and permissive forms', () => {
     [['--port', '4399', '--no-open'], { port: 4399, noOpen: true, portExplicit: true, openExplicit: true, error: null }],
     [['--port', '4100', '--port', '4200'], { port: 4200, noOpen: false, portExplicit: true, openExplicit: false, error: null }],
     [['--port', '4100', '--port', '4200', '--port', '4300'], { port: 4300, noOpen: false, portExplicit: true, openExplicit: false, error: null }],
-    [['--unknown', 'ignored', '--no-open'], { port: DASH_DEFAULT_PORT, noOpen: true, portExplicit: false, openExplicit: true, error: null }],
-    [['--unknown', '--port', '4321', 'also-ignored'], { port: 4321, noOpen: false, portExplicit: true, openExplicit: false, error: null }],
+    [['ignored', '--no-open'], { port: DASH_DEFAULT_PORT, noOpen: true, portExplicit: false, openExplicit: true, error: null }],
+    [['--port', '4321', 'also-ignored'], { port: 4321, noOpen: false, portExplicit: true, openExplicit: false, error: null }],
     [['--port', '0x10'], { port: 16, noOpen: false, portExplicit: true, openExplicit: false, error: null }],
+  ]) {
+    assert.deepEqual(parseWebArgs(args), expected, JSON.stringify(args));
+  }
+});
+
+test('web argument parser ignores unknown flags', () => {
+  for (const [args, expected] of [
+    [['--unknown'], { port: DASH_DEFAULT_PORT, noOpen: false, portExplicit: false, openExplicit: false, error: null }],
+    [['--port', '4321', '--unknown'], { port: 4321, noOpen: false, portExplicit: true, openExplicit: false, error: null }],
+    [['-x'], { port: DASH_DEFAULT_PORT, noOpen: false, portExplicit: false, openExplicit: false, error: null }],
   ]) {
     assert.deepEqual(parseWebArgs(args), expected, JSON.stringify(args));
   }

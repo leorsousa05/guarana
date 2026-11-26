@@ -10,7 +10,13 @@ export const escapeHtml = (s) =>
 
 // Internal spec-relative link target (e.g. features/guarana/plan.md, features/cli/cli.md).
 export const isSpecPath = (href) =>
-  /\.md$/i.test(String(href)) && !/^(https?:|mailto:|#|\/|data:)/i.test(String(href));
+  /\.md$/i.test(String(href)) && !/^(?:[a-z][a-z\d+.-]*:|#|\/)/i.test(String(href).replace(/[\u0000-\u0020]/g, ''));
+
+const isSafeLink = (href) => {
+  const normalized = String(href || '').replace(/[\u0000-\u0020]/g, '');
+  const scheme = normalized.match(/^([a-z][a-z\d+.-]*):/i)?.[1]?.toLowerCase();
+  return !scheme || ['http', 'https', 'mailto'].includes(scheme);
+};
 
 const md = new Marked();
 md.use({
@@ -24,10 +30,11 @@ md.use({
     },
     link({ href, title, tokens }) {
       const label = this.parser.parseInline(tokens);
-      const spec = isSpecPath(href);
+      const safe = isSafeLink(href);
+      const spec = safe && isSpecPath(href);
       const attrs = spec
         ? ` href="#" data-specfile="${escapeHtml(href)}"`
-        : ` href="${escapeHtml(href)}"${title ? ` title="${escapeHtml(title)}"` : ''}`;
+        : ` href="${escapeHtml(safe ? href : '#')}"${title ? ` title="${escapeHtml(title)}"` : ''}`;
       return `<a${attrs}>${label}</a>`;
     },
   },

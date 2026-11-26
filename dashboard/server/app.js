@@ -14,9 +14,40 @@ import { createOpenCodeRouter } from './routes/opencode.js';
 import { createProjectsRouter } from './routes/projects.js';
 import { createProjectRegistry } from './lib/projects.js';
 
+function localHost(hostHeader) {
+  if (typeof hostHeader !== 'string') return null;
+  let parsed;
+  try {
+    parsed = new URL(`http://${hostHeader}`);
+  } catch {
+    return null;
+  }
+  if (parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash) return null;
+  if (!['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname.toLowerCase())) return null;
+  return parsed.host.toLowerCase();
+}
+
 export function createApp({ root, distDir, execFileImpl, homeDir = os.homedir() }) {
   const app = express();
   const projects = createProjectRegistry({ root });
+  app.use((req, res, next) => {
+    const host = localHost(req.get('host'));
+    if (!host) return res.status(400).json({ error: 'Requests must use a local Host header.' });
+    const origin = req.get('origin');
+    if (origin !== undefined) {
+      let parsedOrigin;
+      try {
+        parsedOrigin = new URL(origin);
+      } catch {
+        return res.status(403).json({ error: 'Cross-origin requests are not allowed.' });
+      }
+      const expectedOrigin = `${req.protocol}://${host}`;
+      if (parsedOrigin.origin !== expectedOrigin || parsedOrigin.pathname !== '/' || parsedOrigin.search || parsedOrigin.hash) {
+        return res.status(403).json({ error: 'Cross-origin requests are not allowed.' });
+      }
+    }
+    next();
+  });
   app.use(express.json());
 
   app.use('/api/projects', createProjectsRouter({ registry: projects }));
@@ -47,11 +78,8 @@ export function createApp({ root, distDir, execFileImpl, homeDir = os.homedir() 
   app.use('/api/web', createWebSettingsRouter({ root }));
 
   app.use((error, req, res, next) => {
-    if (error?.type === 'entity.parse.failed' && /^\/api\/(?:workflow|web)\/settings\/?$/.test(req.path)) {
+    if (error?.type === 'entity.parse.failed' && /^\/api(?:\/|$)/.test(req.path)) {
       return res.status(400).json({ error: 'Malformed JSON request body.' });
-    }
-    if (error?.type === 'entity.parse.failed' && /^\/api\/projects\/?$/.test(req.path)) {
-      return res.status(400).json({ error: 'Malformed project request body.' });
     }
     next(error);
   });

@@ -1,8 +1,7 @@
 import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
-import { SPECS_DIR } from '../lib/constants.js';
-import { resolveAllowed } from '../lib/security.js';
+import { resolveAllowed, resolveSpecsDir } from '../lib/security.js';
 
 const pendingLineRe = /^\s*-\s*\*\*Decision:\*\*\s*pending:\s*(.*)$/i;
 const resolvedLineRe = /^\s*-\s*\*\*Resolved/i;
@@ -10,8 +9,8 @@ const resolvedLineRe = /^\s*-\s*\*\*Resolved/i;
 export function createDecisionsRouter({ root }) {
   const router = express.Router();
   const decisionDirs = (req) => {
-    const specsDir = path.join(req.projectRoot || root, SPECS_DIR);
-    return [path.join(specsDir, 'decisions'), path.join(specsDir, 'features', 'guarana')];
+    const specsDir = resolveSpecsDir(req.projectRoot || root);
+    return specsDir ? [path.join(specsDir, 'decisions'), path.join(specsDir, 'features', 'guarana')] : [];
   };
   const resolveDecisionFile = (file, req) => {
     const dirs = decisionDirs(req);
@@ -32,19 +31,21 @@ export function createDecisionsRouter({ root }) {
     for (const dir of decisionDirs(req)) {
       let names = [];
       try {
+        if (!fs.lstatSync(dir).isDirectory() || fs.realpathSync(dir) !== path.resolve(dir)) continue;
         names = fs.readdirSync(dir).filter((n) => n.endsWith('.md'));
       } catch {
         continue;
       }
       for (const name of names) {
-        const full = path.join(dir, name);
+        const allowed = resolveAllowed(name, [dir], { requireExt: '.md' });
+        if (!allowed) continue;
         let text;
         try {
-          text = fs.readFileSync(full, 'utf8');
+          text = fs.readFileSync(allowed.realTarget, 'utf8');
         } catch {
           continue;
         }
-        const rel = path.relative(selectedRoot, full);
+        const rel = path.relative(selectedRoot, allowed.resolved);
         const lines = text.split('\n');
         const alreadyResolved = lines.some((l) => resolvedLineRe.test(l));
         for (const line of lines) {

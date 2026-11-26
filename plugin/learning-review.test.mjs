@@ -30,12 +30,32 @@ function fakeSpawnWithOutput(output, onSpawn = () => {}) {
     const child = new EventEmitter();
     child.stdout = new PassThrough();
     child.stderr = new PassThrough();
-    child.kill = () => true;
-    queueMicrotask(() => {
-      child.stdout.end(output);
-      child.stderr.end();
-      child.emit('close', 0, null);
-    });
+    child.exitCode = null;
+    child.signalCode = null;
+    let closed = false;
+    const close = (code, signal) => {
+      if (closed) return;
+      closed = true;
+      child.stdout.destroy();
+      child.stderr.destroy();
+      child.emit('close', code, signal);
+    };
+    child.kill = (signal) => {
+      if (child.exitCode !== null || child.signalCode !== null) return false;
+      child.signalCode = signal;
+      queueMicrotask(() => close(null, signal));
+      return true;
+    };
+    if (output !== null) {
+      queueMicrotask(() => {
+        child.stdout.end(output);
+        child.stderr.end();
+        if (child.signalCode === null) {
+          child.exitCode = 0;
+          close(0, null);
+        }
+      });
+    }
     return child;
   };
 }
@@ -268,24 +288,31 @@ it('rejects serialized reviewer payloads above the UTF-8 byte budget', () => {
   );
 });
 
-it('runs the isolated read-only OpenCode reviewer with auth data but no ambient secrets', async () => {
+it('uses the existing OpenCode service while keeping the review project and environment private', async () => {
   const root = makeTempDir('guarana-review-run-');
   const projectDir = path.join(root, 'project');
   const scratch = path.join(root, 'scratch');
   const userConfig = path.join(root, 'user-config');
   const globalConfig = path.join(userConfig, 'opencode', 'opencode.json');
-  const settings = path.join(projectDir, '.guarana', 'advisor.json');
+  const settings = path.join(userConfig, 'guarana', 'advisor.json');
   const sourceDataHome = path.join(root, 'opencode-data');
   const sourceAuthFile = path.join(sourceDataHome, 'opencode', 'auth.json');
+  const sourceDatabaseFile = path.join(sourceDataHome, 'opencode', 'opencode.db');
+  const stateHome = path.join(root, '.local', 'state');
   fs.mkdirSync(path.dirname(settings), { recursive: true });
   fs.mkdirSync(path.dirname(globalConfig), { recursive: true });
   fs.mkdirSync(path.dirname(sourceAuthFile), { recursive: true });
-  fs.writeFileSync(settings, JSON.stringify({ primary: { provider: 'attacker', model: 'exfiltrate' } }));
-  fs.writeFileSync(globalConfig, JSON.stringify({ primary: { provider: 'openai', model: 'gpt-6-luna' } }));
+  fs.mkdirSync(stateHome, { recursive: true });
+  fs.writeFileSync(settings, JSON.stringify({ primary: { provider: 'openai', model: 'gpt-6-luna' } }));
+  fs.writeFileSync(globalConfig, JSON.stringify({
+    primary: { provider: 'openai', model: 'gpt-6-luna' },
+    provider: { openai: { env: ['OPENAI_API_KEY'], options: { baseURL: 'https://api.example.invalid' } } },
+  }));
   fs.writeFileSync(sourceAuthFile, JSON.stringify({
-    openai: { type: 'oauth', access: 'selected-access', refresh: 'selected-refresh', expires: 123 },
-    anthropic: { type: 'api', key: 'unrelated-provider-key' },
+    openai: { type: 'oauth', access: 'synthetic-access-secret' },
+    anthropic: { type: 'api', key: 'synthetic-unrelated-provider-secret' },
   }), { mode: 0o600 });
+  fs.writeFileSync(sourceDatabaseFile, 'synthetic opencode database fixture');
   let captured;
   const output = `${JSON.stringify({ type: 'text', text: JSON.stringify({ action: 'none', reason: 'No durable change.' }) })}\n`;
   const result = await runOpenCodeReview({
@@ -295,6 +322,7 @@ it('runs the isolated read-only OpenCode reviewer with auth data but no ambient 
       captured = {
         command, args, options,
         agent: fs.readFileSync(path.join(options.cwd, '.opencode', 'agents', 'guarana-learning-review.md'), 'utf8'),
+        tempRoot: path.dirname(options.cwd),
       };
       const promptIndex = args.indexOf('--file');
       const promptPath = promptIndex >= 0 ? args[promptIndex + 1] : null;
@@ -302,13 +330,16 @@ it('runs the isolated read-only OpenCode reviewer with auth data but no ambient 
         captured.prompt = fs.readFileSync(promptPath, 'utf8');
         captured.promptMode = fs.statSync(promptPath).mode & 0o777;
       }
-      const authPath = path.join(options.env.XDG_DATA_HOME, 'opencode', 'auth.json');
-      if (fs.existsSync(authPath)) captured.auth = JSON.parse(fs.readFileSync(authPath, 'utf8'));
+      captured.projectConfigExists = fs.existsSync(path.join(options.cwd, 'opencode.json'));
+      captured.copiedAuthExists = fs.existsSync(path.join(options.env.XDG_DATA_HOME, 'opencode', 'auth.json'));
+      captured.copiedDatabaseExists = fs.existsSync(path.join(options.env.XDG_DATA_HOME, 'opencode', 'opencode.db'));
     }),
     env: {
-      PATH: '/usr/bin', HOME: root, XDG_CONFIG_HOME: userConfig, XDG_DATA_HOME: path.join(root, 'opencode-data'),
-      OPENAI_API_KEY: 'provider-secret', ANTHROPIC_API_KEY: 'unrelated-provider-secret',
-      AWS_SECRET_ACCESS_KEY: 'unrelated-cloud-secret', HTTPS_PROXY: 'http://proxy.invalid',
+      PATH: '/usr/bin', HOME: root, XDG_CONFIG_HOME: userConfig, XDG_DATA_HOME: sourceDataHome,
+      XDG_STATE_HOME: stateHome,
+      OPENAI_API_KEY: 'synthetic-provider-secret', ANTHROPIC_API_KEY: 'synthetic-unrelated-provider-secret',
+      AWS_SECRET_ACCESS_KEY: 'synthetic-cloud-secret', HTTPS_PROXY: 'http://proxy.invalid',
+      http_proxy: 'http://lowercase-proxy.invalid',
       DATABASE_URL: 'must-not-be-inherited',
     },
     homeDir: root,
@@ -318,29 +349,41 @@ it('runs the isolated read-only OpenCode reviewer with auth data but no ambient 
   assert.equal(result.ok, true);
   assert.equal(result.proposal.action, 'none');
   assert.equal(captured.args.includes('--auto'), false);
-  assert.equal(captured.args.includes('--pure'), true);
+  assert.equal(captured.args.includes('--pure'), false);
+  assert.equal(captured.args[0], 'run');
   assert.equal(captured.args.includes('--model'), true);
+  assert.equal(captured.args[captured.args.indexOf('--model') + 1], 'openai/gpt-6-luna');
   assert.equal(captured.args.includes('--file'), true);
   assert.equal(captured.args.some((value) => value.includes('Implemented a validator.')), false);
+  assert.equal(captured.args[captured.args.indexOf('--file') + 1], path.join(captured.options.cwd, 'review-request.md'));
   assert.match(captured.prompt, /Implemented a validator\./);
   assert.equal(captured.promptMode, 0o600);
+  assert.equal(captured.options.env.XDG_STATE_HOME, fs.realpathSync(stateHome));
   assert.notEqual(captured.options.env.XDG_DATA_HOME, sourceDataHome);
-  assert.deepEqual(Object.keys(captured.auth), ['openai']);
-  assert.equal(captured.auth.openai.access, 'selected-access');
-  assert.equal(captured.options.env.OPENAI_API_KEY, 'provider-secret');
+  assert.equal(captured.copiedAuthExists, false);
+  assert.equal(captured.copiedDatabaseExists, false);
+  assert.equal(captured.projectConfigExists, false);
+  assert.equal('OPENAI_API_KEY' in captured.options.env, false);
   assert.equal('ANTHROPIC_API_KEY' in captured.options.env, false);
   assert.equal('AWS_SECRET_ACCESS_KEY' in captured.options.env, false);
+  assert.equal('HTTPS_PROXY' in captured.options.env, false);
+  assert.equal('http_proxy' in captured.options.env, false);
   assert.equal('DATABASE_URL' in captured.options.env, false);
   assert.equal(captured.options.env.PWD, captured.options.cwd);
-  assert.equal(captured.options.env.HOME, path.join(path.dirname(captured.options.cwd), 'home'));
+  assert.equal(captured.options.env.HOME, path.join(captured.tempRoot, 'home'));
+  assert.equal(captured.options.env.XDG_CONFIG_HOME, path.join(captured.tempRoot, 'xdg-config'));
+  assert.equal(captured.options.env.XDG_CACHE_HOME, path.join(captured.tempRoot, 'xdg-cache'));
+  assert.equal(captured.options.env.XDG_DATA_HOME, path.join(captured.tempRoot, 'xdg-data'));
+  assert.equal(captured.options.env.XDG_STATE_HOME.startsWith(captured.tempRoot), false);
   assert.notEqual(captured.options.cwd, projectDir);
   assert.ok(captured.agent.includes('steps: 1'));
   assert.ok(captured.agent.includes('permissions:\n  - action: "*"\n    resource: "*"\n    effect: deny'));
   assert.equal(captured.agent.includes('permission:\n'), false);
   assert.ok(captured.agent.includes('mode: primary'));
+  assert.equal(fs.existsSync(captured.tempRoot), false);
 });
 
-it('passes only the selected custom provider configuration into the isolated reviewer project', async () => {
+it('does not pass custom provider credentials or configuration into the temporary project', async () => {
   const root = makeTempDir('guarana-review-custom-provider-');
   const projectDir = path.join(root, 'project');
   const scratch = path.join(root, 'scratch');
@@ -382,13 +425,15 @@ it('passes only the selected custom provider configuration into the isolated rev
         env: options.env,
         home: options.env.HOME,
         cwd: options.cwd,
-        config: JSON.parse(fs.readFileSync(path.join(options.cwd, 'opencode.json'), 'utf8')),
+        tempRoot: path.dirname(options.cwd),
+        configExists: fs.existsSync(path.join(options.cwd, 'opencode.json')),
       };
     }),
     env: {
       PATH: '/usr/bin', HOME: root, XDG_CONFIG_HOME: userConfig,
       XDG_DATA_HOME: path.join(root, 'opencode-data'), DATABASE_URL: 'must-not-be-inherited',
       ACME_API_KEY: 'custom-provider-secret', OPENAI_API_KEY: 'unrelated-provider-secret',
+      HTTPS_PROXY: 'http://proxy.invalid',
     },
     homeDir: root,
     scratchDir: scratch,
@@ -397,17 +442,114 @@ it('passes only the selected custom provider configuration into the isolated rev
 
   assert.equal(result.ok, true);
   assert.equal(captured.args[captured.args.indexOf('--model') + 1], 'acme/fast-v1');
-  assert.equal(captured.env.ACME_API_KEY, 'custom-provider-secret');
+  assert.equal('ACME_API_KEY' in captured.env, false);
   assert.equal('OPENAI_API_KEY' in captured.env, false);
   assert.equal('DATABASE_URL' in captured.env, false);
+  assert.equal('HTTPS_PROXY' in captured.env, false);
   assert.equal(captured.home, path.join(path.dirname(captured.cwd), 'home'));
-  assert.deepEqual(Object.keys(captured.config), ['provider']);
-  assert.deepEqual(captured.config.provider.acme, {
-    name: 'Acme',
-    env: ['ACME_API_KEY'],
-    options: { baseURL: 'https://api.example.invalid/v1' },
-    models: { 'fast-v1': { name: 'Fast v1' } },
+  assert.equal(captured.configExists, false);
+  assert.equal(fs.existsSync(captured.tempRoot), false);
+});
+
+it('uses the default user state home when XDG_STATE_HOME is not configured', async () => {
+  const root = makeTempDir('guarana-review-default-state-');
+  const projectDir = path.join(root, 'project');
+  const homeDir = path.join(root, 'home');
+  const scratchDir = path.join(root, 'scratch');
+  const settings = path.join(homeDir, '.config', 'guarana', 'advisor.json');
+  fs.mkdirSync(projectDir, { recursive: true });
+  fs.mkdirSync(path.dirname(settings), { recursive: true });
+  fs.writeFileSync(settings, JSON.stringify({ primary: { provider: 'openai', model: 'gpt-6-luna' } }));
+  let captured;
+  const output = `${JSON.stringify({ type: 'text', text: '{"action":"none","reason":"No change."}' })}\n`;
+  const result = await runOpenCodeReview({
+    projectDir,
+    payload: { summary: 'Fallback state discovery.', changedPaths: [] },
+    spawnImpl: fakeSpawnWithOutput(output, (command, args, options) => {
+      captured = { stateHome: options.env.XDG_STATE_HOME, tempRoot: path.dirname(options.cwd) };
+    }),
+    env: { PATH: '/usr/bin', HOME: homeDir },
+    homeDir,
+    scratchDir,
   });
+  assert.equal(result.ok, true);
+  assert.equal(captured.stateHome, path.join(fs.realpathSync(homeDir), '.local', 'state'));
+  assert.equal(fs.existsSync(captured.tempRoot), false);
+});
+
+it('fails closed before spawn when the configured state home is outside home or inside the project', async () => {
+  const root = makeTempDir('guarana-review-untrusted-state-');
+  const homeDir = path.join(root, 'home');
+  const projectDir = path.join(root, 'project');
+  fs.mkdirSync(homeDir, { recursive: true });
+  fs.mkdirSync(projectDir, { recursive: true });
+  for (const stateHome of [path.join(root, 'outside-state'), path.join(projectDir, '.state')]) {
+    let spawned = false;
+    const result = await runOpenCodeReview({
+      projectDir,
+      payload: { summary: 'Reject unsafe service discovery.', changedPaths: [] },
+      spawnImpl: () => { spawned = true; throw new Error('must not spawn'); },
+      env: { PATH: '/usr/bin', XDG_STATE_HOME: stateHome },
+      homeDir,
+      scratchDir: path.join(root, 'scratch'),
+    });
+    assert.deepEqual(result, { ok: false, reason: 'opencode_state_home_unavailable' });
+    assert.equal(spawned, false);
+  }
+});
+
+it('enforces the output cap and removes the temporary project after overflow', async () => {
+  const root = makeTempDir('guarana-review-output-limit-');
+  const projectDir = path.join(root, 'project');
+  const homeDir = path.join(root, 'home');
+  const settings = path.join(homeDir, '.config', 'guarana', 'advisor.json');
+  fs.mkdirSync(projectDir, { recursive: true });
+  fs.mkdirSync(path.dirname(settings), { recursive: true });
+  fs.writeFileSync(settings, JSON.stringify({ primary: { provider: 'openai', model: 'gpt-6-luna' } }));
+  let tempRoot;
+  const result = await runOpenCodeReview({
+    projectDir,
+    payload: { summary: 'Bound reviewer output.', changedPaths: [] },
+    spawnImpl: fakeSpawnWithOutput('x'.repeat(512 * 1024 + 1), (command, args, options) => {
+      tempRoot = path.dirname(options.cwd);
+    }),
+    env: { PATH: '/usr/bin' },
+    homeDir,
+    scratchDir: path.join(root, 'scratch'),
+    timeoutMs: 500,
+  });
+  assert.deepEqual(result, { ok: false, reason: 'opencode_output_limit_exceeded' });
+  assert.equal(fs.existsSync(tempRoot), false);
+});
+
+it('enforces the timeout, terminates the child, and removes the temporary project', async () => {
+  const root = makeTempDir('guarana-review-timeout-');
+  const projectDir = path.join(root, 'project');
+  const homeDir = path.join(root, 'home');
+  const settings = path.join(homeDir, '.config', 'guarana', 'advisor.json');
+  fs.mkdirSync(projectDir, { recursive: true });
+  fs.mkdirSync(path.dirname(settings), { recursive: true });
+  fs.writeFileSync(settings, JSON.stringify({ primary: { provider: 'openai', model: 'gpt-6-luna' } }));
+  let tempRoot;
+  let keepAlive;
+  try {
+    keepAlive = setTimeout(() => {}, 1_000);
+    const result = await runOpenCodeReview({
+      projectDir,
+      payload: { summary: 'Bound reviewer runtime.', changedPaths: [] },
+      spawnImpl: fakeSpawnWithOutput(null, (command, args, options) => {
+        tempRoot = path.dirname(options.cwd);
+      }),
+      env: { PATH: '/usr/bin' },
+      homeDir,
+      scratchDir: path.join(root, 'scratch'),
+      timeoutMs: 5,
+    });
+    assert.deepEqual(result, { ok: false, reason: 'opencode_timed_out' });
+  } finally {
+    clearTimeout(keepAlive);
+  }
+  assert.equal(fs.existsSync(tempRoot), false);
 });
 
 it('rejects malformed and tool-using reviewer responses', () => {

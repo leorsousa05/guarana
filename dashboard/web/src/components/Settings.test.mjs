@@ -116,6 +116,7 @@ test('Settings SSR combines Models with scoped workflow and web preferences, eff
   assert.match(html, /Effective for selected project: disabled · Source: Global/);
   assert.match(html, /id="settings-web-appearance-theme"/);
   assert.match(html, /id="settings-web-appearance-startPage"/);
+  assert.match(html, /<option value="knowledge">Knowledge<\/option>/);
   assert.match(html, /id="settings-web-refresh-intervalSeconds"/);
   assert.match(html, /id="settings-web-server-port" type="number"/);
   assert.match(html, /id="settings-web-server-open" type="checkbox"/);

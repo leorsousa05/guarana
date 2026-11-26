@@ -93,6 +93,19 @@ test('whitespace-aligned auth rows parse provider columns and map OpenCode Conso
   assert.deepEqual(fake.calls.map(({ args }) => args), [['auth', 'list'], ['models']]);
 });
 
+test('aligned stored auth rows expose only models from the connected provider', async () => {
+  const fake = fakeCli({
+    auth: 'OpenAI  OpenAI                      stored\n',
+    models: 'openai/gpt-5\nanthropic/claude-sonnet-4\n',
+  });
+  const result = await discoverModels({ execFile: fake.execFile });
+
+  assert.deepEqual(result.models.map(({ provider, model }) => `${provider.id}/${model.id}`), ['openai/gpt-5']);
+  assert.equal(result.error, null);
+  assert.doesNotMatch(JSON.stringify(result), /OpenAI|stored|anthropic|claude-sonnet-4/);
+  assert.deepEqual(fake.calls.map(({ args }) => args), [['auth', 'list'], ['models']]);
+});
+
 test('ANSI-colored OpenCode auth table rows expose only connected catalog models', async () => {
   const auth = [
     '┌  Credentials \x1b[90m<path>',

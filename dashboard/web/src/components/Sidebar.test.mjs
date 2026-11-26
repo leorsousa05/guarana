@@ -61,6 +61,7 @@ test('shared shell keeps all hash routes and accessible section navigation', asy
   assert.equal(viewFromHash(), 'overview');
   globalThis.window.location.hash = '';
   assert.equal(viewFromHash('settings'), 'settings', 'the saved start page applies when no hash is present');
+  assert.equal(viewFromHash('knowledge'), 'knowledge', 'Knowledge can be selected as the saved start page');
   globalThis.window.location.hash = '#/unknown';
   assert.equal(viewFromHash('settings'), 'settings', 'a saved start page is used when no valid hash route exists');
   globalThis.window.location.hash = '#/now';

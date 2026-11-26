@@ -1,5 +1,18 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { SPECS_DIR } from './constants.js';
+
+export function resolveSpecsDir(projectRoot) {
+  const resolvedRoot = path.resolve(projectRoot);
+  try {
+    if (fs.realpathSync(resolvedRoot) !== resolvedRoot) return null;
+    const specsDir = path.join(resolvedRoot, SPECS_DIR);
+    if (!fs.lstatSync(specsDir).isDirectory()) return null;
+    return specsDir;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Resolve a user-provided relative path against an allowed root directory and
@@ -21,8 +34,9 @@ export function resolveAllowed(file, allowedRoots, { requireExt } = {}) {
     const rootResolved = path.resolve(root);
     if (resolved !== rootResolved && !resolved.startsWith(rootResolved + path.sep)) continue;
     try {
-      realTarget = fs.realpathSync(resolved);
       realRoot = fs.realpathSync(rootResolved);
+      if (realRoot !== rootResolved) continue;
+      realTarget = fs.realpathSync(resolved);
     } catch {
       continue;
     }

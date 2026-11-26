@@ -10,7 +10,6 @@ export const MAX_REVIEW_PATHS = 30;
 export const MAX_REVIEW_PATH_CHARS = 300;
 const MAX_OUTPUT_BYTES = 512 * 1024;
 const MAX_REVIEW_PROMPT_BYTES = 256 * 1024;
-const MAX_PROVIDER_AUTH_BYTES = 1024 * 1024;
 const MAX_OPENCODE_CONFIG_BYTES = 1024 * 1024;
 const MODEL_ID_RE = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._~+/-]+(?:#[A-Za-z0-9._-]+)?$/;
 const SENSITIVE_PATH_SEGMENTS = new Set([
@@ -18,24 +17,11 @@ const SENSITIVE_PATH_SEGMENTS = new Set([
 ]);
 const SENSITIVE_PATH_EXTENSIONS = new Set(['.pem', '.key', '.p12', '.pfx', '.kdbx', '.p8', '.der']);
 const SENSITIVE_PATH_WORDS = new Set(['secret', 'secrets', 'credential', 'credentials', 'token', 'tokens']);
-const BUILTIN_PROVIDER_ENV_KEYS = Object.freeze({
-  openai: ['OPENAI_API_KEY', 'OPENAI_BASE_URL'],
-  anthropic: ['ANTHROPIC_API_KEY', 'ANTHROPIC_BASE_URL'],
-  openrouter: ['OPENROUTER_API_KEY', 'OPENROUTER_BASE_URL'],
-  google: ['GOOGLE_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_GENERATIVE_AI_API_KEY'],
-  deepseek: ['DEEPSEEK_API_KEY'],
-  mistral: ['MISTRAL_API_KEY'],
-  xai: ['XAI_API_KEY'],
-  groq: ['GROQ_API_KEY'],
-  azure: ['AZURE_OPENAI_API_KEY', 'AZURE_OPENAI_ENDPOINT'],
-  'amazon-bedrock': ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN', 'AWS_REGION'],
-  bedrock: ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN', 'AWS_REGION'],
-});
 const BUILTIN_PROVIDERS = new Set([
-  ...Object.keys(BUILTIN_PROVIDER_ENV_KEYS),
+  'openai', 'anthropic', 'openrouter', 'google', 'deepseek', 'mistral', 'xai', 'groq', 'azure',
+  'amazon-bedrock', 'bedrock',
   'google-vertex', 'ollama', 'lmstudio', 'vllm', 'github-copilot', 'github-models',
 ]);
-const PROXY_ENV_KEYS = new Set(['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'all_proxy', 'no_proxy']);
 
 function isSensitivePathSegment(segment) {
   const normalized = segment.toLowerCase();
@@ -330,6 +316,31 @@ export function resolveTrustedUserConfigHome(homeDir, env = process.env, project
   return null;
 }
 
+function resolveTrustedUserStateHome(homeDir, env = process.env, projectDir) {
+  if (typeof homeDir !== 'string' || !path.isAbsolute(homeDir)
+    || typeof projectDir !== 'string' || !path.isAbsolute(projectDir)) return null;
+  let homeRealPath;
+  let projectRealPath;
+  try {
+    homeRealPath = fs.realpathSync(homeDir);
+    if (!fs.statSync(homeRealPath).isDirectory()) return null;
+    projectRealPath = canonicalPathWithMissingSuffix(projectDir);
+  } catch {
+    return null;
+  }
+  if (!projectRealPath) return null;
+
+  const configured = Object.hasOwn(env, 'XDG_STATE_HOME')
+    ? env.XDG_STATE_HOME
+    : path.join(homeRealPath, '.local', 'state');
+  if (typeof configured !== 'string' || !path.isAbsolute(configured)) return null;
+
+  const canonical = canonicalPathWithMissingSuffix(configured);
+  if (!canonical || !pathIsWithin(homeRealPath, canonical) || pathIsWithin(projectRealPath, canonical))
+    return null;
+  return canonical;
+}
+
 function openCodeJsonPaths(configHome) {
   return [
     path.join(configHome, 'guarana', 'advisor.json'),
@@ -429,80 +440,11 @@ function reviewerAgentText() {
   ].join('\n');
 }
 
-function providerEnvironmentKeys(providerName, providerConfig) {
-  const keys = new Set(BUILTIN_PROVIDER_ENV_KEYS[providerName] || []);
-  if (Array.isArray(providerConfig?.env)) {
-    for (const key of providerConfig.env) {
-      if (typeof key === 'string' && /^[A-Z_][A-Z0-9_]*$/.test(key)) keys.add(key);
-    }
-  }
-  return keys;
-}
-
-function copySelectedProviderAuth(sourceDataHome, isolatedDataHome, providerName) {
-  const authDirectory = path.join(sourceDataHome, 'opencode');
-  const authFile = path.join(authDirectory, 'auth.json');
-  let descriptor;
-  try {
-    const dataHomeRealPath = fs.realpathSync(sourceDataHome);
-    const expectedAuthDirectory = path.join(dataHomeRealPath, 'opencode');
-    if (fs.realpathSync(authDirectory) !== expectedAuthDirectory) return false;
-    const fileStat = fs.lstatSync(authFile);
-    if (!fileStat.isFile() || fileStat.isSymbolicLink() || fileStat.size > MAX_PROVIDER_AUTH_BYTES) return false;
-
-    const { O_RDONLY, O_NOFOLLOW, O_NONBLOCK } = fs.constants;
-    if (!O_NOFOLLOW) return false;
-    descriptor = fs.openSync(authFile, O_RDONLY | O_NOFOLLOW | (O_NONBLOCK || 0));
-    const openedStat = fs.fstatSync(descriptor);
-    if (!openedStat.isFile() || openedStat.size > MAX_PROVIDER_AUTH_BYTES) return false;
-    const buffer = Buffer.alloc(openedStat.size + 1);
-    const bytesRead = fs.readSync(descriptor, buffer, 0, buffer.length, 0);
-    const finalStat = fs.fstatSync(descriptor);
-    const currentPathStat = fs.statSync(authFile);
-    if (bytesRead !== openedStat.size
-      || finalStat.size !== openedStat.size
-      || finalStat.mtimeMs !== openedStat.mtimeMs
-      || finalStat.ctimeMs !== openedStat.ctimeMs
-      || currentPathStat.dev !== openedStat.dev
-      || currentPathStat.ino !== openedStat.ino
-      || fs.realpathSync(sourceDataHome) !== dataHomeRealPath
-      || fs.realpathSync(authDirectory) !== expectedAuthDirectory)
-      return false;
-
-    const authStore = JSON.parse(buffer.subarray(0, bytesRead).toString('utf8'));
-    if (!authStore || typeof authStore !== 'object' || Array.isArray(authStore)
-      || !Object.hasOwn(authStore, providerName)) return false;
-    const selectedAuth = authStore[providerName];
-    if (!selectedAuth || typeof selectedAuth !== 'object' || Array.isArray(selectedAuth)) return false;
-
-    const isolatedAuthDirectory = path.join(isolatedDataHome, 'opencode');
-    fs.mkdirSync(isolatedAuthDirectory, { recursive: true, mode: 0o700 });
-    fs.writeFileSync(
-      path.join(isolatedAuthDirectory, 'auth.json'),
-      JSON.stringify({ [providerName]: selectedAuth }),
-      { mode: 0o600, flag: 'wx' },
-    );
-    return true;
-  } catch {
-    return false;
-  } finally {
-    if (descriptor !== undefined) {
-      try { fs.closeSync(descriptor); } catch { /* keep auth isolation result */ }
-    }
-  }
-}
-
 function childEnvironment(env, {
-  homeDir, configHome, dataHome, cacheHome, tempDir, projectDir, providerName, providerConfig,
+  homeDir, configHome, dataHome, cacheHome, stateHome, tempDir, projectDir,
 }) {
   const out = {};
   for (const key of ['PATH', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'SystemRoot', 'WINDIR', 'COMSPEC', 'PATHEXT']) {
-    if (typeof env[key] === 'string') out[key] = env[key];
-  }
-  for (const key of providerEnvironmentKeys(providerName, providerConfig)) {
-    if (typeof env[key] === 'string') out[key] = env[key];
-  }
-  for (const key of PROXY_ENV_KEYS) {
     if (typeof env[key] === 'string') out[key] = env[key];
   }
   out.HOME = homeDir;
@@ -512,9 +454,7 @@ function childEnvironment(env, {
   out.TEMP = tempDir;
   out.XDG_CONFIG_HOME = configHome;
   out.XDG_CACHE_HOME = cacheHome;
-  out.XDG_STATE_HOME = path.join(path.dirname(cacheHome), 'xdg-state');
-  // OpenCode needs its user data directory for OAuth. The isolated directory
-  // contains only the selected provider's auth entry, never the full user store.
+  out.XDG_STATE_HOME = stateHome;
   out.XDG_DATA_HOME = dataHome;
   out.GUARANA_LEARNING_REVIEW_CHILD = '1';
   return out;
@@ -547,6 +487,8 @@ export async function runOpenCodeReview({
   scratchDir = os.tmpdir(),
   timeoutMs = 120_000,
 } = {}) {
+  const stateHome = resolveTrustedUserStateHome(homeDir, env, projectDir);
+  if (!stateHome) return { ok: false, reason: 'opencode_state_home_unavailable' };
   const runtimeConfig = resolveOpenCodeRuntimeConfig(projectDir, { homeDir, env });
   if (!runtimeConfig) return { ok: false, reason: 'no_explicit_opencode_model' };
   const { model, providerName, providerConfig } = runtimeConfig;
@@ -565,26 +507,15 @@ export async function runOpenCodeReview({
     const dataHome = path.join(tempRoot, 'xdg-data');
     const tempDir = path.join(tempRoot, 'tmp');
     const projectRoot = path.join(tempRoot, 'project');
-    const sourceDataHome = typeof env.XDG_DATA_HOME === 'string' && path.isAbsolute(env.XDG_DATA_HOME)
-      ? env.XDG_DATA_HOME
-      : path.join(homeDir, '.local', 'share');
     fs.mkdirSync(path.join(projectRoot, '.opencode', 'agents'), { recursive: true });
-    for (const directory of [configHome, cacheHome, isolatedHome, dataHome, tempDir, path.join(tempRoot, 'xdg-state')])
+    for (const directory of [configHome, cacheHome, isolatedHome, dataHome, tempDir])
       fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
-    copySelectedProviderAuth(sourceDataHome, dataHome, providerName);
     fs.writeFileSync(path.join(projectRoot, '.opencode', 'agents', 'guarana-learning-review.md'), reviewerAgentText(), { mode: 0o600 });
-    if (providerConfig) {
-      fs.writeFileSync(
-        path.join(projectRoot, 'opencode.json'),
-        JSON.stringify({ provider: { [providerName]: providerConfig } }, null, 2),
-        { mode: 0o600 },
-      );
-    }
 
     const promptFile = path.join(projectRoot, 'review-request.md');
     fs.writeFileSync(promptFile, buildReviewPrompt(payload), { mode: 0o600, flag: 'wx' });
     const args = [
-      'run', '--pure', '--agent', 'guarana-learning-review', '--model', model,
+      'run', '--agent', 'guarana-learning-review', '--model', model,
       '--format', 'json', '--title', 'Guarana post-task learning review',
       '--file', promptFile,
       'Review the attached request according to the Guarana reviewer protocol. Return only one JSON object.',
@@ -594,10 +525,9 @@ export async function runOpenCodeReview({
       configHome,
       dataHome,
       cacheHome,
+      stateHome,
       tempDir,
       projectDir: projectRoot,
-      providerName,
-      providerConfig,
     });
     const execution = await new Promise((resolve) => {
       let child;

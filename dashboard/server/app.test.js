@@ -1,5 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import http from 'node:http';
 import { createApp } from './app.js';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -19,6 +20,138 @@ function seedLegacyNode(vaultDir, node) {
   fs.appendFileSync(path.join(vaultDir, 'nodes.jsonl'), `${JSON.stringify(seeded)}\n`);
   return seeded;
 }
+
+describe('Dashboard request boundaries', () => {
+  let tmp;
+  let server;
+  let base;
+
+  beforeEach(async () => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-request-boundary-'));
+    const app = createApp({ root: tmp, distDir: path.join(tmp, 'dist') });
+    await new Promise((resolve) => {
+      server = app.listen(0, () => resolve());
+    });
+    base = `http://127.0.0.1:${server.address().port}`;
+  });
+
+  afterEach(async () => {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('rejects non-local Hosts and cross-origin requests while allowing same-origin and Vite proxy requests', async () => {
+    const request = (headers) => new Promise((resolve, reject) => {
+      const req = http.request({
+        hostname: '127.0.0.1',
+        port: server.address().port,
+        path: '/api/projects',
+        headers,
+      }, (response) => {
+        let body = '';
+        response.setEncoding('utf8');
+        response.on('data', (chunk) => { body += chunk; });
+        response.on('end', () => resolve({ status: response.statusCode, body: JSON.parse(body) }));
+      });
+      req.on('error', reject);
+      req.end();
+    });
+    const nonLocalHost = await request({ Host: 'dashboard.attacker.test' });
+    assert.equal(nonLocalHost.status, 400);
+    assert.match(nonLocalHost.body.error, /local Host/);
+
+    const port = server.address().port;
+    const crossOrigin = await request({ Host: `localhost:${port}`, Origin: 'https://attacker.test' });
+    assert.equal(crossOrigin.status, 403);
+    assert.match(crossOrigin.body.error, /Cross-origin/);
+
+    const sameOrigin = await request({
+      Host: `localhost:${port}`,
+      Origin: `http://localhost:${port}`,
+    });
+    assert.equal(sameOrigin.status, 200);
+
+    const viteProxy = await request({ Host: 'localhost:5173', Origin: 'http://localhost:5173' });
+    assert.equal(viteProxy.status, 200);
+  });
+
+  it('returns stack-free JSON for malformed JSON at any API route', async () => {
+    for (const route of ['/api/projects', '/api/memory/relationships', '/api/workflow/settings', '/api/unrecognized']) {
+      const response = await fetch(`${base}${route}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{"broken":',
+      });
+      assert.equal(response.status, 400, route);
+      assert.match(response.headers.get('content-type'), /application\/json/, route);
+      const body = await response.json();
+      assert.deepEqual(body, { error: 'Malformed JSON request body.' }, route);
+      assert.equal('stack' in body, false, route);
+    }
+  });
+});
+
+describe('Specs symlink boundaries', () => {
+  let tmp;
+  let root;
+  let outside;
+  let server;
+  let base;
+
+  beforeEach(async () => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-specs-symlink-'));
+    root = path.join(tmp, 'project');
+    outside = path.join(tmp, 'outside');
+    fs.mkdirSync(root);
+    fs.mkdirSync(path.join(outside, 'state'), { recursive: true });
+    fs.writeFileSync(path.join(outside, 'README.md'), 'OUTSIDE_TRACKER_SENTINEL');
+    fs.writeFileSync(path.join(outside, 'state', 'project-state.md'), 'OUTSIDE_STATE_SENTINEL');
+    fs.writeFileSync(path.join(outside, 'state', 'known-issues.md'), 'OUTSIDE_ISSUES_SENTINEL');
+    fs.writeFileSync(path.join(outside, 'escape.md'), 'OUTSIDE_FILE_SENTINEL');
+    fs.mkdirSync(path.join(outside, 'decisions'));
+    fs.writeFileSync(path.join(outside, 'decisions', 'ADR-OUTSIDE.md'), '- **Decision:** pending: OUTSIDE_DECISION_SENTINEL\n');
+    const app = createApp({ root, distDir: path.join(tmp, 'dist') });
+    await new Promise((resolve) => {
+      server = app.listen(0, () => resolve());
+    });
+    base = `http://127.0.0.1:${server.address().port}`;
+  });
+
+  afterEach(async () => {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('does not read through a symlinked Specs root or symlinked document ancestors/files', async () => {
+    fs.symlinkSync(outside, path.join(root, '.specs'), 'dir');
+
+    const rootTracker = await (await fetch(`${base}/api/specs/tracker`)).json();
+    assert.deepEqual(rootTracker, { rows: [], DONE: [], NEXT: [], BLOCKED: [], other: [] });
+    assert.deepEqual(await (await fetch(`${base}/api/specs/tree`)).json(), { files: [] });
+    assert.equal((await fetch(`${base}/api/specs/file?path=README.md`)).status, 400);
+    assert.deepEqual(await (await fetch(`${base}/api/specs/state`)).json(), { projectState: '', knownIssues: '' });
+    assert.deepEqual(await (await fetch(`${base}/api/decisions/pending`)).json(), { decisions: [] });
+
+    fs.unlinkSync(path.join(root, '.specs'));
+    const specs = path.join(root, '.specs');
+    fs.mkdirSync(specs);
+    fs.symlinkSync(path.join(outside, 'README.md'), path.join(specs, 'README.md'));
+    fs.symlinkSync(path.join(outside, 'state'), path.join(specs, 'state'), 'dir');
+    fs.symlinkSync(path.join(outside, 'escape.md'), path.join(specs, 'escape.md'));
+    fs.symlinkSync(path.join(outside, 'decisions'), path.join(specs, 'decisions'), 'dir');
+    fs.writeFileSync(path.join(specs, 'local.md'), '# Local document');
+
+    const tracker = await (await fetch(`${base}/api/specs/tracker`)).json();
+    assert.deepEqual(tracker, { rows: [], DONE: [], NEXT: [], BLOCKED: [], other: [] });
+    assert.deepEqual(await (await fetch(`${base}/api/specs/tree`)).json(), { files: ['local.md'] });
+    assert.equal((await fetch(`${base}/api/specs/file?path=escape.md`)).status, 400);
+    assert.equal((await fetch(`${base}/api/specs/file?path=state/project-state.md`)).status, 400);
+    assert.deepEqual(await (await fetch(`${base}/api/decisions/pending`)).json(), { decisions: [] });
+    const state = await (await fetch(`${base}/api/specs/state`)).json();
+    assert.deepEqual(state, { projectState: '', knownIssues: '' });
+    assert.doesNotMatch(JSON.stringify(state), /OUTSIDE_/);
+  });
+});
 
 describe('GET /api/telemetry/stream (SSE)', () => {
   let tmp;
@@ -1336,6 +1469,15 @@ describe('GET/PUT /api/web/settings', () => {
       server: { port: 'project', open: 'global' },
     });
     for (const [file, before] of otherFiles) assert.deepEqual(fs.readFileSync(file), before, file);
+  });
+
+  it('accepts Knowledge as a saved start page', async () => {
+    const response = await putWebSettings({
+      scope: 'project',
+      settings: { appearance: { startPage: 'knowledge' } },
+    });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).effective.appearance.startPage, 'knowledge');
   });
 
   it('rejects malformed payloads, invalid settings, and corrupt files without writes', async () => {

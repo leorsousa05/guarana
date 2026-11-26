@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-11-25T06:04:58.610Z
+Last updated: 2026-11-26T02:32:30.112Z
 
 ## Per-skill status
 | Skill | Status |
@@ -24,7 +24,7 @@ Last updated: 2026-11-25T06:04:58.610Z
 | Guarana optional model advisor | **VALIDATED** — UI criteria 11–14 and ADR-027 runtime proof |
 
 ## Current step
-Dashboard detail workspace redesign is VALIDATED, not SHIPPED, after final independent browser PASS for criteria 1–5. Dashboard reintroduction, Fieldstation visual identity, and page-flow rework remain VALIDATED, not SHIPPED. This UI follow-up made no server/API/schema/storage contract changes; pre-existing Dashboard server/API files are not attributed to it. No commit, push, release, deployment, publication, or shipping is claimed.
+Learning-review authentication is VALIDATED. No live service or model call occurred during coding or verification. After runtime refresh, guarana_learning_review returned status no_change because the decision and authentication boundaries were already documented; this is the tool result, not a successful live model review. No proposal was produced or written, and no credential change, commit, or release occurred.
 
 ## Product scope update — Dashboard removal — 2026-11-05
 

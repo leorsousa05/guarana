@@ -5,7 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const START_PAGES = ['overview', 'now', 'runs', 'specs', 'workflow', 'memory', 'skills', 'settings'];
+const START_PAGES = ['overview', 'now', 'runs', 'knowledge', 'specs', 'workflow', 'memory', 'skills', 'settings'];
 const DEFAULT_WEB_SETTINGS = Object.freeze({
   appearance: Object.freeze({ theme: 'light', startPage: 'overview' }),
   refresh: Object.freeze({ intervalSeconds: 5 }),

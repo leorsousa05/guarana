@@ -59,6 +59,12 @@ test('provides real defaults and merges partial settings per field with sources'
   });
 });
 
+test('accepts Knowledge as a saved start page', () => {
+  assert.deepEqual(validateWebSettings({ appearance: { startPage: 'knowledge' } }), {
+    appearance: { startPage: 'knowledge' },
+  });
+});
+
 test('reads XDG global and project files, reporting defaults and field sources', () => {
   const root = tempDirectory();
   try {

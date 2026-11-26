@@ -16,7 +16,7 @@ const WEB_DEFAULTS = {
 };
 const WEB_FIELDS = [
   { section: 'appearance', field: 'theme', label: 'Theme', kind: 'select', options: [['light', 'Light'], ['dark', 'Dark']] },
-  { section: 'appearance', field: 'startPage', label: 'Start page', kind: 'select', options: [['overview', 'Overview'], ['now', 'Activity'], ['runs', 'Runs'], ['specs', 'Specs'], ['workflow', 'Workflow'], ['memory', 'Memory'], ['skills', 'Skills'], ['settings', 'Settings']] },
+  { section: 'appearance', field: 'startPage', label: 'Start page', kind: 'select', options: [['overview', 'Overview'], ['now', 'Activity'], ['runs', 'Runs'], ['knowledge', 'Knowledge'], ['specs', 'Specs'], ['workflow', 'Workflow'], ['memory', 'Memory'], ['skills', 'Skills'], ['settings', 'Settings']] },
   { section: 'refresh', field: 'intervalSeconds', label: 'Live refresh interval', kind: 'select', options: [[5, '5 seconds'], [15, '15 seconds'], [30, '30 seconds']] },
   { section: 'server', field: 'port', label: 'Server port', kind: 'number' },
   { section: 'server', field: 'open', label: 'Open dashboard on start', kind: 'checkbox' },
