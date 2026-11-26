@@ -48,8 +48,11 @@ function permissionRules(worker) {
           ['edit', '*', 'deny'],
           ['edit', '.specs/README.md', 'allow'],
           ['edit', '.specs/state/*.md', 'allow'],
+          ['edit', '.specs/state/worker-specs-handoff.json', 'allow'],
           ['edit', '.specs/features/*.md', 'allow'],
+          ['edit', '.specs/features/*/*.md', 'allow'],
           ['edit', '.specs/changes/*.md', 'allow'],
+          ['edit', '.specs/decisions/ADR-*.md', 'allow'],
         ]
         : [['edit', '*', 'deny']];
 

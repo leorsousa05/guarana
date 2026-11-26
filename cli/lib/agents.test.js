@@ -39,7 +39,8 @@ function parseWorkerPermissions(content) {
 }
 
 function resourceMatches(pattern, resource) {
-  const glob = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+  if (pattern === '*') return true;
+  const glob = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^/]*');
   return new RegExp(`^${glob}$`).test(resource);
 }
 
@@ -98,9 +99,12 @@ function assertWorkerProfilePermissions(profiles) {
       const allowedPaths = [
         '.specs/README.md',
         '.specs/state/project-state.md',
+        '.specs/state/worker-specs-handoff.json',
         '.specs/features/orchestrator.md',
         '.specs/features/orchestrator/spec-update-isolation.md',
+        '.specs/features/cli/learning-review-service-authentication.md',
         '.specs/changes/2026-10-09-worker-specs-permissions.md',
+        '.specs/decisions/ADR-049-learning-review-service-authentication.md',
       ];
       const editAllows = permissions
         .filter(({ action, effect }) => action === 'edit' && effect === 'allow')
@@ -108,8 +112,11 @@ function assertWorkerProfilePermissions(profiles) {
       assert.deepEqual(editAllows, [
         '.specs/README.md',
         '.specs/state/*.md',
+        '.specs/state/worker-specs-handoff.json',
         '.specs/features/*.md',
+        '.specs/features/*/*.md',
         '.specs/changes/*.md',
+        '.specs/decisions/ADR-*.md',
       ]);
       assert.deepEqual(permissions.find(({ action }) => action === 'edit'), {
         action: 'edit',
@@ -134,9 +141,17 @@ function assertWorkerProfilePermissions(profiles) {
         '.specs/conventions.md',
         '.specs/conventions.md.bak',
         '.specs/conventions/naming.md',
-        '.specs/decisions/ADR-001-example.md',
-        '.specs/state/worker-specs-handoff.json',
+        '.specs/decisions/decision.md',
+        '.specs/decisions/ADR-049-learning-review-service-authentication.txt',
+        '.specs/decisions/ADR-049-learning-review-service-authentication.md.bak',
+        '.specs/decisions/nested/ADR-049-learning-review-service-authentication.md',
+        '.specs/state/worker-specs-handoff.bak.json',
+        '.specs/state/other.json',
+        '.specs/state/nested/worker-specs-handoff.json',
         '.specs/features/unlisted.txt',
+        '.specs/features/orchestrator/audits/spec-update-audit.md',
+        '.specs/features/orchestrator/proofs/spec-update-proofs.md',
+        '.specs/features/orchestrator/nested/spec-update-isolation.md',
         '.specs/changes/unlisted.txt',
         '.specs/unlisted.md',
         '.specs/../README.md',
