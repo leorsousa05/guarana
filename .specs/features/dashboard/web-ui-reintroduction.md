@@ -1,6 +1,6 @@
 # Feature spec: Guarana local web dashboard reintroduction
 
-**Status: VALIDATED**
+**Status: SHIPPED**
 
 ## Goal
 Record the accepted scope to reintroduce and modernize Guarana's historical web dashboard as a complete local-only UI, without implementing or editing source code in this handoff.
@@ -36,7 +36,7 @@ Record the accepted scope to reintroduce and modernize Guarana's historical web 
 6. Independent browser-capable verification covers all eight routes, representative writes and Settings interactions, and the performance regression scenario; the feature is VALIDATED, not SHIPPED. No commit, push, or release is claimed; any such action requires separate authorization.
 
 <!-- guarana:record:start -->
-Status: VALIDATED
-Proof: Fresh native worker-verify overall PASS for criteria 1–6; current report: /tmp/opencode/dashboard-reverify-criteria.json.; Firefox 157.0.1 and geckodriver 0.37.1 on Linux against the actual CLI-served local bundle: 8/8 routes at 1440x900. Earlier same-candidate independent browser proof covered 8/8 at 375x812 and 1440x900; the final fix was server-only. Overflow, keyboard focus, empty/loading/error states, and no page/console errors passed.; Exact GET-returned decision paths passed Accept and Reject POSTs with HTTP 200 and pending rows 2→1→0. Six malicious requests returned 400; path-bearing registration returned 400; path-as-project-ID returned 404; synthetic project and outside/symlink isolation passed.; Project/Global Settings save, source, clear, and isolation passed with synthetic temporary projects. No real project/global data or external service was accessed.; Telemetry remained bounded with no browser SSE request; tests cover a 28,347,021-byte fixture, cache reuse, append/rewrite recovery, and single-flight behavior.; npm test PASS 854/854; npm run build PASS; npm run check-cli PASS; npm pack --dry-run --json inventory-only PASS (145 files, no node_modules); npm run specs:validate PASS (265 Markdown, 105 features, 48 ADRs, 303 links, 0 issues); git diff --check PASS. Only nonfatal Vite HMR port-in-use warnings occurred; no retired package/release/OpenCode-host smoke ran.
-Change: .specs/changes/2026-11-24-dashboard-web-ui-reintroduction.md
+Status: SHIPPED
+Proof: The existing feature proof records fresh independent worker-verify overall PASS for criteria 1–6, including all eight routes, browser behavior, project/settings boundaries, security, telemetry, and required gates.; Fresh independent worker-verify on exact candidate returned overall PASS (6/6), confirming Dashboard API/security and canonical/CLI mirrors among the reviewed areas.; npm test PASS (878/878); npm run build PASS (Vite 6.4.4 and CLI bundle sync); npm run check-cli PASS; npm run specs:validate -- --json PASS (276 scanned, 111 features, 51 ADRs, 307 links, 0 issues); git diff --check PASS.; Source commit ed4fabfe220028756dc71d779814d5201efdede7 was pushed normally (1d59f50..ed4fabf main -> main); git ls-remote origin refs/heads/main exactly matched the commit and the worktree was clean.; GitHub Actions Pages run 45874540342 completed successfully for push SHA ed4fabfe220028756dc71d779814d5201efdede7; this is not a claim that the local Dashboard was deployed as a live site.; This is source shipment only. Package version bump, tag, npm publication, GitHub Release, and formal package release were not performed.
+Change: none
 <!-- guarana:record:end -->

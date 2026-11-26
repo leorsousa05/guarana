@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-11-26T02:32:30.112Z
+Last updated: 2026-11-26T18:20:32.316Z
 
 ## Per-skill status
 | Skill | Status |
@@ -24,7 +24,7 @@ Last updated: 2026-11-26T02:32:30.112Z
 | Guarana optional model advisor | **VALIDATED** — UI criteria 11–14 and ADR-027 runtime proof |
 
 ## Current step
-Learning-review authentication is VALIDATED. No live service or model call occurred during coding or verification. After runtime refresh, guarana_learning_review returned status no_change because the decision and authentication boundaries were already documented; this is the tool result, not a successful live model review. No proposal was produced or written, and no credential change, commit, or release occurred.
+Source shipment closeout: commit ed4fabfe220028756dc71d779814d5201efdede7 is on origin/main and its GitHub Actions Pages run completed successfully. No package release or live service/model call is claimed.
 
 ## Product scope update — Dashboard removal — 2026-11-05
 

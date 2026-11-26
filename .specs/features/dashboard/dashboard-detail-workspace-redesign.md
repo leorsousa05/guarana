@@ -1,6 +1,6 @@
 # Feature spec: Dashboard detail workspace redesign
 
-**Status: VALIDATED**
+**Status: SHIPPED**
 
 ## Goal
 Redesign the unchanged Dashboard detail routes and Knowledge Home as distinct working views while preserving established capabilities, routes, contracts, security, privacy, and the Fieldstation shell.
@@ -44,7 +44,7 @@ Redesign the unchanged Dashboard detail routes and Knowledge Home as distinct wo
 - This UI follow-up made no server/API/schema/storage contract changes. The pre-existing untracked Dashboard server/API reintroduction files are not attributed to it. No commit, release, deployment, publication, or shipping is claimed.
 
 <!-- guarana:record:start -->
-Status: VALIDATED
-Proof: Fresh final independent worker-verify overall PASS for criteria 1–5; report: /tmp/opencode/dashboard-detail-workspace-reverify.json.; Firefox synthetic-only local API browser proof: all nine routes at CSS 1440x900 and 375x812 had zero document/body overflow; Runs project select x=104.45–335.60; all eight legacy hashes and saved-start precedence, Settings Automation/Dashboard, route actions, keyboard/touch/focus/ARIA, and reduced motion checked; no real project/Global data or external requests.; Runs mobile screenshot: /tmp/opencode/dashboard-detail-runs-375x812.png.; Focused UI suite 78/78 before final fix; fresh Runs test 4/4 after the fix; primary post-fix npm test 865/865.; npm run build PASS (Vite 6.4.4, 62 modules, successful sync-cli); npm run check-cli PASS.; Pre-record npm run specs:validate PASS (270 Markdown, 108 features, 48 ADRs, 303 links, 0 issues); git diff --check PASS; changed UI source/style whitespace scan clean.; No UI-follow-up server/API/schema/storage contract changes, commit, release, deployment, publication, or shipping.
+Status: SHIPPED
+Proof: The existing feature proof records fresh independent browser verification overall PASS for criteria 1–5, including Knowledge Home, all seven detail surfaces, routes, settings behavior, privacy, responsiveness, and accessibility.; Fresh independent worker-verify on exact candidate returned overall PASS (6/6), reviewing Dashboard API/security, Knowledge startPage behavior, canonical/CLI mirrors, and bundle parity.; npm test PASS (878/878); npm run build PASS (Vite 6.4.4 and CLI bundle sync); npm run check-cli PASS; npm run specs:validate -- --json PASS (276 scanned, 111 features, 51 ADRs, 307 links, 0 issues); git diff --check PASS.; Source commit ed4fabfe220028756dc71d779814d5201efdede7 was pushed normally (1d59f50..ed4fabf main -> main); git ls-remote origin refs/heads/main exactly matched the commit and the worktree was clean.; This is source shipment only. Package version bump, tag, npm publication, GitHub Release, and formal package release were not performed; no live model call occurred.
 Change: none
 <!-- guarana:record:end -->

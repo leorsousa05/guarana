@@ -1,6 +1,6 @@
 # Feature spec: Dashboard Settings connected provider/model catalog loading
 
-**Status: VALIDATED**
+**Status: SHIPPED**
 
 ## Goal
 Make connected OpenCode providers and their models appear reliably in both Primary and Advisor provider/model selectors on Dashboard Settings, preserving exact IDs and the catalog privacy boundary.
@@ -31,7 +31,7 @@ Make connected OpenCode providers and their models appear reliably in both Prima
 6. Focused tests, npm test, npm run build, npm run check-cli, npm run specs:validate, git diff --check, and fresh independent worker-verify all pass before VALIDATED is recorded. No release, publication, shipping, commit, or version action is requested or claimed.
 
 <!-- guarana:record:start -->
-Status: VALIDATED
-Proof: Fresh independent worker-verify overall PASS for all six criteria.; node --test dashboard/server/app.test.js dashboard/web/src/components/Models.test.mjs cli/lib/opencode-model-catalog.test.js PASS 46/46.; npm test PASS 623/623; nonfatal Vite WebSocket port-in-use and Node module-type warnings.; npm run build PASS including Dashboard production build and CLI sync; npm run check-cli PASS with matching bundle.; npm run specs:validate PASS: 229 Markdown, 90 feature specs, 39 ADRs, 250 links, 0 issues; verifier ran it before implementation review.; git diff --check PASS.; Sanitized live discoverModels({cwd:repoRoot}) returned 473 models from openai, opencode, and openrouter with error:null; disconnected ollama excluded; no raw auth output or credentials retained.; Browser automation was unavailable; verifier independently reviewed component source, SSR, and selector/manual-fallback tests instead, with no browser interaction claim.
-Change: .specs/changes/2026-10-24-settings-provider-model-catalog.md
+Status: SHIPPED
+Proof: The existing feature proof records independent worker-verify overall PASS for all six criteria and passing focused parser/API/selector/privacy tests.; Fresh independent worker-verify on exact candidate returned overall PASS (6/6), explicitly confirming the model catalog area; no live model call occurred.; npm test PASS (878/878); npm run build PASS (Vite 6.4.4 and CLI bundle sync); npm run check-cli PASS; npm run specs:validate -- --json PASS (276 scanned, 111 features, 51 ADRs, 307 links, 0 issues); git diff --check PASS.; Source commit ed4fabfe220028756dc71d779814d5201efdede7 was pushed normally (1d59f50..ed4fabf main -> main); git ls-remote origin refs/heads/main exactly matched the commit and the worktree was clean.; This is source shipment only. Package version bump, tag, npm publication, GitHub Release, and formal package release were not performed.
+Change: none
 <!-- guarana:record:end -->
