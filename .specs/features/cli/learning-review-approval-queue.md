@@ -1,6 +1,6 @@
 # Feature spec: Learning-review approval queue and auto-accept configuration
 
-**Status: VALIDATED**
+**Status: SHIPPED**
 
 ## Goal
 Record the accepted CLI and Dashboard design for a durable per-project learning-review approval queue and configurable auto-accept setting.
@@ -55,8 +55,24 @@ The original proposal text and ID are unavailable, and whether the original was
 confirmed is unknown. This evidence does not claim otherwise and reproduces no
 other queue or memory content.
 
+## Guarana 1.6.0 source-candidate shipment
+
+Fresh independent `worker-verify` returned overall PASS for the pushed source
+candidate. Commit `005b11bc68e9eaaac4bf59004cbade7cf7498ba9`
+(`chore(release): prepare Guarana 1.6.0 source candidate`) was pushed by
+ordinary `git push origin main`; output was `fedacd7..005b11b main -> main`,
+and `git ls-remote origin refs/heads/main` matched the full commit exactly.
+`npm test` passed 915/915 after test-environment isolation; `npm run build`
+passed (Vite 6.4.4, 62 modules) and CLI sync passed; `npm run check-cli`
+passed; Specs validation passed (278 files, 112 features, 52 ADRs, 311 links,
+0 issues); `npm pack --dry-run --json` inventoried 147 files, including
+LICENSE, CHANGELOG, and RELEASING, with no `node_modules`; and
+`git diff --check` passed. No live model call occurred. This is source-only
+shipment: Guarana 1.6.0 remains unpublished and untagged; no npm publish or
+tag was made, and the registry query for `guarana@1.6.0` returned E404.
+
 <!-- guarana:record:start -->
-Status: VALIDATED
-Proof: Fresh independent worker-verify PASS; proof includes its read-only check of runtime artifact /tmp/opencode/guarana-advisor-runtime-output.json confirming recommended/manual/disabled policy and no model call.; npm test PASS (914/914); npm run build passed Vite 6.4.4 / 62 modules and CLI sync, independently rerun with unchanged git status; npm run check-cli passed.; Specs validation before record write passed: 278 files, 112 features, 52 ADRs, 311 links, 0 issues; git diff --check passed.; Focused relevant workflow/Advisor/settings/CLI/Dashboard tests passed (182/182); README updated.
+Status: SHIPPED
+Proof: Fresh independent worker-verify PASS; proof includes its read-only check of runtime artifact /tmp/opencode/guarana-advisor-runtime-output.json confirming recommended/manual/disabled policy and no model call.; npm test PASS (914/914); npm run build passed Vite 6.4.4 / 62 modules and CLI sync, independently rerun with unchanged git status; npm run check-cli passed.; Specs validation before record write passed: 278 files, 112 features, 52 ADRs, 311 links, 0 issues; git diff --check passed.; Focused relevant workflow/Advisor/settings/CLI/Dashboard tests passed (182/182); README updated.; Fresh independent worker-verify returned overall PASS for the pushed source candidate. Commit 005b11bc68e9eaaac4bf59004cbade7cf7498ba9 (chore(release): prepare Guarana 1.6.0 source candidate) was pushed normally to origin/main; output: fedacd7..005b11b main -> main; the remote ref matched the full commit. npm test passed 915/915 after isolation; build passed (Vite 6.4.4, 62 modules); CLI sync and check-cli passed; Specs validation passed (278 files, 112 features, 52 ADRs, 311 links, 0 issues); package inventory listed 147 files with no node_modules; diff-check passed. npm view returned E404; no tag or publish; no live model call.
 Change: none
 <!-- guarana:record:end -->

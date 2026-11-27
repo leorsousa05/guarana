@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-11-27T04:20:20.773Z
+Last updated: 2026-11-27T04:38:27.262Z
 
 ## Per-skill status
 | Skill | Status |
@@ -24,7 +24,7 @@ Last updated: 2026-11-27T04:20:20.773Z
 | Guarana optional model advisor | **VALIDATED** — UI criteria 11–14 and ADR-027 runtime proof |
 
 ## Current step
-Learning-review and Advisor follow-up independently verified and recorded VALIDATED. No commit, push, publish, release, or SHIPPED claim.
+Guarana 1.6.0 source candidate 005b11bc68e9eaaac4bf59004cbade7cf7498ba9 was pushed to origin/main and independently verified; it remains unpublished and untagged.
 
 ## Product scope update — Dashboard removal — 2026-11-05
 
