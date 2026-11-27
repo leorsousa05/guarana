@@ -57,8 +57,12 @@ async function withEnv(values, callback) {
 
 it('keeps redirected install bytes unchanged', () => {
   const originalCwd = process.cwd();
+  const originalHome = process.env.HOME;
+  const originalXdg = process.env.XDG_CONFIG_HOME;
   const project = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-install-output-'));
   try {
+    process.env.HOME = path.join(project, 'home');
+    process.env.XDG_CONFIG_HOME = path.join(project, 'xdg-config');
     process.chdir(project);
     const streams = captureStreams();
     install.run([], { useProject: true, ...streams });
@@ -83,6 +87,10 @@ it('keeps redirected install bytes unchanged', () => {
     assert.deepEqual(streams.output(), { stdout: expected, stderr: '' });
   } finally {
     process.chdir(originalCwd);
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+    if (originalXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = originalXdg;
     fs.rmSync(project, { recursive: true, force: true });
   }
 });
@@ -92,7 +100,12 @@ it('renders a grouped, colored install summary only on an interactive TTY', asyn
   const project = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-install-tty-'));
   try {
     process.chdir(project);
-    await withEnv({ NO_COLOR: undefined, TERM: 'xterm-256color' }, () => {
+    await withEnv({
+      NO_COLOR: undefined,
+      TERM: 'xterm-256color',
+      HOME: path.join(project, 'home'),
+      XDG_CONFIG_HOME: path.join(project, 'xdg-config'),
+    }, () => {
       const streams = captureStreams({ stdoutTTY: true });
       install.run([], { useProject: true, ...streams });
       const { stdout, stderr } = streams.output();

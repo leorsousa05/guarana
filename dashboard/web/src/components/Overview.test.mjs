@@ -58,6 +58,7 @@ function markup(overrides = {}) {
     summary, workflow, workflowLoading: false,
     workers: { data: { available: true, runningCount: 1, workers: [{ key: workerKey, agent: 'worker-code', status: 'busy' }] } },
     advisorHistory: { data: { history: [{ parentSessionID: 'root-private-id-101', status: 'running' }] } },
+    learningReviewHistory: { data: { history: [] } },
     injections: { data: { injections: [injection('root-private-id-101', 22, [graphNode('shared', 'project', 'Injected decision')])] } },
     projectGraph: graphForScope('project'),
     globalGraph: graphForScope('global'),
@@ -119,6 +120,26 @@ test('Overview renders observed Advisor states, never configuration-derived runn
   const unavailable = markup({ advisorHistory: { error: 'raw private error' } });
   assert.match(unavailable, /Advisor runtime unavailable\./);
   assert.doesNotMatch(unavailable, /raw private error/);
+});
+
+test('learning review history is bounded, accessible, allowlisted, and distinguishes unknown metadata from zero', () => {
+  const privateRow = {
+    ts: 1700000000000, status: 'success', providerID: 'provider-x', modelID: 'model-y', tokens: 0, cost: 0,
+    summary: 'PRIVATE SUMMARY', path: '/private/path', proposal: 'PRIVATE PROPOSAL', taskID: 'private-task',
+  };
+  const html = markup({ learningReviewHistory: { data: { history: [privateRow, { status: 'failure', tokens: null, cost: null }] } } });
+  assert.match(html, /Learning review history/);
+  assert.match(html, /Recent learning reviews/);
+  assert.match(html, /provider-x · model-y · 0 tokens · 0 cost/);
+  assert.match(html, /Unknown tokens/);
+  assert.match(html, /Unknown cost/);
+  for (const privateValue of ['PRIVATE SUMMARY', '/private/path', 'PRIVATE PROPOSAL', 'private-task']) assert.doesNotMatch(html, new RegExp(privateValue));
+  const many = Array.from({ length: 30 }, (_, index) => ({ ts: index, status: 'success' }));
+  assert.equal((markup({ learningReviewHistory: { data: { history: many } } }).match(/Unknown provider/g) || []).length, 25);
+  assert.match(markup({ learningReviewHistory: {} }), /Loading learning review history…/);
+  assert.match(markup({ learningReviewHistory: { error: 'raw private error' } }), /Learning review history unavailable\./);
+  assert.doesNotMatch(markup({ learningReviewHistory: { error: 'raw private error' } }), /raw private error/);
+  assert.match(markup({ learningReviewHistory: { data: { history: [] } } }), /No learning reviews recorded\./);
 });
 
 test('Overview separates no-active-root, no matching injection, loading, and injection errors', () => {

@@ -665,7 +665,7 @@ export function integrateCodeSubtask(manifest, taskId, options = {}) {
   const tasks = current.tasks.map((entry) => entry.id === taskId
     ? { ...entry, status: 'integrated', evidence: appendEvidence(entry, evidence, taskId) }
     : entry);
-  return withTaskMutation(current, tasks, now);
+  return withTaskMutation(current, propagateBlocked(tasks), now);
 }
 
 export function markNeedsReconciliation(manifest, taskId, { now = Date.now() } = {}) {

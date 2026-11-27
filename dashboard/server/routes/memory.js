@@ -1,6 +1,6 @@
 import express from 'express';
 import path from 'node:path';
-import { summary, search, graph, injections, preferences, preferenceEstimate, drafts, review, createRelationship, deleteRelationship } from '../lib/memory.js';
+import { summary, search, graph, injections, preferences, preferenceEstimate, drafts, review, learningReviewProposals, reviewLearningProposal, createRelationship, deleteRelationship } from '../lib/memory.js';
 
 const invalidQuery = Symbol('invalid memory query');
 const validScopes = new Set(['project', 'global']);
@@ -94,6 +94,19 @@ export function createMemoryRouter({ root }) {
       action: body.action,
       edits: body.edits,
     });
+    if (result.error) return res.status(400).json(result);
+    res.json(result);
+  });
+
+  router.get('/learning-review', (req, res) => {
+    const result = learningReviewProposals(req.projectRoot || root);
+    if (result.error) return res.status(500).json(result);
+    res.json(result);
+  });
+
+  router.post('/learning-review', async (req, res) => {
+    const body = req.body || {};
+    const result = await reviewLearningProposal(req.projectRoot || root, { id: body.id, action: body.action });
     if (result.error) return res.status(400).json(result);
     res.json(result);
   });

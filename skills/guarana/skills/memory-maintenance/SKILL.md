@@ -36,9 +36,14 @@ Do not use this skill to infer user-wide preferences from ordinary task activity
 
 ## Post-task learning review
 
-After successful, substantive work, the primary agent may call
-`guarana_learning_review` once with a concise sanitized summary and relative changed
-paths. The tool starts an isolated OpenCode run with no tools or raw conversation
+Only after `workflow_tick` action `verify_pass` returns
+`{ok:true,state:"completed"}`, and only for explicitly classified substantive work,
+call `guarana_learning_review` once with `mode:"post_task"`, `substantive:true`, a
+sanitized summary (max 2000 characters), and known safe relative changed paths.
+Never call it after `verify_skip`, failure, abort, or from session-idle handling;
+omit the call if substantive classification or safe changed paths are missing.
+Manual user-requested reviews omit `mode`. The tool starts an isolated OpenCode run
+with no tools or raw conversation
 transcript. Its payload includes up to 100 skill metadata entries, up to 3 relevant
 project skill bodies, and up to 8 matching project memories, sent to the user-level
 configured provider. The model is resolved only from user-level configuration or the

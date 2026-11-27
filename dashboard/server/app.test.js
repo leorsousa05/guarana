@@ -14,6 +14,7 @@ import { createRunManifest } from '../../orchestrator/parallel.js';
 import { resolveSharedAdvisorModule } from './routes/shared-advisor-modules.js';
 import { memoryGetGlobalPreferences, memoryGetProjectPreferences } from '../../memory/tools.js';
 import { serializeMemoryPayload } from '../../orchestrator/prompt.js';
+import { enqueueLearningReviewProposal, listLearningReviewProposals } from '../../memory/learning-review-queue.js';
 
 function seedLegacyNode(vaultDir, node) {
   const seeded = { id: node.id || `legacy-${Date.now()}-${Math.random()}`, ts: Date.now(), tags: [], ...node };
@@ -320,6 +321,43 @@ describe('GET/POST /api/memory', () => {
     const body = await res.json();
     assert.equal(body.nodes.length, 1);
     assert.equal(body.nodes.some((n) => n.intent === 'draft leak check'), false);
+  });
+
+  it('lists only pending learning-review proposals and applies exact project-scoped decisions', async () => {
+    const memoryProposal = enqueueLearningReviewProposal(tmp, {
+      action: 'save_memory',
+      reason: 'Dashboard approval test',
+      memory: { type: 'solution', intent: 'Dashboard approved proposal', summary: 'Applied from the selected project.', tags: ['dashboard'] },
+    });
+    const skillProposal = enqueueLearningReviewProposal(tmp, {
+      action: 'create_skill',
+      reason: 'Dashboard rejection test',
+      skill: { name: 'dashboard-review-reject-test', description: 'Temporary approval test', category: 'general', scope: 'project', content: 'This rejected content must not be applied.' },
+    });
+    const listing = await fetch(`${base}/api/memory/learning-review`);
+    assert.equal(listing.status, 200);
+    const body = await listing.json();
+    assert.deepEqual(body.proposals.map((entry) => entry.id), [memoryProposal.id, skillProposal.id]);
+    assert.equal(body.proposals.some((entry) => entry.proposal.memory?.intent === 'draft leak check'), false);
+
+    const approved = await fetch(`${base}/api/memory/learning-review`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: memoryProposal.id, action: 'approve' }),
+    });
+    assert.equal(approved.status, 200);
+    assert.equal((await approved.json()).proposal.status, 'applied');
+    assert.equal(listLearningReviewProposals(tmp).find((entry) => entry.id === memoryProposal.id).status, 'applied');
+
+    const rejected = await fetch(`${base}/api/memory/learning-review`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: skillProposal.id, action: 'reject' }),
+    });
+    assert.equal(rejected.status, 200);
+    assert.equal((await rejected.json()).proposal.status, 'rejected');
+    assert.equal(listLearningReviewProposals(tmp).find((entry) => entry.id === skillProposal.id).status, 'rejected');
+    const confirmed = await fetch(`${base}/api/memory/search?q=Dashboard+approved+proposal`);
+    assert.equal((await confirmed.json()).results.some((entry) => entry.intent === 'Dashboard approved proposal'), true);
+    assert.equal(fs.existsSync(path.join(tmp, '.opencode', 'skills', 'dashboard-review-reject-test')), false);
   });
 
   it('serves read-only global preference and explicit memory scope projections with safe validation', async () => {
@@ -1233,9 +1271,11 @@ describe('GET/PUT /api/workflow/settings', () => {
     assert.deepEqual(initial.project, {});
     assert.deepEqual(initial.effective, {
       specs: { enabled: false }, verify: { enabled: true }, memory: { preferenceInjectionBudgetTokens: 8192 },
+      learningReview: { enabled: false, autoAccept: false }, advisor: { consultationPolicy: 'recommended', maxConsultationsPerTask: 3 },
     });
     assert.deepEqual(initial.sources, {
       specs: 'global', verify: 'default', memory: { preferenceInjectionBudgetTokens: 'global' },
+      learningReview: { enabled: 'default', autoAccept: 'default' }, advisor: { consultationPolicy: 'default', maxConsultationsPerTask: 'default' },
     });
 
     const savedResponse = await putSettings({ settings: {
@@ -1249,8 +1289,8 @@ describe('GET/PUT /api/workflow/settings', () => {
       ok: true,
       global: { specs: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 8192 } },
       project: { specs: { enabled: true }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 2048 } },
-      effective: { specs: { enabled: true }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 2048 } },
-      sources: { specs: 'project', verify: 'project', memory: { preferenceInjectionBudgetTokens: 'project' } },
+      effective: { specs: { enabled: true }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 2048 }, learningReview: { enabled: false, autoAccept: false }, advisor: { consultationPolicy: 'recommended', maxConsultationsPerTask: 3 } },
+      sources: { specs: 'project', verify: 'project', memory: { preferenceInjectionBudgetTokens: 'project' }, learningReview: { enabled: 'default', autoAccept: 'default' }, advisor: { consultationPolicy: 'default', maxConsultationsPerTask: 'default' } },
     });
     const projectFile = path.join(root, '.guarana', 'workflow.json');
     assert.deepEqual(JSON.parse(fs.readFileSync(projectFile, 'utf8')), {
@@ -1262,9 +1302,11 @@ describe('GET/PUT /api/workflow/settings', () => {
     assert.equal(inheritSpecs.status, 200);
     assert.deepEqual(inheritedSpecs.effective, {
       specs: { enabled: false }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 8192 },
+      learningReview: { enabled: false, autoAccept: false }, advisor: { consultationPolicy: 'recommended', maxConsultationsPerTask: 3 },
     });
     assert.deepEqual(inheritedSpecs.sources, {
       specs: 'global', verify: 'project', memory: { preferenceInjectionBudgetTokens: 'global' },
+      learningReview: { enabled: 'default', autoAccept: 'default' }, advisor: { consultationPolicy: 'default', maxConsultationsPerTask: 'default' },
     });
 
     const inheritAll = await putSettings({ settings: {} });
@@ -1272,13 +1314,40 @@ describe('GET/PUT /api/workflow/settings', () => {
     assert.equal(inheritAll.status, 200);
     assert.deepEqual(inheritedAll.effective, {
       specs: { enabled: false }, verify: { enabled: true }, memory: { preferenceInjectionBudgetTokens: 8192 },
+      learningReview: { enabled: false, autoAccept: false }, advisor: { consultationPolicy: 'recommended', maxConsultationsPerTask: 3 },
     });
     assert.deepEqual(inheritedAll.sources, {
       specs: 'global', verify: 'default', memory: { preferenceInjectionBudgetTokens: 'global' },
+      learningReview: { enabled: 'default', autoAccept: 'default' }, advisor: { consultationPolicy: 'default', maxConsultationsPerTask: 'default' },
     });
     assert.deepEqual(fs.readFileSync(globalFile), globalBefore);
     assert.deepEqual(fs.readFileSync(globalAdvisor), globalAdvisorBefore);
     assert.deepEqual(fs.readFileSync(projectAdvisor), projectAdvisorBefore);
+  });
+
+  it('defaults learning-review auto-accept off and honors Global inheritance with a Project override', async () => {
+    let response = await fetch(`${base}/api/workflow/settings`);
+    let settings = await response.json();
+    assert.equal(settings.effective.learningReview.autoAccept, false);
+    assert.equal(settings.sources.learningReview.autoAccept, 'default');
+
+    response = await putSettings({ scope: 'global', settings: { learningReview: { autoAccept: true } } });
+    assert.equal(response.status, 200);
+    settings = await response.json();
+    assert.equal(settings.effective.learningReview.autoAccept, true);
+    assert.equal(settings.sources.learningReview.autoAccept, 'global');
+
+    response = await putSettings({ scope: 'project', settings: { learningReview: { enabled: false, autoAccept: false }, advisor: { consultationPolicy: 'recommended', maxConsultationsPerTask: 3 } } });
+    assert.equal(response.status, 200);
+    settings = await response.json();
+    assert.equal(settings.effective.learningReview.autoAccept, false);
+    assert.equal(settings.sources.learningReview.autoAccept, 'project');
+
+    response = await putSettings({ scope: 'project', settings: {} });
+    assert.equal(response.status, 200);
+    settings = await response.json();
+    assert.equal(settings.effective.learningReview.autoAccept, true);
+    assert.equal(settings.sources.learningReview.autoAccept, 'global');
   });
 
   it('rejects malformed request shapes and invalid settings without writing', async () => {
@@ -1294,6 +1363,7 @@ describe('GET/PUT /api/workflow/settings', () => {
       { settings: { memory: { preferenceInjectionBudgetTokens: -1 } } },
       { settings: { memory: { preferenceInjectionBudgetTokens: 1.5 } } },
       { settings: { memory: { preferenceInjectionBudgetTokens: '100' } } },
+      { settings: { learningReview: { autoAccept: 'true' } } },
     ];
     for (const body of invalidBodies) {
       const response = await putSettings(body);
@@ -1349,6 +1419,8 @@ describe('GET/PUT /api/workflow/settings', () => {
     assert.deepEqual(globalBody.global, {
       specs: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 8192 },
     });
+    assert.deepEqual(globalBody.effective.learningReview, { enabled: false, autoAccept: false });
+    assert.deepEqual(globalBody.sources.learningReview, { enabled: 'default', autoAccept: 'default' });
     assert.deepEqual(globalBody.project, {});
     assert.deepEqual(JSON.parse(fs.readFileSync(globalFile, 'utf8')), {
       specs: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 8192 },
@@ -1364,6 +1436,7 @@ describe('GET/PUT /api/workflow/settings', () => {
     assert.deepEqual(projectBody.project, { verify: { enabled: false } });
     assert.deepEqual(projectBody.effective, {
       specs: { enabled: false }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 8192 },
+      learningReview: { enabled: false, autoAccept: false }, advisor: { consultationPolicy: 'recommended', maxConsultationsPerTask: 3 },
     });
     assert.deepEqual(fs.readFileSync(globalFile), Buffer.from('{\n  "specs": {\n    "enabled": false\n  },\n  "memory": {\n    "preferenceInjectionBudgetTokens": 8192\n  }\n}\n'));
     assert.deepEqual(fs.readFileSync(globalAdvisor), globalAdvisorBefore);
@@ -1570,6 +1643,14 @@ describe('persistent Dashboard project selection', () => {
     const rootB = path.join(tmp, 'project-b');
     fs.mkdirSync(rootA, { recursive: true });
     fs.mkdirSync(rootB, { recursive: true });
+    const queueProposalA = enqueueLearningReviewProposal(rootA, {
+      action: 'save_memory', reason: 'Project A only',
+      memory: { type: 'solution', intent: 'A queue proposal', summary: 'A proposal remains in project A.', tags: ['scope'] },
+    });
+    const queueProposalB = enqueueLearningReviewProposal(rootB, {
+      action: 'save_memory', reason: 'Project B only',
+      memory: { type: 'solution', intent: 'B queue proposal', summary: 'B proposal belongs to project B.', tags: ['scope'] },
+    });
     const baseA = await start(rootA);
     const baseB = await start(rootB, (_command, _args, options, callback) => {
       assert.equal(options.cwd, rootB);
@@ -1680,6 +1761,22 @@ describe('persistent Dashboard project selection', () => {
     });
 
     const selected = `?projectId=${encodeURIComponent(projectB.id)}`;
+    const queueA = await (await fetch(`${baseA}/api/memory/learning-review`)).json();
+    const queueB = await (await fetch(`${baseA}/api/memory/learning-review${selected}`)).json();
+    assert.deepEqual(queueA.proposals.map((entry) => entry.id), [queueProposalA.id]);
+    assert.deepEqual(queueB.proposals.map((entry) => entry.id), [queueProposalB.id]);
+    assert.equal(queueA.proposals.some((entry) => entry.proposal.memory.intent === 'B queue proposal'), false);
+    const crossProjectDecision = await jsonRequest(baseA, '/api/memory/learning-review', 'POST', {
+      id: queueProposalB.id, action: 'reject',
+    });
+    assert.equal(crossProjectDecision.status, 400);
+    assert.equal(listLearningReviewProposals(rootB).find((entry) => entry.id === queueProposalB.id).status, 'pending');
+    const selectedProjectDecision = await jsonRequest(baseA, `/api/memory/learning-review${selected}`, 'POST', {
+      id: queueProposalB.id, action: 'reject',
+    });
+    assert.equal(selectedProjectDecision.status, 200);
+    assert.equal(listLearningReviewProposals(rootB).find((entry) => entry.id === queueProposalB.id).status, 'rejected');
+    assert.equal(listLearningReviewProposals(rootA).find((entry) => entry.id === queueProposalA.id).status, 'pending');
     const estimateA = await (await fetch(`${baseA}/api/memory/preference-estimate`)).json();
     const estimateB = await (await fetch(`${baseA}/api/memory/preference-estimate${selected}`)).json();
     const globalCandidates = await memoryGetGlobalPreferences(globalVault, { complete: true });

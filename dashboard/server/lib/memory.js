@@ -3,6 +3,10 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { readJsonl } from './telemetry.js';
 import { serializeMemoryPayload } from '../../../orchestrator/prompt.js';
+import {
+  listLearningReviewProposals, approveLearningReviewProposal,
+  rejectLearningReviewProposal, acceptLearningReviewProposal,
+} from '../../../memory/learning-review-queue.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -363,6 +367,27 @@ export async function review(vaultDir, opts = {}) {
     const { tools } = await engine();
     if (!vaultExists(vaultDir)) return { error: 'memory vault not initialized' };
     return await tools.memoryReviewDraft(vaultDir, opts);
+  } catch (err) {
+    return { error: errMsg(err) };
+  }
+}
+
+export function learningReviewProposals(projectDir) {
+  try {
+    return { proposals: listLearningReviewProposals(projectDir).filter((entry) => entry.status === 'pending') };
+  } catch (err) {
+    return { error: errMsg(err) };
+  }
+}
+
+export async function reviewLearningProposal(projectDir, opts = {}) {
+  try {
+    if (opts.action === 'approve') {
+      const result = await acceptLearningReviewProposal(projectDir, opts.id);
+      return { proposal: result };
+    }
+    if (opts.action === 'reject') return { proposal: rejectLearningReviewProposal(projectDir, opts.id) };
+    return { error: 'action must be "approve" or "reject"' };
   } catch (err) {
     return { error: errMsg(err) };
   }

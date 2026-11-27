@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { readJsonl, summarize, summaryForFile, eventsForFile, advisorHistory, advisorHistoryForFile } from './telemetry.js';
+import { readJsonl, summarize, summaryForFile, eventsForFile, advisorHistory, advisorHistoryForFile, learningReviewHistory, learningReviewHistoryForFile } from './telemetry.js';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
@@ -254,5 +254,40 @@ describe('advisorHistory', () => {
     ], 2);
     assert.equal(rows.length, 2);
     assert.ok(rows.some((row) => row.status === 'running'));
+  });
+});
+
+describe('learningReviewHistory', () => {
+  it('projects allow-listed outcomes, keeps unknown cost distinct from zero, and bounds newest-first history', () => {
+    const events = [
+      { ts: 1, type: 'learning-review-outcome', status: 'success', tokens: 4, cost: 0, summary: 'PRIVATE', taskIdentity: 'PRIVATE', proposal: { secret: 'PRIVATE' } },
+      { ts: 3, type: 'learning-review-outcome', status: 'proposal', tokens: 10 },
+      { ts: 2, type: 'learning-review-outcome', status: 'failure', tokens: null, cost: null, error: 'PRIVATE' },
+      { ts: 4, type: 'learning-review-outcome', status: 'unknown', tokens: 9, cost: 2 },
+    ];
+    const rows = learningReviewHistory(events, 2);
+    assert.deepEqual(rows, [
+      { ts: 3, status: 'proposal', providerID: null, modelID: null, tokens: 10, cost: null },
+      { ts: 2, status: 'failure', providerID: null, modelID: null, tokens: null, cost: null },
+    ]);
+    assert.equal(learningReviewHistory(events)[2].cost, 0);
+    assert.doesNotMatch(JSON.stringify(learningReviewHistory(events)), /PRIVATE|taskIdentity|"error"|secret/);
+  });
+
+  it('reads historical receipts from files without altering Advisor projection', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-review-history-'));
+    const file = path.join(dir, 'events.jsonl');
+    try {
+      fs.writeFileSync(file, [
+        { ts: 1, type: 'advisor-dispatch', status: 'completed', callID: 'legacy' },
+        { ts: 2, type: 'learning-review-outcome', status: 'no_change', tokens: 0, cost: 0 },
+      ].map(JSON.stringify).join('\n') + '\n');
+      assert.deepEqual(learningReviewHistoryForFile(file), [
+        { ts: 2, status: 'no_change', providerID: null, modelID: null, tokens: 0, cost: 0 },
+      ]);
+      assert.equal(advisorHistoryForFile(file)[0].callID, 'legacy');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

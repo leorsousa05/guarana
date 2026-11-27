@@ -13,14 +13,17 @@ describe('GuaranaMemory standalone deploy (ADR-004)', () => {
   let tmpDir;
   let pluginsDir;
   let memoryDir;
+  let orchestratorDir;
   let projDir;
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-deploy-'));
     pluginsDir = path.join(tmpDir, 'plugins');
     memoryDir = path.join(tmpDir, 'memory');
+    orchestratorDir = path.join(tmpDir, 'orchestrator');
     fs.mkdirSync(pluginsDir, { recursive: true });
     fs.mkdirSync(memoryDir, { recursive: true });
+    fs.mkdirSync(orchestratorDir, { recursive: true });
     fs.writeFileSync(path.join(pluginsDir, 'package.json'), '{"type":"module"}\n');
     fs.writeFileSync(path.join(memoryDir, 'package.json'), '{"type":"module"}\n');
     fs.copyFileSync(
@@ -31,6 +34,10 @@ describe('GuaranaMemory standalone deploy (ADR-004)', () => {
       const s = path.resolve('memory', f);
       if (fs.statSync(s).isFile()) fs.copyFileSync(s, path.join(memoryDir, f));
     }
+    fs.copyFileSync(
+      path.resolve('orchestrator/workflow-settings.js'),
+      path.join(orchestratorDir, 'workflow-settings.js')
+    );
     projDir = path.join(tmpDir, 'proj');
     fs.mkdirSync(projDir, { recursive: true });
     initVault(projDir);

@@ -251,7 +251,33 @@ it('rejects custom provider config symlinked from the project', async () => {
   });
   assert.equal(result.ok, false);
   assert.equal(result.reason, 'provider_configuration_unavailable');
+  assert.equal(result.providerID, 'acme');
+  assert.equal(result.modelID, 'acme/fast-v1');
   assert.equal(spawned, false);
+});
+
+it('returns trusted provider and model metadata with a successful review', async () => {
+  const root = makeTempDir('guarana-review-metadata-');
+  const projectDir = path.join(root, 'project');
+  const homeDir = path.join(root, 'home');
+  const configHome = path.join(homeDir, '.config');
+  fs.mkdirSync(projectDir, { recursive: true });
+  fs.mkdirSync(path.join(configHome, 'opencode'), { recursive: true });
+  fs.writeFileSync(path.join(configHome, 'opencode', 'opencode.json'), JSON.stringify({ model: 'openai/gpt-4o-mini' }));
+  const result = await runOpenCodeReview({
+    projectDir,
+    payload: { summary: 'Review metadata.', changedPaths: [], skills: [], memories: [] },
+    spawnImpl: fakeSpawnWithOutput('{"type":"text","text":"{\\"action\\":\\"none\\",\\"reason\\":\\"No change\\"}"}\n'),
+    env: { PATH: '/usr/bin', HOME: homeDir, XDG_CONFIG_HOME: configHome },
+    homeDir,
+    scratchDir: path.join(root, 'scratch'),
+  });
+  assert.deepEqual(result, {
+    ok: true,
+    proposal: { action: 'none', reason: 'No change' },
+    providerID: 'openai',
+    modelID: 'openai/gpt-4o-mini',
+  });
 });
 
 it('ignores oversized user OpenCode configuration before parsing it', () => {
@@ -518,7 +544,7 @@ it('enforces the output cap and removes the temporary project after overflow', a
     scratchDir: path.join(root, 'scratch'),
     timeoutMs: 500,
   });
-  assert.deepEqual(result, { ok: false, reason: 'opencode_output_limit_exceeded' });
+  assert.deepEqual(result, { ok: false, reason: 'opencode_output_limit_exceeded', providerID: 'openai', modelID: 'openai/gpt-6-luna' });
   assert.equal(fs.existsSync(tempRoot), false);
 });
 
@@ -545,7 +571,7 @@ it('enforces the timeout, terminates the child, and removes the temporary projec
       scratchDir: path.join(root, 'scratch'),
       timeoutMs: 5,
     });
-    assert.deepEqual(result, { ok: false, reason: 'opencode_timed_out' });
+    assert.deepEqual(result, { ok: false, reason: 'opencode_timed_out', providerID: 'openai', modelID: 'openai/gpt-6-luna' });
   } finally {
     clearTimeout(keepAlive);
   }

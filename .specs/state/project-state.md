@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-11-26T18:20:32.316Z
+Last updated: 2026-11-27T04:20:20.773Z
 
 ## Per-skill status
 | Skill | Status |
@@ -24,7 +24,7 @@ Last updated: 2026-11-26T18:20:32.316Z
 | Guarana optional model advisor | **VALIDATED** — UI criteria 11–14 and ADR-027 runtime proof |
 
 ## Current step
-Source shipment closeout: commit ed4fabfe220028756dc71d779814d5201efdede7 is on origin/main and its GitHub Actions Pages run completed successfully. No package release or live service/model call is claimed.
+Learning-review and Advisor follow-up independently verified and recorded VALIDATED. No commit, push, publish, release, or SHIPPED claim.
 
 ## Product scope update — Dashboard removal — 2026-11-05
 

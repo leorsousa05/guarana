@@ -63,6 +63,13 @@ describe('parseMemoryArgs', () => {
     ['review list ignores later values', ['review', '--list', '--confirm'], {
       command: 'review', mode: 'list',
     }],
+    ['learning-review proposal list', ['proposals', '--list'], { command: 'proposals', action: 'list' }],
+    ['learning-review proposal approval requires an exact id', ['proposals', '--approve', 'proposal-1'], {
+      command: 'proposals', action: 'approve', id: 'proposal-1',
+    }],
+    ['learning-review proposal rejection requires an exact id', ['proposals', '--reject', 'proposal-1'], {
+      command: 'proposals', action: 'reject', id: 'proposal-1',
+    }],
     ['review confirm intent and trimmed tags', [
       'review', 'node-1', '--tags', ' alpha, ,beta ', '--confirm', '--type', 'solution', '--intent', 'accepted', '--other', 'value',
     ], {
@@ -113,6 +120,8 @@ describe('parseMemoryArgs', () => {
     [['delete', 'node-1', '--scope', 'both', '--confirm'], 'invalid --scope value: both'],
     [['delete', 'node-1', '--scope', 'project'], 'memory delete requires explicit --confirm'],
     [['delete', 'node-1', '--scope'], 'missing value for --scope'],
+    [['proposals', '--list', 'extra'], 'usage: guarana memory proposals --list|--approve <id>|--reject <id>'],
+    [['proposals', '--approve'], 'usage: guarana memory proposals --list|--approve <id>|--reject <id>'],
   ];
 
   for (const [args, diagnostic] of errors) {

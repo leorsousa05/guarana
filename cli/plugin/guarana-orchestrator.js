@@ -82,12 +82,12 @@ function advisorContextKey(args) {
   return createHash('sha256').update(normalized).digest('hex');
 }
 
-function claimAdvisorDispatch(sessionKey, contextKey, input) {
+function claimAdvisorDispatch(sessionKey, contextKey, input, limit) {
   let state = advisorDispatchesBySession.get(sessionKey);
   const callID = typeof input?.callID === 'string' ? input.callID : '';
   if ((callID && state?.callIDs.has(callID)) || (input && advisorDispatchHookInputs.has(input))) return true;
   if (state?.contexts.has(contextKey)) return false;
-  if (state && state.contexts.size >= 64) return false;
+  if ((state?.contexts.size || 0) >= limit) return false;
   if (!state) {
     state = { contexts: new Set(), callIDs: new Set() };
     advisorDispatchesBySession.set(sessionKey, state);
@@ -1411,7 +1411,10 @@ export const GuaranaOrchestrator = async ({ directory, client, session, sdkVersi
         if (!claimWorkflowMessage(directory, sessionID, messageID)) return;
         const text = userText((output && output.parts) || (input && input.parts));
         if (sessionID && text.includes(ADVISOR_OPT_IN_MARKER)) {
-          advisorDispatchesBySession.delete(advisorSessionKey(directory, sessionID));
+          const prefix = `${advisorSessionKey(directory, sessionID)}::`;
+          for (const key of advisorDispatchesBySession.keys()) {
+            if (key === advisorSessionKey(directory, sessionID) || key.startsWith(prefix)) advisorDispatchesBySession.delete(key);
+          }
         }
         await syncDecision(text, null, sessionID, agent);
       } catch (err) {
@@ -1484,13 +1487,20 @@ export const GuaranaOrchestrator = async ({ directory, client, session, sdkVersi
           }
         }
         const pendingMemory = { memories: claim.memories, context: pendingMemoryContext };
+        const advisorSettings = effectiveAdvisorSettings(directory).advisor;
+        const advisorAvailable = advisorSettings.enabled === true && advisorSettings.provider && advisorSettings.model;
+        const advisorPolicy = !advisorAvailable
+          ? '\n\n## Advisor consultation policy\nAdvisor is disabled or unconfigured. Do not consult or encourage consultation.'
+          : preferences.advisor?.consultationPolicy === 'manual'
+            ? '\n\n## Advisor consultation policy\nAdvisor consultation is manual: do not proactively encourage or initiate consultation. An explicit user request to consult the Advisor remains possible, subject to advisor.enabled, configuration, and runtime limits.'
+            : '\n\n## Advisor consultation policy\nAdvisor consultation is recommended when it would materially help on substantial or ambiguous work; retain judgment, do not consult unconditionally, and respect advisor.enabled, configuration, and runtime limits.';
         const injection = `${ORCHESTRATOR_INJECTION_MARKER}\n${c.prompt.buildInjection(wf, {
           memoryContext: pendingMemory.context,
           memoryNotice,
           workflowTransitionNotice: transitionNotice,
           directory,
           preferences,
-        })}`;
+        })}${advisorPolicy}`;
         if (!Array.isArray(output.system)) output.system = [];
         if (output.system.length > 0) {
           output.system[output.system.length - 1] += '\n\n' + injection;
@@ -1541,9 +1551,19 @@ export const GuaranaOrchestrator = async ({ directory, client, session, sdkVersi
       const sessionID = input?.sessionID;
       const contextKey = advisorContextKey(args);
       if (!sessionID || !contextKey) return;
-      const sessionKey = advisorSessionKey(directory, sessionID);
-      if (!claimAdvisorDispatch(sessionKey, contextKey, input)) {
-        throw new Error('Guarana advisor consultation refused: this unchanged blocker has already used its advisor consultation in this parent session. Add materially new evidence or invoke a fresh /guarana-advisor command to reset the consultation budget.');
+      const c = await core();
+      const taskWorkflow = c?.state.load(directory);
+      const boundary = [...(taskWorkflow?.history || [])].reverse().find((entry) => entry.event === 'new_task');
+      const taskIdentity = boundary ? `${boundary.ts}:${taskWorkflow?.goal || ''}` : 'session-task';
+      const sessionKey = `${advisorSessionKey(directory, sessionID)}::${taskIdentity}`;
+      const preferences = c ? workflowPreferences(c) : {};
+      const limit = preferences.advisor?.maxConsultationsPerTask ?? 3;
+      if (!claimAdvisorDispatch(sessionKey, contextKey, input, limit)) {
+        const state = advisorDispatchesBySession.get(sessionKey);
+        const reason = state?.contexts.has(contextKey)
+          ? 'this unchanged blocker has already used its advisor consultation'
+          : `the per-task limit of ${limit} consultations has been reached`;
+        throw new Error(`Guarana advisor consultation refused: ${reason}. Add materially new evidence or begin a new workflow task.`);
       }
     },
 

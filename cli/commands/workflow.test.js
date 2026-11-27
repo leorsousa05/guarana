@@ -65,8 +65,8 @@ test('workflow read reports scoped partial settings, enabled defaults, and per-f
     assert.deepEqual(parsedOutput(await invoke(['workflow', 'read'])), {
       scope: 'global',
       settings: {},
-      effective: { specs: { enabled: true }, verify: { enabled: true }, memory: { preferenceInjectionBudgetTokens: null } },
-      sources: { specs: 'default', verify: 'default', memory: { preferenceInjectionBudgetTokens: 'default' } },
+      effective: { specs: { enabled: true }, verify: { enabled: true }, memory: { preferenceInjectionBudgetTokens: null }, learningReview: { enabled: false, autoAccept: false }, advisor: { consultationPolicy: 'recommended', maxConsultationsPerTask: 3 } },
+      sources: { specs: 'default', verify: 'default', memory: { preferenceInjectionBudgetTokens: 'default' }, learningReview: { enabled: 'default', autoAccept: 'default' }, advisor: { consultationPolicy: 'default', maxConsultationsPerTask: 'default' } },
     });
     const ttyRead = await invoke(['workflow', 'read'], { stdoutTTY: true, stderrTTY: true });
     assert.equal(ttyRead.status, 0);
@@ -77,8 +77,8 @@ test('workflow read reports scoped partial settings, enabled defaults, and per-f
     assert.deepEqual(parsedOutput(await invoke(['workflow', 'read', '--project'])), {
       scope: 'project',
       settings: {},
-      effective: { specs: { enabled: true }, verify: { enabled: true }, memory: { preferenceInjectionBudgetTokens: null } },
-      sources: { specs: 'default', verify: 'default', memory: { preferenceInjectionBudgetTokens: 'default' } },
+      effective: { specs: { enabled: true }, verify: { enabled: true }, memory: { preferenceInjectionBudgetTokens: null }, learningReview: { enabled: false, autoAccept: false }, advisor: { consultationPolicy: 'recommended', maxConsultationsPerTask: 3 } },
+      sources: { specs: 'default', verify: 'default', memory: { preferenceInjectionBudgetTokens: 'default' }, learningReview: { enabled: 'default', autoAccept: 'default' }, advisor: { consultationPolicy: 'default', maxConsultationsPerTask: 'default' } },
     });
     assert.deepEqual([fs.readFileSync(projectAdvisor), fs.readFileSync(globalAdvisor)], advisorBefore);
     assert.equal(fs.existsSync(path.join(project, '.guarana', 'workflow.json')), false);
@@ -101,8 +101,8 @@ test('workflow set and clear target only the selected scope and project clear re
     assert.deepEqual(parsedOutput(await invoke(['workflow', 'read'])), {
       scope: 'global',
        settings: { specs: { enabled: false }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 4096 } },
-       effective: { specs: { enabled: false }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 4096 } },
-       sources: { specs: 'global', verify: 'global', memory: { preferenceInjectionBudgetTokens: 'global' } },
+        effective: { specs: { enabled: false }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 4096 }, learningReview: { enabled: false, autoAccept: false }, advisor: { consultationPolicy: 'recommended', maxConsultationsPerTask: 3 } },
+        sources: { specs: 'global', verify: 'global', memory: { preferenceInjectionBudgetTokens: 'global' }, learningReview: { enabled: 'default', autoAccept: 'default' }, advisor: { consultationPolicy: 'default', maxConsultationsPerTask: 'default' } },
     });
     assert.deepEqual(await invoke(['workflow', 'set', 'verify', 'true', '--project']), {
       status: 0, stdout: 'saved workflow preference verify.enabled=true (project)\n', stderr: '',
@@ -114,8 +114,8 @@ test('workflow set and clear target only the selected scope and project clear re
     assert.deepEqual(parsedOutput(await invoke(['workflow', 'read', '--project'])), {
       scope: 'project',
        settings: { verify: { enabled: true }, memory: { preferenceInjectionBudgetTokens: 1024 } },
-       effective: { specs: { enabled: false }, verify: { enabled: true }, memory: { preferenceInjectionBudgetTokens: 1024 } },
-       sources: { specs: 'global', verify: 'project', memory: { preferenceInjectionBudgetTokens: 'project' } },
+        effective: { specs: { enabled: false }, verify: { enabled: true }, memory: { preferenceInjectionBudgetTokens: 1024 }, learningReview: { enabled: false, autoAccept: false }, advisor: { consultationPolicy: 'recommended', maxConsultationsPerTask: 3 } },
+        sources: { specs: 'global', verify: 'project', memory: { preferenceInjectionBudgetTokens: 'project' }, learningReview: { enabled: 'default', autoAccept: 'default' }, advisor: { consultationPolicy: 'default', maxConsultationsPerTask: 'default' } },
     });
 
     assert.deepEqual(await invoke(['workflow', 'clear', 'verify', '--project']), {
@@ -127,8 +127,8 @@ test('workflow set and clear target only the selected scope and project clear re
     assert.deepEqual(parsedOutput(await invoke(['workflow', 'read', '--project'])), {
       scope: 'project',
        settings: {},
-       effective: { specs: { enabled: false }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 4096 } },
-       sources: { specs: 'global', verify: 'global', memory: { preferenceInjectionBudgetTokens: 'global' } },
+        effective: { specs: { enabled: false }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 4096 }, learningReview: { enabled: false, autoAccept: false }, advisor: { consultationPolicy: 'recommended', maxConsultationsPerTask: 3 } },
+        sources: { specs: 'global', verify: 'global', memory: { preferenceInjectionBudgetTokens: 'global' }, learningReview: { enabled: 'default', autoAccept: 'default' }, advisor: { consultationPolicy: 'default', maxConsultationsPerTask: 'default' } },
     });
 
     await invoke(['workflow', 'set', 'specs', 'true', '--project']);
@@ -150,8 +150,8 @@ test('workflow CLI exposes scoped memory auto-injection controls', async () => {
     assert.deepEqual(parsedOutput(await invoke(['workflow', 'read'])), {
       scope: 'global',
       settings: { memory: { autoInject: false } },
-      effective: { specs: { enabled: true }, verify: { enabled: true }, memory: { preferenceInjectionBudgetTokens: null, autoInject: false } },
-      sources: { specs: 'default', verify: 'default', memory: { preferenceInjectionBudgetTokens: 'default', autoInject: 'global' } },
+      effective: { specs: { enabled: true }, verify: { enabled: true }, memory: { preferenceInjectionBudgetTokens: null, autoInject: false }, learningReview: { enabled: false, autoAccept: false }, advisor: { consultationPolicy: 'recommended', maxConsultationsPerTask: 3 } },
+      sources: { specs: 'default', verify: 'default', memory: { preferenceInjectionBudgetTokens: 'default', autoInject: 'global' }, learningReview: { enabled: 'default', autoAccept: 'default' }, advisor: { consultationPolicy: 'default', maxConsultationsPerTask: 'default' } },
     });
 
     assert.deepEqual(await invoke(['workflow', 'set', 'memory.autoInject', 'true', '--project']), {
@@ -165,6 +165,44 @@ test('workflow CLI exposes scoped memory auto-injection controls', async () => {
   });
 });
 
+test('learning-review auto-accept defaults false and supports project override and inheritance', {
+  skip: !fs.readFileSync(path.join(__dirname, '..', 'orchestrator', 'workflow-settings.js'), 'utf8')
+    .includes('setLearningReviewAutoAccept'),
+}, async () => {
+  await isolated(async () => {
+    assert.equal(parsedOutput(await invoke(['workflow', 'read'])).effective.learningReview.autoAccept, false);
+    await invoke(['workflow', 'set', 'learningReview.autoAccept', 'true']);
+    await invoke(['workflow', 'set', 'learningReview.autoAccept', 'false', '--project']);
+    let read = parsedOutput(await invoke(['workflow', 'read', '--project']));
+    assert.equal(read.effective.learningReview.autoAccept, false);
+    assert.equal(read.sources.learningReview.autoAccept, 'project');
+    await invoke(['workflow', 'clear', 'learningReview.autoAccept', '--project']);
+    read = parsedOutput(await invoke(['workflow', 'read', '--project']));
+    assert.equal(read.effective.learningReview.autoAccept, true);
+    assert.equal(read.sources.learningReview.autoAccept, 'global');
+  });
+});
+
+test('learning-review enabled and Advisor policy/limit CLI fields set, read, and clear', async () => {
+  await isolated(async () => {
+    let read = parsedOutput(await invoke(['workflow', 'read']));
+    assert.equal(read.effective.learningReview.enabled, false);
+    assert.equal(read.effective.advisor.consultationPolicy, 'recommended');
+    assert.equal(read.effective.advisor.maxConsultationsPerTask, 3);
+    await invoke(['workflow', 'set', 'learningReview.enabled', 'true']);
+    await invoke(['workflow', 'set', 'advisor.consultationPolicy', 'manual']);
+    await invoke(['workflow', 'set', 'advisor.maxConsultationsPerTask', '7', '--project']);
+    read = parsedOutput(await invoke(['workflow', 'read', '--project']));
+    assert.equal(read.effective.learningReview.enabled, true);
+    assert.equal(read.sources.learningReview.enabled, 'global');
+    assert.equal(read.effective.advisor.consultationPolicy, 'manual');
+    assert.equal(read.sources.advisor.consultationPolicy, 'global');
+    assert.equal(read.effective.advisor.maxConsultationsPerTask, 7);
+    await invoke(['workflow', 'clear', 'advisor.maxConsultationsPerTask', '--project']);
+    assert.equal(parsedOutput(await invoke(['workflow', 'read', '--project'])).effective.advisor.maxConsultationsPerTask, 3);
+  });
+});
+
 test('workflow rejects malformed and invalid settings without overwriting them', async () => {
   await isolated(async ({ project }) => {
     const projectFile = path.join(project, '.guarana', 'workflow.json');
@@ -173,7 +211,7 @@ test('workflow rejects malformed and invalid settings without overwriting them',
     for (const [bytes, args, diagnostic] of [
       ['{\n', ['workflow', 'set', 'specs', 'false', '--project'], 'workflow: malformed workflow settings JSON\n'],
       ['{"specs":{"enabled":"false"}}\n', ['workflow', 'clear', '--project'], 'workflow: Workflow setting specs.enabled must be a boolean\n'],
-      ['{"advisor":{"enabled":false}}\n', ['workflow', 'read', '--project'], 'workflow: Unknown workflow settings section: advisor\n'],
+      ['{"advisor":{"enabled":false}}\n', ['workflow', 'read', '--project'], 'workflow: Unknown workflow settings field: advisor.enabled\n'],
       ['{"memory":{"preferenceInjectionBudgetTokens":0}}\n', ['workflow', 'read', '--project'], 'workflow: Workflow setting memory.preferenceInjectionBudgetTokens must be a positive integer token budget\n'],
     ]) {
       fs.writeFileSync(projectFile, bytes);
@@ -204,7 +242,7 @@ test('workflow argument errors and detailed help have deterministic output and n
 
     const help = await invoke(['workflow', '--help']);
     assert.deepEqual(help, { status: 0, stdout: workflow.HELP, stderr: '' });
-    assert.match(help.stdout, /guarana workflow clear \[specs\|verify\|memory\.autoInject\|memory\.preferenceInjectionBudgetTokens\] \[--project\]/);
+    assert.match(help.stdout, /guarana workflow clear \[specs\|verify\|memory\.autoInject\|memory\.preferenceInjectionBudgetTokens\|learningReview\.enabled\|learningReview\.autoAccept\|advisor\.consultationPolicy\|advisor\.maxConsultationsPerTask\] \[--project\]/);
   });
 });
 

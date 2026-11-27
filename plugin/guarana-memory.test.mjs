@@ -5,7 +5,31 @@ import MemoryPlugin from './guarana-memory.js';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import { initVault } from '../memory/vault.js';
+import {
+  acceptLearningReviewProposal,
+  approveLearningReviewProposal,
+  enqueueLearningReviewProposal,
+  learningReviewQueuePath,
+  listLearningReviewProposals,
+  rejectLearningReviewProposal,
+} from '../memory/learning-review-queue.js';
+import { writeWorkflowSettings } from '../orchestrator/workflow-settings.js';
+
+async function withWorkflowSettings(directory, settings, callback) {
+  const previousXdg = process.env.XDG_CONFIG_HOME;
+  process.env.XDG_CONFIG_HOME = path.join(directory, 'test-xdg');
+  const options = { directory, env: process.env, home: path.join(directory, 'test-home') };
+  try {
+    if (settings.global) writeWorkflowSettings('global', settings.global, options);
+    if (settings.project) writeWorkflowSettings('project', settings.project, options);
+    return await callback(options);
+  } finally {
+    if (previousXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = previousXdg;
+  }
+}
 
 it('normalizes malformed skill categories before sorting the injected catalog', () => {
   const catalog = formatSkillCatalog({
@@ -21,6 +45,7 @@ it('normalizes malformed skill categories before sorting the injected catalog', 
 
 describe('GuaranaMemory', () => {
   let tmpDir;
+  let previousXdgConfigHome;
   let eventsFile;
   let api;
   const vaultDir = () => path.join(tmpDir, '.guarana', 'memory');
@@ -28,17 +53,24 @@ describe('GuaranaMemory', () => {
 
   beforeEach(async () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'guarana-mem-plugin-'));
+    previousXdgConfigHome = process.env.XDG_CONFIG_HOME;
+    process.env.XDG_CONFIG_HOME = path.join(tmpDir, 'test-xdg');
     api = await GuaranaMemory({ directory: tmpDir });
     eventsFile = path.join(tmpDir, '.specs', 'state', 'telemetry', 'events.jsonl');
   });
 
   afterEach(() => {
-    // restore perms in case a test made the vault read-only
     try {
-      fs.chmodSync(nodesFile(), 0o644);
-      fs.chmodSync(vaultDir(), 0o755);
-    } catch { /* ignore */ }
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+      // restore perms in case a test made the vault read-only
+      try {
+        fs.chmodSync(nodesFile(), 0o644);
+        fs.chmodSync(vaultDir(), 0o755);
+      } catch { /* ignore */ }
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } finally {
+      if (previousXdgConfigHome === undefined) delete process.env.XDG_CONFIG_HOME;
+      else process.env.XDG_CONFIG_HOME = previousXdgConfigHome;
+    }
   });
 
   function readEvents() {
@@ -376,7 +408,7 @@ describe('GuaranaMemory', () => {
       directory: tmpDir,
       reviewRunner: async (request) => {
         received = request;
-        return { ok: true, proposal: { action: 'none', reason: 'No durable reusable knowledge.' } };
+        return { ok: true, providerID: 'test-provider', modelID: 'test-model', tokens: { input: 5, output: 0 }, cost: 0, proposal: { action: 'none', reason: 'No durable reusable knowledge.' } };
       },
     });
     const result = JSON.parse(await reviewApi.tool.guarana_learning_review.execute({
@@ -450,6 +482,417 @@ describe('GuaranaMemory', () => {
       if (originalHome === undefined) delete process.env.HOME;
       else process.env.HOME = originalHome;
     }
+  });
+
+  it('auto-accepts only the newly generated proposal using learningReview.autoAccept', async () => {
+    const preexisting = enqueueLearningReviewProposal(tmpDir, {
+      action: 'save_memory',
+      reason: 'An existing durable proposal.',
+      memory: {
+        type: 'solution',
+        intent: 'Existing validation procedure',
+        summary: 'Keep this already-pending proposal unchanged.',
+        tags: ['validation'],
+      },
+    });
+    let reviewCount = 0;
+    const reviewApi = await GuaranaMemory({
+      directory: tmpDir,
+      reviewRunner: async () => ({
+        ok: true,
+        proposal: {
+          action: 'create_skill',
+          reason: 'A focused procedure is reusable.',
+          skill: {
+            name: `auto-review-${++reviewCount}`,
+            description: 'Validate the project workflow.',
+            category: 'development',
+            scope: 'project',
+            content: '# Validation workflow Run the focused checks.',
+          },
+        },
+      }),
+    });
+
+    await withWorkflowSettings(tmpDir, {
+      global: { learningReview: { autoAccept: true } },
+      project: { learningReview: { autoAccept: false } },
+    }, async (settings) => {
+      const context = { sessionID: 'auto-accept-setting-session' };
+      const projectOverride = JSON.parse(await reviewApi.tool.guarana_learning_review.execute({
+        summary: 'Implemented the validation workflow.',
+        changedPaths: ['src/validation.js'],
+      }, context));
+      assert.equal(projectOverride.status, 'approval_required');
+      assert.equal(listLearningReviewProposals(tmpDir).find((entry) => entry.id === projectOverride.approvalId).status, 'pending');
+
+      rejectLearningReviewProposal(tmpDir, projectOverride.approvalId);
+      writeWorkflowSettings('project', { learningReview: { autoAccept: true } }, settings);
+      const newlyGenerated = JSON.parse(await reviewApi.tool.guarana_learning_review.execute({
+        summary: 'Added another reusable validation procedure.',
+        changedPaths: ['src/validation.js'],
+      }, context));
+      assert.equal(newlyGenerated.status, 'auto_applied');
+      assert.notEqual(newlyGenerated.approvalId, projectOverride.approvalId);
+      const queue = listLearningReviewProposals(tmpDir);
+      assert.equal(queue.find((entry) => entry.id === preexisting.id).status, 'pending');
+      assert.equal(queue.find((entry) => entry.id === projectOverride.approvalId).status, 'rejected');
+      assert.equal(queue.find((entry) => entry.id === newlyGenerated.approvalId).status, 'applied');
+      assert.equal(fs.existsSync(path.join(tmpDir, '.opencode', 'skills', 'auto-review-2', 'SKILL.md')), true);
+    });
+  });
+
+  it('gates post-task review on opt-in exact verify_pass and durably claims the task once', async () => {
+    let calls = 0;
+    const reviewApi = await GuaranaMemory({
+      directory: tmpDir,
+      reviewRunner: async () => {
+        calls += 1;
+        return { ok: true, providerID: 'test-provider', modelID: 'test-model', tokens: { input: 5 }, cost: 0, proposal: { action: 'none', reason: 'No reusable knowledge.' } };
+      },
+    });
+    const workflowFile = path.join(tmpDir, '.specs', 'state', 'workflow.json');
+    const workflow = {
+      state: 'completed',
+      goal: 'Implement a durable feature',
+      condition: 'Tests pass',
+      history: [{ event: 'run_start', to: 'coding', ts: 1234 }, { event: 'verify_pass', to: 'completed' }],
+    };
+    fs.mkdirSync(path.dirname(workflowFile), { recursive: true });
+    fs.writeFileSync(workflowFile, JSON.stringify(workflow));
+    const args = { mode: 'post_task', substantive: true, summary: 'Implemented a durable feature.', changedPaths: ['src/feature.js'] };
+    const context = { sessionID: 'post-task-review-session' };
+
+    assert.equal(JSON.parse(await reviewApi.tool.guarana_learning_review.execute(args, context)).status, 'unavailable');
+    assert.equal(calls, 0);
+    await withWorkflowSettings(tmpDir, { project: { learningReview: { enabled: true } } }, async () => {
+      workflow.history[1].event = 'verify_skip';
+      fs.writeFileSync(workflowFile, JSON.stringify(workflow));
+      assert.equal(JSON.parse(await reviewApi.tool.guarana_learning_review.execute(args, context)).status, 'unavailable');
+      workflow.history[1].event = 'verify_pass';
+      fs.writeFileSync(workflowFile, JSON.stringify(workflow));
+      assert.equal(JSON.parse(await reviewApi.tool.guarana_learning_review.execute({ ...args, changedPaths: [] }, context)).status, 'unavailable');
+      assert.equal(JSON.parse(await reviewApi.tool.guarana_learning_review.execute(args, context)).status, 'no_change');
+      const claims = path.join(tmpDir, '.guarana', 'learning-review-claims');
+      const claimFile = fs.readdirSync(claims)[0];
+      const claim = JSON.parse(fs.readFileSync(path.join(claims, claimFile), 'utf8'));
+      assert.deepEqual(Object.keys(claim).sort(), ['status', 'task']);
+      assert.equal(claim.status, 'no_change');
+      const receipt = fs.readFileSync(path.join(tmpDir, '.specs/state/telemetry/events.jsonl'), 'utf8')
+        .split('\n').filter(Boolean).map(JSON.parse).find((event) => event.type === 'learning-review-outcome');
+      assert.deepEqual(receipt, {
+        project: path.basename(tmpDir), ts: receipt.ts, type: 'learning-review-outcome',
+        status: 'no_change', providerID: 'test-provider', modelID: 'test-model', tokens: 5, cost: 0,
+      });
+      assert.equal(JSON.parse(await reviewApi.tool.guarana_learning_review.execute(args, { sessionID: 'duplicate-session' })).reason, 'already_reviewed');
+      assert.equal(calls, 1);
+    });
+  });
+
+  it('rejects unsafe paths and non-substantive reviews without claiming or invoking the reviewer', async () => {
+    let calls = 0;
+    const reviewApi = await GuaranaMemory({
+      directory: tmpDir,
+      reviewRunner: async () => {
+        calls += 1;
+        return { ok: true, proposal: { action: 'none', reason: 'No reusable knowledge.' } };
+      },
+    });
+    const workflowFile = path.join(tmpDir, '.specs', 'state', 'workflow.json');
+    const workflow = {
+      state: 'completed',
+      goal: 'Safe review task',
+      condition: 'No private content is persisted',
+      history: [{ event: 'run_start', to: 'coding', ts: 4567 }, { event: 'verify_pass', to: 'completed' }],
+    };
+    fs.mkdirSync(path.dirname(workflowFile), { recursive: true });
+    fs.writeFileSync(workflowFile, JSON.stringify(workflow));
+    await withWorkflowSettings(tmpDir, { project: { learningReview: { enabled: true } } }, async () => {
+      const base = { mode: 'post_task', substantive: true, summary: 'Safe review.', changedPaths: ['src/safe.js'] };
+      for (const unsafe of ['/private/file.js', '../private.js', 'src/.env.local', 'src/api_token.js', 'C:/private.js']) {
+        const result = JSON.parse(await reviewApi.tool.guarana_learning_review.execute({
+          ...base, changedPaths: [unsafe],
+        }, { sessionID: `unsafe-${unsafe}` }));
+        assert.equal(result.status, 'unavailable', unsafe);
+      }
+      const trivial = JSON.parse(await reviewApi.tool.guarana_learning_review.execute({
+        ...base, substantive: false,
+      }, { sessionID: 'non-substantive-review' }));
+      assert.equal(trivial.reason, 'post_task_review_not_eligible');
+      assert.equal(calls, 0);
+      assert.equal(fs.existsSync(path.join(tmpDir, '.guarana', 'learning-review-claims')), false);
+    });
+  });
+
+  it('keeps reviewer failures nonblocking and stores only a durable hash claim across plugin restart', async () => {
+    const privateMarker = 'PRIVATE_REVIEW_PAYLOAD_4f62';
+    const workflowFile = path.join(tmpDir, '.specs', 'state', 'workflow.json');
+    const workflow = {
+      state: 'completed',
+      goal: `Task ${privateMarker}`,
+      condition: 'Verification completed',
+      history: [{ event: 'run_start', to: 'coding', ts: 98765 }, { event: 'verify_pass', to: 'completed' }],
+    };
+    fs.mkdirSync(path.dirname(workflowFile), { recursive: true });
+    fs.writeFileSync(workflowFile, JSON.stringify(workflow));
+    let calls = 0;
+    const reviewRunner = async ({ payload }) => {
+      calls += 1;
+      assert.doesNotMatch(JSON.stringify(payload), new RegExp(privateMarker));
+      return { ok: false, reason: 'reviewer_unavailable' };
+    };
+    const args = {
+      mode: 'post_task', substantive: true,
+      summary: `Completed task; api_key=${privateMarker}`,
+      changedPaths: ['src/review.js'],
+    };
+    await withWorkflowSettings(tmpDir, { project: { learningReview: { enabled: true } } }, async () => {
+      const firstApi = await GuaranaMemory({ directory: tmpDir, reviewRunner });
+      const first = JSON.parse(await firstApi.tool.guarana_learning_review.execute(args, { sessionID: 'review-failure' }));
+      assert.equal(first.status, 'unavailable');
+      assert.equal(first.reason, 'reviewer_unavailable');
+
+      const digest = createHash('sha256')
+        .update(`${workflow.history[0].ts}:${workflow.goal}:${workflow.condition}`)
+        .digest('hex');
+      const claimDirectory = path.join(tmpDir, '.guarana', 'learning-review-claims');
+      assert.deepEqual(fs.readdirSync(claimDirectory), [`${digest}.json`]);
+      const claimBytes = fs.readFileSync(path.join(claimDirectory, `${digest}.json`), 'utf8');
+      const claim = JSON.parse(claimBytes);
+      assert.deepEqual(claim, { task: digest, status: 'unavailable' });
+      assert.doesNotMatch(claimBytes, new RegExp(privateMarker));
+
+      const secondApi = await GuaranaMemory({ directory: tmpDir, reviewRunner });
+      const restarted = JSON.parse(await secondApi.tool.guarana_learning_review.execute(args, { sessionID: 'after-restart' }));
+      assert.equal(restarted.reason, 'already_reviewed');
+      assert.equal(calls, 1);
+      const persisted = fs.readFileSync(path.join(claimDirectory, `${digest}.json`), 'utf8')
+        + (fs.existsSync(eventsFile) ? fs.readFileSync(eventsFile, 'utf8') : '');
+      assert.doesNotMatch(persisted, new RegExp(privateMarker));
+      assert.doesNotMatch(persisted, /api_key=/i);
+    });
+  });
+
+  it('keeps enabled and autoAccept independent for post-task reviews', async () => {
+    let calls = 0;
+    const reviewApi = await GuaranaMemory({
+      directory: tmpDir,
+      reviewRunner: async () => {
+        calls += 1;
+        return {
+          ok: true,
+          proposal: {
+            action: 'save_memory',
+            reason: 'A reusable validation step.',
+            memory: {
+              type: 'solution', intent: 'Validation step',
+              summary: 'Run focused tests before the full suite.', tags: ['testing'],
+            },
+          },
+        };
+      },
+    });
+    const workflowFile = path.join(tmpDir, '.specs', 'state', 'workflow.json');
+    const workflow = {
+      state: 'completed',
+      goal: 'Independent settings task',
+      condition: 'Settings resolve independently',
+      history: [{ event: 'run_start', to: 'coding', ts: 654321 }, { event: 'verify_pass', to: 'completed' }],
+    };
+    fs.mkdirSync(path.dirname(workflowFile), { recursive: true });
+    fs.writeFileSync(workflowFile, JSON.stringify(workflow));
+    const args = { mode: 'post_task', substantive: true, summary: 'Added a workflow setting.', changedPaths: ['src/settings.js'] };
+    await withWorkflowSettings(tmpDir, {
+      global: { learningReview: { autoAccept: true } },
+      project: { learningReview: { enabled: false, autoAccept: true } },
+    }, async (settings) => {
+      const disabled = JSON.parse(await reviewApi.tool.guarana_learning_review.execute(args, { sessionID: 'review-disabled' }));
+      assert.equal(disabled.status, 'unavailable');
+      assert.equal(calls, 0);
+
+      writeWorkflowSettings('project', { learningReview: { enabled: true, autoAccept: false } }, settings);
+      const review = JSON.parse(await reviewApi.tool.guarana_learning_review.execute(args, { sessionID: 'review-enabled-manual' }));
+      assert.equal(review.status, 'approval_required');
+      assert.equal(listLearningReviewProposals(tmpDir).find((entry) => entry.id === review.approvalId).status, 'pending');
+      assert.equal(calls, 1);
+    });
+  });
+
+  it('keeps an auto-application failure pending and fails closed on malformed settings', async () => {
+    const reviewApi = await GuaranaMemory({
+      directory: tmpDir,
+      reviewRunner: async () => ({
+        ok: true,
+        proposal: {
+          action: 'create_skill',
+          reason: 'A focused procedure is reusable.',
+          skill: {
+            name: 'auto-review-collision',
+            description: 'Validate the project workflow.',
+            category: 'development',
+            scope: 'project',
+            content: '# Validation workflow Run the focused checks.',
+          },
+        },
+      }),
+    });
+    await api.tool.skill_create.execute({
+      name: 'auto-review-collision',
+      description: 'An existing skill that must not be overwritten.',
+      category: 'development',
+      scope: 'project',
+      content: '# Existing validation workflow',
+    });
+
+    await withWorkflowSettings(tmpDir, {
+      global: { learningReview: { autoAccept: true } },
+    }, async () => {
+      const failed = JSON.parse(await reviewApi.tool.guarana_learning_review.execute({
+        summary: 'Reviewed a validation procedure.',
+        changedPaths: ['src/validation.js'],
+      }, { sessionID: 'auto-application-failure-session' }));
+      assert.equal(failed.status, 'approval_required');
+      assert.equal(failed.reason, 'auto_application_failed');
+      assert.equal(listLearningReviewProposals(tmpDir).find((entry) => entry.id === failed.approvalId).status, 'pending');
+      assert.equal(JSON.parse(await api.tool.skill_read.execute({ name: 'auto-review-collision', scope: 'project' })).description,
+        'An existing skill that must not be overwritten.');
+
+      rejectLearningReviewProposal(tmpDir, failed.approvalId);
+      const workflowFile = path.join(tmpDir, '.guarana', 'workflow.json');
+      fs.writeFileSync(workflowFile, '{"learningReview":{"autoAccept":"true"}}\n', 'utf8');
+      const malformed = JSON.parse(await reviewApi.tool.guarana_learning_review.execute({
+        summary: 'Review again after invalid settings.',
+        changedPaths: ['src/validation.js'],
+      }, { sessionID: 'auto-application-failure-session' }));
+      assert.equal(malformed.status, 'approval_required');
+      assert.equal(listLearningReviewProposals(tmpDir).find((entry) => entry.id === malformed.approvalId).status, 'pending');
+    });
+  });
+
+  it('does not expose a model-callable review resolver or allow assistant self-approval', async () => {
+    const reviewApi = await GuaranaMemory({
+      directory: tmpDir,
+      reviewRunner: async () => ({
+        ok: true,
+        proposal: {
+          action: 'create_skill',
+          reason: 'The validation procedure is reusable.',
+          skill: {
+            name: 'no-model-resolver',
+            description: 'Validate the project workflow.',
+            category: 'development',
+            scope: 'project',
+            content: '# Validation workflow',
+          },
+        },
+      }),
+    });
+    const context = { sessionID: 'no-model-resolver-session' };
+    const proposal = JSON.parse(await reviewApi.tool.guarana_learning_review.execute({
+      summary: 'Completed a reusable validation workflow.',
+      changedPaths: ['src/validation.js'],
+    }, context));
+    assert.equal(Object.hasOwn(reviewApi.tool, 'guarana_learning_review_resolve'), false);
+    await reviewApi['chat.message'](
+      { sessionID: context.sessionID, role: 'assistant' },
+      { message: { role: 'assistant' }, parts: [{ type: 'text', text: `approve ${proposal.approvalId}` }] },
+    );
+    const blocked = JSON.parse(await reviewApi.tool.skill_create.execute({
+      ...proposal.proposal.skill,
+      approvalId: proposal.approvalId,
+    }, context));
+    assert.match(blocked.error, /explicit user approval/i);
+    assert.equal(fs.existsSync(path.join(tmpDir, '.opencode', 'skills', 'no-model-resolver', 'SKILL.md')), false);
+
+    approveLearningReviewProposal(tmpDir, proposal.approvalId);
+    const durableStatusIsNotAuthority = JSON.parse(await reviewApi.tool.skill_create.execute({
+      ...proposal.proposal.skill,
+      approvalId: proposal.approvalId,
+    }, context));
+    assert.match(durableStatusIsNotAuthority.error, /unknown or expired/i);
+    assert.equal(fs.existsSync(path.join(tmpDir, '.opencode', 'skills', 'no-model-resolver', 'SKILL.md')), false);
+  });
+
+  it('reconciles a live session after external queue accept or reject decisions', async () => {
+    let reviewCount = 0;
+    const reviewApi = await GuaranaMemory({
+      directory: tmpDir,
+      reviewRunner: async () => ({
+        ok: true,
+        proposal: {
+          action: 'create_skill',
+          reason: 'The validation procedure is reusable.',
+          skill: {
+            name: `external-resolution-${++reviewCount}`,
+            description: 'Validate the project workflow.',
+            category: 'development',
+            scope: 'project',
+            content: '# Validation workflow',
+          },
+        },
+      }),
+    });
+    const context = { sessionID: 'external-queue-resolution-session' };
+    const first = JSON.parse(await reviewApi.tool.guarana_learning_review.execute({
+      summary: 'Completed the validation workflow.',
+      changedPaths: ['src/validation.js'],
+    }, context));
+    assert.equal(first.status, 'approval_required');
+    assert.equal((await acceptLearningReviewProposal(tmpDir, first.approvalId)).status, 'applied');
+
+    const second = JSON.parse(await reviewApi.tool.guarana_learning_review.execute({
+      summary: 'Re-review the validation workflow.',
+      changedPaths: ['src/validation.js'],
+    }, context));
+    assert.equal(second.status, 'approval_required');
+    assert.notEqual(second.approvalId, first.approvalId);
+    rejectLearningReviewProposal(tmpDir, second.approvalId);
+
+    const third = JSON.parse(await reviewApi.tool.guarana_learning_review.execute({
+      summary: 'Review a revised validation workflow.',
+      changedPaths: ['src/validation.js'],
+    }, context));
+    assert.equal(third.status, 'approval_required');
+    assert.notEqual(third.approvalId, second.approvalId);
+    assert.notEqual(third.approvalId, first.approvalId);
+    const queue = listLearningReviewProposals(tmpDir);
+    assert.deepEqual(queue.map((entry) => entry.status), ['applied', 'rejected', 'pending']);
+  });
+
+  it('fails closed when the durable queue is unreadable for an approved write', async () => {
+    const reviewApi = await GuaranaMemory({
+      directory: tmpDir,
+      reviewRunner: async () => ({
+        ok: true,
+        proposal: {
+          action: 'create_skill',
+          reason: 'A durable validation procedure.',
+          skill: {
+            name: 'queue-read-failure',
+            description: 'Validate the project workflow.',
+            category: 'development',
+            scope: 'project',
+            content: '# Validation workflow',
+          },
+        },
+      }),
+    });
+    const context = { sessionID: 'unreadable-queue-session' };
+    const proposal = JSON.parse(await reviewApi.tool.guarana_learning_review.execute({
+      summary: 'Completed the validation workflow.',
+      changedPaths: ['src/validation.js'],
+    }, context));
+    await reviewApi['chat.message'](
+      { sessionID: context.sessionID, role: 'user' },
+      { message: { role: 'user' }, parts: [{ type: 'text', text: `approve ${proposal.approvalId}` }] },
+    );
+    fs.writeFileSync(learningReviewQueuePath(tmpDir), '{', 'utf8');
+    const blocked = JSON.parse(await reviewApi.tool.skill_create.execute({
+      ...proposal.proposal.skill,
+      approvalId: proposal.approvalId,
+    }, context));
+    assert.match(blocked.error, /queue is unavailable/i);
+    assert.equal(fs.existsSync(path.join(tmpDir, '.opencode', 'skills', 'queue-read-failure', 'SKILL.md')), false);
   });
 
   it('binds a reviewed skill write to explicit session approval of the exact proposal', async () => {

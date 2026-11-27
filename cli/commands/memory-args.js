@@ -94,6 +94,18 @@ function parseMemoryArgs(args) {
     return result;
   }
 
+  if (subcommand === 'proposals') {
+    if (args[1] === '--list') {
+      if (args.length !== 2) fail('usage: guarana memory proposals --list|--approve <id>|--reject <id>');
+      return { command: 'proposals', action: 'list' };
+    }
+    const flag = args[1];
+    const id = args[2];
+    if (!['--approve', '--reject'].includes(flag) || !id || args.length !== 3)
+      fail('usage: guarana memory proposals --list|--approve <id>|--reject <id>');
+    return { command: 'proposals', action: flag === '--approve' ? 'approve' : 'reject', id };
+  }
+
   if (subcommand === 'delete') {
     const id = args[1] && !args[1].startsWith('--') ? args[1] : undefined;
     if (!id) fail('missing node id: guarana memory delete <id> --scope project|global --confirm');

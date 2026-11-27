@@ -27,6 +27,7 @@ const WORKFLOW_FIELDS = [
 ];
 const PREFERENCE_BUDGET_FIELD = 'preferenceInjectionBudgetTokens';
 const MEMORY_AUTO_INJECT_FIELD = 'autoInject';
+const LEARNING_REVIEW_AUTO_ACCEPT_FIELD = 'autoAccept';
 const PREFERENCE_BUDGET_PRESETS = [
   ['', 'Automatic (unset)'],
   [8192, 'Less (8192)'],
@@ -116,6 +117,45 @@ function workflowMemoryAutoInjectValue(scope, draft, global) {
   if (Object.hasOwn(draft?.memory || {}, MEMORY_AUTO_INJECT_FIELD)) return draft.memory[MEMORY_AUTO_INJECT_FIELD];
   if (scope === 'project' && Object.hasOwn(global?.memory || {}, MEMORY_AUTO_INJECT_FIELD)) return global.memory[MEMORY_AUTO_INJECT_FIELD];
   return true;
+}
+
+export function setWorkflowLearningReviewAutoAccept(settings, enabled) {
+  return { ...settings, learningReview: { ...(settings?.learningReview || {}), [LEARNING_REVIEW_AUTO_ACCEPT_FIELD]: enabled } };
+}
+
+export function clearWorkflowLearningReviewAutoAccept(settings) {
+  const next = copySettings(settings);
+  if (next.learningReview) {
+    delete next.learningReview[LEARNING_REVIEW_AUTO_ACCEPT_FIELD];
+    if (!Object.keys(next.learningReview).length) delete next.learningReview;
+  }
+  return next;
+}
+
+function workflowLearningReviewValue(scope, draft, global) {
+  if (Object.hasOwn(draft?.learningReview || {}, LEARNING_REVIEW_AUTO_ACCEPT_FIELD)) return draft.learningReview.autoAccept;
+  if (scope === 'project' && Object.hasOwn(global?.learningReview || {}, LEARNING_REVIEW_AUTO_ACCEPT_FIELD)) return global.learningReview.autoAccept;
+  return false;
+}
+
+function setScopedField(settings, section, field, value) {
+  return { ...settings, [section]: { ...(settings?.[section] || {}), [field]: value } };
+}
+
+export function scopedFieldUpdate(section, field, event) {
+  const value = event.currentTarget.type === 'checkbox'
+    ? event.currentTarget.checked
+    : event.currentTarget.value;
+  return (current) => setScopedField(current, section, field, value);
+}
+
+function clearScopedField(settings, section, field) {
+  const next = copySettings(settings);
+  if (next[section]) {
+    delete next[section][field];
+    if (!Object.keys(next[section]).length) delete next[section];
+  }
+  return next;
 }
 
 export async function putScopedSettings(endpoint, scope, settings, request = fetch) {
@@ -364,6 +404,67 @@ export function Settings({
                   }}>Clear project override</button>}
                 </div>
               );
+            })()}
+            {(() => {
+              const section = 'learningReview';
+              const field = 'enabled';
+              const id = `settings-workflow-${section}-${field}`;
+              const effective = workflow.effective?.[section]?.[field] === true;
+              const source = workflow.sources?.[section]?.[field] || 'default';
+              const value = fieldValue(workflowScope, workflowDraft, workflow.global, section, field, false);
+              const canClear = workflowScope === 'project' && Object.hasOwn(workflowDraft?.[section] || {}, field);
+              return <div className="settings-row" key={id}>
+                <label className="settings-toggle" htmlFor={id}><span>Enable post-task learning review</span>
+                  <input id={id} type="checkbox" checked={value} aria-describedby={`${id}-source`} onChange={(event) => setWorkflowDraft(scopedFieldUpdate(section, field, event))} />
+                </label>
+                <p className="settings-source" id={`${id}-source`}>Effective for selected project: {effective ? 'enabled' : 'disabled'} · Source: {sourceLabel(source)}</p>
+                {canClear && <button className="settings-clear" type="button" aria-label="Clear project override for learning review" onClick={() => {
+                  const next = clearScopedField(workflowDraft, section, field);
+                  setWorkflowDraft(next); saveWorkflow('project', next);
+                }}>Clear project override</button>}
+              </div>;
+            })()}
+            {(['consultationPolicy', 'maxConsultationsPerTask']).map((field) => {
+              const section = 'advisor';
+              const id = `settings-workflow-${section}-${field}`;
+              const fallback = field === 'consultationPolicy' ? 'recommended' : 3;
+              const effective = workflow.effective?.[section]?.[field] ?? fallback;
+              const source = workflow.sources?.[section]?.[field] || 'default';
+              const value = fieldValue(workflowScope, workflowDraft, workflow.global, section, field, fallback);
+              const canClear = workflowScope === 'project' && Object.hasOwn(workflowDraft?.[section] || {}, field);
+              return <div className="settings-row" key={id}>
+                <label className="settings-control" htmlFor={id}><span>{field === 'consultationPolicy' ? 'Advisor consultation policy' : 'Maximum Advisor consultations per task'}</span>
+                  {field === 'consultationPolicy'
+                    ? <select id={id} value={value} onChange={(event) => setWorkflowDraft(scopedFieldUpdate(section, field, event))}><option value="recommended">Recommended</option><option value="manual">Manual</option></select>
+                    : <input id={id} type="number" min="1" step="1" value={value} onChange={(event) => {
+                      const number = Number(event.currentTarget.value);
+                      if (Number.isSafeInteger(number) && number > 0) setWorkflowDraft((current) => setScopedField(current, section, field, number));
+                    }} />}
+                </label>
+                <p className="settings-source" id={`${id}-source`}>Effective for selected project: {effective} · Source: {sourceLabel(source)}</p>
+                {canClear && <button className="settings-clear" type="button" aria-label={`Clear project override for ${field}`} onClick={() => {
+                  const next = clearScopedField(workflowDraft, section, field);
+                  setWorkflowDraft(next); saveWorkflow('project', next);
+                }}>Clear project override</button>}
+              </div>;
+            })}
+            {(() => {
+              const field = LEARNING_REVIEW_AUTO_ACCEPT_FIELD;
+              const id = `settings-workflow-learning-review-${field}`;
+              const effective = workflow.effective?.learningReview?.[field] === true;
+              const source = workflow.sources?.learningReview?.[field] || 'default';
+              const value = workflowLearningReviewValue(workflowScope, workflowDraft, workflow.global);
+              const canClear = workflowScope === 'project' && Object.hasOwn(workflowDraft?.learningReview || {}, field);
+              return <div className="settings-row" key={id}>
+                <label className="settings-toggle" htmlFor={id}><span>Automatically accept learning-review proposals</span>
+                  <input id={id} type="checkbox" checked={value} aria-describedby={`${id}-source`} onChange={(event) => setWorkflowDraft(scopedFieldUpdate('learningReview', field, event))} />
+                </label>
+                <p className="settings-source" id={`${id}-source`}>Effective for selected project: {effective ? 'enabled' : 'disabled'} · Source: {sourceLabel(source)}</p>
+                {canClear && <button className="settings-clear" type="button" onClick={() => {
+                  const next = clearWorkflowLearningReviewAutoAccept(workflowDraft);
+                  setWorkflowDraft(next); saveWorkflow('project', next);
+                }}>Clear project override</button>}
+              </div>;
             })()}
             {(() => {
               const field = PREFERENCE_BUDGET_FIELD;

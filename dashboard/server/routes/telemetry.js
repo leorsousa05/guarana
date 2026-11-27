@@ -1,7 +1,7 @@
 import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
-import { summaryForFile, advisorHistoryForFile, eventsForFile } from '../lib/telemetry.js';
+import { summaryForFile, advisorHistoryForFile, learningReviewHistoryForFile, eventsForFile } from '../lib/telemetry.js';
 import { SPECS_DIR, TELEMETRY_DIR_SEGMENTS, EVENTS_FILE } from '../lib/constants.js';
 
 export function createTelemetryRouter({ root }) {
@@ -16,6 +16,12 @@ export function createTelemetryRouter({ root }) {
     const rawLimit = Number(req.query.limit);
     const limit = Number.isInteger(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 100) : 25;
     res.json({ history: advisorHistoryForFile(telemetryFile(req), limit) });
+  });
+
+  router.get('/learning-review-history', (req, res) => {
+    const rawLimit = Number(req.query.limit);
+    const limit = Number.isInteger(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 100) : 25;
+    res.json({ history: learningReviewHistoryForFile(telemetryFile(req), limit) });
   });
 
   router.get('/events', (req, res) => {

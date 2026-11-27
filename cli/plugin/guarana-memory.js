@@ -7,12 +7,53 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { isSensitive, sanitize } from '../memory/security.js';
 import { normalizeReviewRequest, runOpenCodeReview } from '../memory/learning-review.js';
+import {
+  approveLearningReviewProposal,
+  acceptLearningReviewProposal,
+  beginApprovedLearningReviewApplication,
+  enqueueLearningReviewProposal,
+  finishLearningReviewApplication,
+  listLearningReviewProposals,
+  rejectLearningReviewProposal,
+} from '../memory/learning-review-queue.js';
+import { readWorkflowSettings } from '../orchestrator/workflow-settings.js';
 
 const pluginDir = path.dirname(fileURLToPath(import.meta.url));
+
+function claimPostTaskReview(directory, taskIdentity) {
+  const digest = createHash('sha256').update(taskIdentity).digest('hex');
+  const claimsDirectory = path.join(directory, '.guarana', 'learning-review-claims');
+  fs.mkdirSync(claimsDirectory, { recursive: true, mode: 0o700 });
+  const file = path.join(claimsDirectory, `${digest}.json`);
+  let descriptor;
+  try {
+    descriptor = fs.openSync(file, 'wx', 0o600);
+    fs.writeFileSync(descriptor, `${JSON.stringify({ task: digest, status: 'claimed' })}\n`, 'utf8');
+    fs.fsyncSync(descriptor);
+    return { file, digest };
+  } catch (error) {
+    if (error.code === 'EEXIST') return null;
+    throw error;
+  } finally {
+    if (descriptor !== undefined) fs.closeSync(descriptor);
+  }
+}
+
+function finishPostTaskReviewClaim(claim, status) {
+  if (!claim || !['success', 'proposal', 'no_change', 'unavailable', 'failure'].includes(status)) return;
+  if (status === 'proposal') status = 'success';
+  const temporary = `${claim.file}.${process.pid}.tmp`;
+  try {
+    fs.writeFileSync(temporary, `${JSON.stringify({ task: claim.digest, status })}\n`, { flag: 'wx', mode: 0o600 });
+    fs.renameSync(temporary, claim.file);
+  } catch {
+    try { fs.rmSync(temporary, { force: true }); } catch { /* best effort status recording */ }
+  }
+}
 
 const MEMORY_POLICY = [
   '## Guarana automatic memory',
@@ -261,8 +302,10 @@ export const GuaranaMemory = async ({ directory, reviewRunner = runOpenCodeRevie
       ? [fingerprint('memory-intent', proposal.memory.intent), fingerprint('memory-summary', proposal.memory.summary)].filter(Boolean)
       : [];
   const writeFingerprints = (handlerName, options = {}) => {
-    if (['skillCreate', 'skillUpdate'].includes(handlerName))
+    if (['skillCreate', 'skillUpdate'].includes(handlerName)) {
+      if (options.scope === 'global') return [];
       return [fingerprint('skill-content', options.content)].filter(Boolean);
+    }
     if (['memorySaveNode', 'memorySaveDecision'].includes(handlerName)) {
       if (options.scope === 'global') return [];
       return [fingerprint('memory-intent', options.intent), fingerprint('memory-summary', options.summary ?? options.decision)].filter(Boolean);
@@ -293,9 +336,60 @@ export const GuaranaMemory = async ({ directory, reviewRunner = runOpenCodeRevie
       : { error: 'this reviewer proposal was already applied; do not replay it' };
   };
 
+  const pendingQueueProposalError = (handlerName, options, queue) => {
+    const fingerprints = new Set(writeFingerprints(handlerName, options));
+    if (!fingerprints.size) return null;
+    const entry = queue.find((candidate) =>
+      ['pending', 'approved', 'applying'].includes(candidate.status)
+      && proposalWriteFingerprints(candidate.proposal).some((signature) => fingerprints.has(signature)));
+    return entry
+      ? { error: 'this reviewer proposal is still pending in the durable queue; require exact user approval in its session before writing' }
+      : null;
+  };
+
   const hasOpenApproval = (state) => {
     const active = state?.proposals.get(state.activeId);
-    return Boolean(active && ['pending', 'approved', 'applying'].includes(active.status));
+    return Boolean(active && ['pending', 'approved', 'applying', 'lost'].includes(active.status));
+  };
+
+  const reconcileReviewApprovals = () => {
+    const queue = listLearningReviewProposals(directory);
+    const byId = new Map(queue.map((entry) => [entry.id, entry]));
+    for (const entry of queue) {
+      if (entry.status === 'applied') rememberProposalOutcome(entry.proposal, 'used');
+      else if (entry.status === 'rejected') rememberProposalOutcome(entry.proposal, 'rejected');
+    }
+    for (const state of reviewApprovalsBySession.values()) {
+      for (const entry of state.proposals.values()) {
+        if (!['pending', 'approved', 'applying', 'lost'].includes(entry.status)) continue;
+        const durable = byId.get(entry.id);
+        if (!durable) {
+          entry.status = 'lost';
+          continue;
+        }
+        if (durable.status === 'pending') {
+          entry.status = 'pending';
+          continue;
+        }
+        if (durable.status === 'approved' && entry.status === 'approved') continue;
+        if (durable.status === 'applying' && entry.status === 'applying') continue;
+        if (durable.status === 'applied') {
+          entry.status = 'used';
+          rememberProposalOutcome(entry.proposal, 'used');
+        } else if (durable.status === 'rejected') {
+          entry.status = 'rejected';
+          const family = reviewWriteFamily(entry.proposal.action);
+          if (family) state.rejectedFamilies.add(family);
+          rememberProposalOutcome(entry.proposal, 'rejected');
+        } else {
+          // An approval or in-progress claim made outside this session is not
+          // authority for a model write in this session.
+          entry.status = 'external';
+        }
+        if (state.activeId === entry.id) state.activeId = null;
+      }
+    }
+    return queue;
   };
 
   const authorizePersistentWrite = (handlerName, args, context) => {
@@ -303,6 +397,15 @@ export const GuaranaMemory = async ({ directory, reviewRunner = runOpenCodeRevie
     const hasApprovalId = Object.hasOwn(options, 'approvalId');
     const sessionID = typeof context?.sessionID === 'string' ? context.sessionID : '';
     const family = reviewWriteFamily(handlerName);
+    const hadOpenApproval = [...reviewApprovalsBySession.values()].some(hasOpenApproval);
+    let queue;
+    try {
+      queue = reconcileReviewApprovals();
+    } catch (error) {
+      if (hasApprovalId || hadOpenApproval)
+        return { error: 'learning-review queue is unavailable; refusing to authorize this write' };
+      return quarantinedProposalError(handlerName, options) || { options };
+    }
     const otherSessionPending = [...reviewApprovalsBySession.entries()].some(([candidateSessionID, candidate]) =>
       candidateSessionID !== sessionID && hasOpenApproval(candidate));
     if (otherSessionPending)
@@ -312,10 +415,14 @@ export const GuaranaMemory = async ({ directory, reviewRunner = runOpenCodeRevie
       if (hasApprovalId) return { error: 'unknown or expired reviewer approval' };
       if (family && globallyBlockedWriteFamilies.has(family))
         return { error: `review proposal history reached its safe capacity; ${family} writes are blocked until restart` };
-      return quarantinedProposalError(handlerName, options) || { options };
+      return quarantinedProposalError(handlerName, options)
+        || pendingQueueProposalError(handlerName, options, queue)
+        || { options };
     }
 
     const active = state.proposals.get(state.activeId);
+    if (active?.status === 'lost')
+      return { error: 'the reviewer proposal is missing from its durable queue; refusing to authorize writes' };
     if (active?.status === 'pending')
       return { error: `reviewer proposal requires explicit user approval; ask the user to reply exactly: approve ${active.id} (or reject ${active.id})` };
     if (active?.status === 'applying') return { error: 'the approved reviewer write is already in progress' };
@@ -324,12 +431,23 @@ export const GuaranaMemory = async ({ directory, reviewRunner = runOpenCodeRevie
         return { error: `include approvalId ${active.id} to apply the approved proposal` };
       if (!proposalWriteMatches(active.proposal, handlerName, options))
         return { error: 'write must exactly match the reviewed proposal and its approved scope' };
+      try {
+        beginApprovedLearningReviewApplication(directory, active.id);
+      } catch {
+        return { error: 'the durable reviewer approval is unavailable or no longer pending' };
+      }
       active.status = 'applying';
       return {
         options: Object.fromEntries(Object.entries(options).filter(([key]) => key !== 'approvalId')),
         complete: (result) => {
           if (active.status !== 'applying') return;
-          if (result && typeof result === 'object' && !Object.hasOwn(result, 'error')) {
+          const applied = Boolean(result && typeof result === 'object' && !Object.hasOwn(result, 'error'));
+          try {
+            finishLearningReviewApplication(directory, active.id, applied);
+          } catch (error) {
+            recordError(error, sessionID);
+          }
+          if (applied) {
             active.status = 'used';
             rememberProposalOutcome(active.proposal, 'used');
           } else {
@@ -351,7 +469,9 @@ export const GuaranaMemory = async ({ directory, reviewRunner = runOpenCodeRevie
     }
     if (family && state.rejectedFamilies.has(family))
       return { error: `the user rejected this reviewer proposal for ${family} in this session; request a fresh review before another ${family} write` };
-    return quarantinedProposalError(handlerName, options) || { options };
+    return quarantinedProposalError(handlerName, options)
+      || pendingQueueProposalError(handlerName, options, queue)
+      || { options };
   };
 
   const activeReviewProposal = (sessionID) => {
@@ -382,10 +502,11 @@ export const GuaranaMemory = async ({ directory, reviewRunner = runOpenCodeRevie
       state.proposals.delete(evictable[0]);
       if (state.activeId === evictable[0]) state.activeId = null;
     }
-    const id = randomUUID();
-    state.proposals.set(id, { id, proposal: structuredClone(proposal), status: 'pending' });
+    const queued = enqueueLearningReviewProposal(directory, proposal);
+    const id = queued.id;
+    state.proposals.set(id, { id, proposal: structuredClone(queued.proposal), status: 'pending' });
     state.activeId = id;
-    return id;
+    return queued;
   };
 
   const handleReviewApprovalMessage = (input = {}, output = {}) => {
@@ -402,11 +523,22 @@ export const GuaranaMemory = async ({ directory, reviewRunner = runOpenCodeRevie
     const state = reviewApprovalsBySession.get(sessionID);
     const proposal = state?.proposals.get(state.activeId);
     if (!proposal || proposal.id !== match[2].toLowerCase() || proposal.status !== 'pending') return;
-    proposal.status = match[1].toLowerCase() === 'approve' ? 'approved' : 'rejected';
+    try {
+      if (match[1].toLowerCase() === 'approve') {
+        approveLearningReviewProposal(directory, proposal.id);
+        proposal.status = 'approved';
+      } else {
+        rejectLearningReviewProposal(directory, proposal.id);
+        proposal.status = 'rejected';
+      }
+    } catch {
+      return;
+    }
     if (proposal.status === 'rejected') {
       const family = reviewWriteFamily(proposal.proposal.action);
       if (family) state.rejectedFamilies.add(family);
       rememberProposalOutcome(proposal.proposal, 'rejected');
+      if (state.activeId === proposal.id) state.activeId = null;
     }
   };
 
@@ -632,32 +764,139 @@ export const GuaranaMemory = async ({ directory, reviewRunner = runOpenCodeRevie
     return { skills: all, relevantSkillBodies: bodies };
   };
 
+  const applyReviewProposal = (e, proposal) => {
+    if (proposal.action === 'save_memory')
+      return e.tools.memorySaveNode(vaultFor(e, 'project'), { ...proposal.memory, scope: 'project' });
+    if (proposal.action === 'create_skill')
+      return e.skills.createSkill({ ...proposal.skill, projectDir: directory, scope: 'project' });
+    if (proposal.action === 'update_skill')
+      return e.skills.updateSkill({ ...proposal.skill, projectDir: directory, scope: 'project' });
+    throw new TypeError('unsupported reviewer action');
+  };
+
+  const autoAcceptLearningReview = () => {
+    try {
+      return readWorkflowSettings({ directory, env: process.env })
+        .effective.learningReview.autoAccept === true;
+    } catch (error) {
+      recordError(error);
+      return false;
+    }
+  };
+
+  const queueReviewProposal = async (sessionID, proposal, e) => {
+    const queued = registerReviewProposal(sessionID, proposal);
+    if (!queued) return { status: 'unavailable', reason: 'approval_capacity_reached' };
+    const response = {
+      status: 'approval_required',
+      approvalId: queued.id,
+      reason: queued.proposal.reason,
+      proposal: queued.proposal,
+    };
+    if (!autoAcceptLearningReview()) return response;
+
+    try {
+      const applied = await acceptLearningReviewProposal(directory, queued.id, {
+        applyProposal: (exactProposal) => applyReviewProposal(e, exactProposal),
+      });
+      const state = reviewApprovalsBySession.get(sessionID);
+      const local = state?.proposals.get(queued.id);
+      if (local) local.status = 'used';
+      if (state?.activeId === queued.id) state.activeId = null;
+      rememberProposalOutcome(queued.proposal, 'used');
+      return { status: 'auto_applied', approvalId: queued.id, proposal: queued.proposal, result: applied.result };
+    } catch (error) {
+      recordError(error, sessionID);
+      return { ...response, reason: 'auto_application_failed' };
+    }
+  };
+
   const executeLearningReview = async (args, context) => {
     if (process.env.GUARANA_LEARNING_REVIEW_CHILD === '1')
       return JSON.stringify({ status: 'failed', reason: 'recursive_review_disabled' });
     const sessionID = typeof context?.sessionID === 'string' ? context.sessionID : '';
     if (!sessionID) return JSON.stringify({ status: 'unavailable', reason: 'approval_session_required' });
+    let postTaskClaim = null;
+    if (args?.mode === 'post_task') {
+      try {
+        const settings = readWorkflowSettings({ directory, env: process.env });
+        const workflow = JSON.parse(fs.readFileSync(path.join(directory, '.specs', 'state', 'workflow.json'), 'utf8'));
+        if (settings.effective.learningReview.enabled !== true
+          || args.substantive !== true
+          || workflow.state !== 'completed'
+          || workflow.history?.at(-1)?.event !== 'verify_pass'
+          || workflow.history?.at(-1)?.to !== 'completed') {
+          return JSON.stringify({ status: 'unavailable', reason: 'post_task_review_not_eligible' });
+        }
+        const request = normalizeReviewRequest(args);
+        if (!request.changedPaths.length) return JSON.stringify({ status: 'unavailable', reason: 'changed_paths_required' });
+        const runStart = [...workflow.history].reverse().find((entry) => entry.event === 'run_start' && entry.to === 'coding');
+        if (!Number.isSafeInteger(runStart?.ts)) return JSON.stringify({ status: 'unavailable', reason: 'task_identity_unavailable' });
+        const taskIdentity = `${runStart.ts}:${workflow.goal || workflow.activeTask || ''}:${workflow.condition || ''}`;
+        postTaskClaim = claimPostTaskReview(directory, taskIdentity);
+        if (!postTaskClaim) return JSON.stringify({ status: 'unavailable', reason: 'already_reviewed' });
+      } catch {
+        return JSON.stringify({ status: 'unavailable', reason: 'post_task_review_not_eligible' });
+      }
+    } else if (args?.mode !== undefined) {
+      return JSON.stringify({ status: 'unavailable', reason: 'unsupported_review_mode' });
+    }
+    const finish = (status, review = null) => {
+      finishPostTaskReviewClaim(postTaskClaim, status);
+      if (!postTaskClaim) return;
+      const event = { ts: Date.now(), type: 'learning-review-outcome', status };
+      for (const field of ['providerID', 'modelID']) {
+        const value = review?.[field];
+        if (typeof value === 'string' && value.length <= 100 && !/[\u0000-\u001f]/.test(value) && !isSensitive(value)) event[field] = value;
+      }
+      const tokens = review?.tokens;
+      const tokenFields = ['input', 'output', 'reasoning', 'cache'];
+      const total = typeof tokens === 'number' ? tokens
+        : tokens && typeof tokens.total === 'number' ? tokens.total
+          : tokens && tokenFields.some((key) => typeof tokens[key] === 'number')
+            ? tokenFields.reduce((sum, key) => sum + (typeof tokens[key] === 'number' ? tokens[key] : 0), 0)
+            : null;
+      event.tokens = Number.isFinite(total) && total >= 0 ? total : null;
+      event.cost = typeof review?.cost === 'number' && Number.isFinite(review.cost) && review.cost >= 0 ? review.cost : null;
+      append(event);
+    };
+    try {
+      reconcileReviewApprovals();
+    } catch {
+      finish('failure');
+      return JSON.stringify({ status: 'unavailable', reason: 'review_state_unavailable' });
+    }
     const existing = activeReviewProposal(sessionID);
-    if (existing)
+    if (existing) {
+      finish('proposal');
       return JSON.stringify({ status: 'approval_required', approvalId: existing.id, proposal: existing.proposal });
+    }
     const activeElsewhere = [...reviewApprovalsBySession.entries()].some(([candidateSessionID, candidate]) =>
       candidateSessionID !== sessionID && hasOpenApproval(candidate));
-    if (activeElsewhere)
+    if (activeElsewhere) {
+      finish('unavailable');
       return JSON.stringify({ status: 'unavailable', reason: 'review_approval_pending_in_another_session' });
+    }
     const sessionState = reviewApprovalsBySession.get(sessionID);
     const canEvictProposal = sessionState
       ? [...sessionState.proposals.values()].some((entry) => !['pending', 'approved', 'applying'].includes(entry.status))
       : false;
     const canEvictSession = [...reviewApprovalsBySession.values()].some((candidate) =>
       !hasOpenApproval(candidate) && candidate.rejectedFamilies.size === 0);
-    if (sessionState && sessionState.proposals.size >= maxReviewProposalsPerSession && !canEvictProposal)
+    if (sessionState && sessionState.proposals.size >= maxReviewProposalsPerSession && !canEvictProposal) {
+      finish('unavailable');
       return JSON.stringify({ status: 'unavailable', reason: 'approval_capacity_reached' });
-    if (!sessionState && reviewApprovalsBySession.size >= maxReviewApprovalSessions && !canEvictSession)
+    }
+    if (!sessionState && reviewApprovalsBySession.size >= maxReviewApprovalSessions && !canEvictSession) {
+      finish('unavailable');
       return JSON.stringify({ status: 'unavailable', reason: 'approval_capacity_reached' });
+    }
     try {
       const e = await engine();
-      if (!e?.skills || !e?.tools || !e?.graph)
+      if (!e?.skills || !e?.tools || !e?.graph) {
+        finish('unavailable');
         return JSON.stringify({ status: 'unavailable', reason: 'review_engines_unavailable' });
+      }
       const request = normalizeReviewRequest(args || {});
       const currentSkills = e.skills.listSkills({ projectDir: directory, includeRevision: true, includeContent: false });
       const { skills, relevantSkillBodies } = skillReviewContext(e, currentSkills, request);
@@ -671,25 +910,24 @@ export const GuaranaMemory = async ({ directory, reviewRunner = runOpenCodeRevie
       })).filter((memory) => !isSensitive(`${memory.intent}\n${memory.summary}\n${memory.tags.join('\n')}`));
       const payload = { ...request, skills, relevantSkillBodies, memories };
       const review = await reviewRunner({ projectDir: directory, payload });
-      if (!review?.ok) return JSON.stringify({ status: 'unavailable', reason: review?.reason || 'reviewer_failed' });
+      if (!review?.ok) { finish('unavailable', review); return JSON.stringify({ status: 'unavailable', reason: review?.reason || 'reviewer_failed' }); }
       const proposal = normalizeProposal(review.proposal);
-      if (proposal.action === 'none') return JSON.stringify({ status: 'no_change', reason: proposal.reason });
+      if (proposal.action === 'none') { finish('no_change', review); return JSON.stringify({ status: 'no_change', reason: proposal.reason }); }
       if (proposal.action === 'create_skill' || proposal.action === 'update_skill') {
-        const approvalId = registerReviewProposal(sessionID, proposal);
-        return approvalId
-          ? JSON.stringify({ status: 'approval_required', approvalId, reason: proposal.reason, proposal })
-          : JSON.stringify({ status: 'unavailable', reason: 'approval_capacity_reached' });
+        const response = await queueReviewProposal(sessionID, proposal, e);
+        finish(response.status === 'approval_required' ? 'proposal' : response.status === 'unavailable' ? 'unavailable' : 'success', review);
+        return JSON.stringify(response);
       }
 
       const normalizedSummary = proposal.memory.summary.toLowerCase().replace(/\s+/g, ' ').trim();
       if (memories.some((memory) => memory.type === proposal.memory.type && memory.summary.toLowerCase().replace(/\s+/g, ' ').trim() === normalizedSummary))
-        return JSON.stringify({ status: 'no_change', reason: 'matching_project_memory_exists' });
+        { finish('no_change', review); return JSON.stringify({ status: 'no_change', reason: 'matching_project_memory_exists' }); }
       const responseProposal = { ...proposal, memory: { ...proposal.memory, scope: 'project' } };
-      const approvalId = registerReviewProposal(sessionID, responseProposal);
-      return approvalId
-        ? JSON.stringify({ status: 'approval_required', approvalId, reason: proposal.reason, proposal: responseProposal })
-        : JSON.stringify({ status: 'unavailable', reason: 'approval_capacity_reached' });
+      const response = await queueReviewProposal(sessionID, responseProposal, e);
+      finish(response.status === 'approval_required' ? 'proposal' : response.status === 'unavailable' ? 'unavailable' : 'success', review);
+      return JSON.stringify(response);
     } catch (error) {
+      finish('failure');
       return JSON.stringify({ status: 'failed', reason: String(error.message || 'learning_review_failed').slice(0, 180) });
     }
   };
@@ -739,6 +977,8 @@ export const GuaranaMemory = async ({ directory, reviewRunner = runOpenCodeRevie
       guarana_learning_review: {
         description: 'Run one isolated, read-only OpenCode review after successful substantive work. It selects the provider/model only from user-level configuration or the user process environment; project configuration cannot choose the authenticated provider destination. Along with the sanitized summary and relative paths, it sends up to 100 skill metadata entries, up to 3 relevant project skill bodies, and up to 8 matching project memories to that provider. Memory and skill proposals return as approval_required with a session-bound approvalId and are never written automatically. Present the complete exact proposal and require the user reply exactly approve <approvalId>; the primary write tools bind approval to the exact proposal and reject altered or replayed writes. Project scope and structural/secret checks cannot guarantee prompt-injection-free skill or memory content.',
         args: {
+          mode: { type: 'string', enum: ['post_task'], description: 'internal post-task invocation mode; omit for an explicitly user-requested manual review' },
+          substantive: { type: 'boolean', description: 'true only when the completed task was explicitly classified as substantive' },
           summary: { type: 'string', description: 'concise task summary; no transcript, secrets, or private data (max 2000 characters)' },
           changedPaths: { type: 'array', items: { type: 'string' }, description: 'relative changed paths only; no absolute or sensitive paths (max 30)' },
         },

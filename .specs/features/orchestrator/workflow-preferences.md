@@ -6,6 +6,7 @@
 Add persistent CLI and dashboard controls for whether Guarana automatically creates human-readable task specs and uses worker-specs, and whether it automatically runs independent verification. Dashboard controls live in the unified Settings page.
 
 ## Requirements
+- Add `learningReview.enabled` as a Global/Project setting defaulting false, independent of `learningReview.autoAccept` which also defaults false; expose effective value, source, and overrides in CLI and restored Dashboard.
 - Store settings in global $XDG_CONFIG_HOME/guarana/workflow.json, falling back to ~/.config/guarana/workflow.json when XDG_CONFIG_HOME is unset, and project .guarana/workflow.json. Both settings default to true; project values override per field, unset fields inherit global values, and clearing a project field restores inheritance. Reject malformed or unknown settings without partial writes and do not mutate advisor.json.
 - Add guarana workflow read, set, and clear subcommands with the optional --project selector and deterministic help, errors, and status; project scope uses the current working directory. Add controls to the dashboard Settings page with Global/Project editing, effective source, clear-to-inherit, and Project as the editor default. Workflow is the state monitor, not a preference editor.
 - Use one combined Specs/worker-specs preference. When disabled, suppress automatic human-readable task-record bootstrap, creation, and updates and automatic worker-specs dispatch. Keep .specs/state/workflow.json operational, preserve existing human-readable .specs files byte-identically when the setting changes, and permit explicit user-requested spec work to override the setting for that task.
@@ -19,6 +20,7 @@ Add persistent CLI and dashboard controls for whether Guarana automatically crea
 - Use ADR-005 budget defaults: main thread at most 8k steady-state tokens; worker-code 8k, worker-verify 4k, worker-debug 6k per dispatch; per-run cap 32k tokens and 15 minutes.
 
 ## Acceptance criteria
+0. Regression tests prove both learning-review settings independently default false and resolve Global/Project values and overrides; CLI and Dashboard report matching effective value and source.
 1. Shared settings core reads, validates, and writes both scopes; defaults both settings to true; project per-field override, global fallback, and clear-to-inherit work; malformed or unknown settings fail without partial writes; advisor.json remains byte-identical.
 2. CLI read, set, and clear accept both booleans, global default and --project, deterministic help/errors/status, current-working-directory project paths, and XDG_CONFIG_HOME-aware global paths.
 3. Dashboard Settings fetches effective workflow preferences, exposes two labeled accessible toggles with effective source and Global/Project editing, and saves only the selected scope through a validated API; clearing a project field restores inheritance and malformed API payloads are rejected without writes.

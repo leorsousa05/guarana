@@ -12,9 +12,10 @@ import { decide, resultFailed } from './decide.js';
 import { buildSystemBlock, buildInjection, resolveSkillBody, completionAction } from './prompt.js';
 import { ensureSpecs, taskSlug } from './specs.js';
 import {
-  clearMemoryAutoInject, clearPreferenceInjectionBudget, clearWorkflowPreference, readWorkflowSettings,
-  setMemoryAutoInject, setPreferenceInjectionBudget, setWorkflowPreference,
+  clearLearningReviewAutoAccept, clearMemoryAutoInject, clearPreferenceInjectionBudget, clearWorkflowPreference, readWorkflowSettings,
+  setLearningReviewAutoAccept, setMemoryAutoInject, setPreferenceInjectionBudget, setWorkflowPreference,
   validateWorkflowSettings, workflowSettingsPaths, writeWorkflowSettings,
+  setScopedWorkflowField, clearScopedWorkflowField,
 } from './workflow-settings.js';
 
 function tmp() {
@@ -80,10 +81,14 @@ test('workflow settings default on, use isolated XDG paths, and merge fields ind
   assert.deepEqual(empty.effective, {
     specs: { enabled: true }, verify: { enabled: true },
     memory: { preferenceInjectionBudgetTokens: null },
+    learningReview: { enabled: false, autoAccept: false },
+    advisor: { consultationPolicy: 'recommended', maxConsultationsPerTask: 3 },
   });
   assert.deepEqual(empty.sources, {
     specs: 'default', verify: 'default',
     memory: { preferenceInjectionBudgetTokens: 'default' },
+    learningReview: { enabled: 'default', autoAccept: 'default' },
+    advisor: { consultationPolicy: 'default', maxConsultationsPerTask: 'default' },
   });
   assert.equal(workflowSettingsPaths(options).global, path.join(config, 'guarana', 'workflow.json'));
   assert.equal(workflowSettingsPaths({ directory: options.directory, env: {}, home }).global,
@@ -94,15 +99,21 @@ test('workflow settings default on, use isolated XDG paths, and merge fields ind
   let resolved = readWorkflowSettings(options);
   assert.deepEqual(resolved.effective, {
     specs: { enabled: false }, verify: { enabled: true }, memory: { preferenceInjectionBudgetTokens: null },
+    learningReview: { enabled: false, autoAccept: false },
+    advisor: { consultationPolicy: 'recommended', maxConsultationsPerTask: 3 },
   });
   assert.deepEqual(resolved.sources, {
     specs: 'global', verify: 'project', memory: { preferenceInjectionBudgetTokens: 'default' },
+    learningReview: { enabled: 'default', autoAccept: 'default' },
+    advisor: { consultationPolicy: 'default', maxConsultationsPerTask: 'default' },
   });
 
   clearWorkflowPreference('project', 'verify', options);
   resolved = readWorkflowSettings(options);
   assert.deepEqual(resolved.effective, {
     specs: { enabled: false }, verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: null },
+    learningReview: { enabled: false, autoAccept: false },
+    advisor: { consultationPolicy: 'recommended', maxConsultationsPerTask: 3 },
   });
   assert.equal(resolved.sources.verify, 'global');
 
@@ -111,6 +122,7 @@ test('workflow settings default on, use isolated XDG paths, and merge fields ind
   resolved = readWorkflowSettings(options);
   assert.deepEqual(resolved.effective, {
     specs: { enabled: false }, verify: { enabled: true }, memory: { preferenceInjectionBudgetTokens: null },
+    learningReview: { enabled: false, autoAccept: false }, advisor: { consultationPolicy: 'recommended', maxConsultationsPerTask: 3 },
   });
   clearWorkflowPreference('project', 'specs', options);
   assert.equal(readWorkflowSettings(options).effective.specs.enabled, true);
@@ -150,6 +162,65 @@ test('automatic memory injection inherits per scope and can be disabled or resto
   assert.equal(resolved.sources.memory.autoInject, 'global');
 });
 
+test('learning review auto-accept uses the exact contract, defaults off, and inherits project over global', () => {
+  const root = tmp();
+  const options = { directory: path.join(root, 'project'), env: { XDG_CONFIG_HOME: path.join(root, 'xdg') }, home: path.join(root, 'home') };
+  const paths = workflowSettingsPaths(options);
+  let resolved = readWorkflowSettings(options);
+  assert.equal(resolved.effective.learningReview.autoAccept, false);
+  assert.equal(resolved.sources.learningReview.autoAccept, 'default');
+
+  setLearningReviewAutoAccept('global', true, options);
+  resolved = readWorkflowSettings(options);
+  assert.equal(resolved.effective.learningReview.autoAccept, true);
+  assert.equal(resolved.sources.learningReview.autoAccept, 'global');
+
+  setLearningReviewAutoAccept('project', false, options);
+  resolved = readWorkflowSettings(options);
+  assert.equal(resolved.effective.learningReview.autoAccept, false);
+  assert.equal(resolved.sources.learningReview.autoAccept, 'project');
+  assert.deepEqual(JSON.parse(fs.readFileSync(paths.project, 'utf8')), { learningReview: { autoAccept: false } });
+  assert.deepEqual(JSON.parse(fs.readFileSync(paths.global, 'utf8')), { learningReview: { autoAccept: true } });
+
+  clearLearningReviewAutoAccept('project', options);
+  assert.equal(readWorkflowSettings(options).effective.learningReview.autoAccept, true);
+  clearLearningReviewAutoAccept('global', options);
+  resolved = readWorkflowSettings(options);
+  assert.equal(resolved.effective.learningReview.autoAccept, false);
+  assert.equal(resolved.sources.learningReview.autoAccept, 'default');
+
+  for (const invalid of [
+    { learningReview: { autoAccept: 'true' } },
+    { memory: { autoAcceptLearningReview: true } },
+  ]) assert.throws(() => validateWorkflowSettings(invalid), TypeError);
+  assert.equal(readWorkflowSettings(options).effective.learningReview.enabled, false);
+  assert.throws(() => validateWorkflowSettings({ advisor: { enabled: false } }), /Unknown workflow settings field: advisor.enabled/);
+
+  fs.mkdirSync(path.dirname(paths.project), { recursive: true });
+  fs.writeFileSync(paths.project, '{"learningReview":{"autoAccept":"true"}}\n', 'utf8');
+  assert.throws(() => readWorkflowSettings(options), /learningReview\.autoAccept.*boolean/);
+});
+
+test('learning review enabled and Advisor settings resolve independently across scopes', () => {
+  const root = tmp();
+  const options = { directory: path.join(root, 'project'), env: { XDG_CONFIG_HOME: path.join(root, 'xdg') } };
+  setScopedWorkflowField('global', 'learningReview', 'enabled', true, options);
+  setScopedWorkflowField('global', 'advisor', 'consultationPolicy', 'manual', options);
+  setScopedWorkflowField('global', 'advisor', 'maxConsultationsPerTask', 8, options);
+  setScopedWorkflowField('project', 'learningReview', 'autoAccept', true, options);
+  let resolved = readWorkflowSettings(options);
+  assert.deepEqual(resolved.effective.learningReview, { enabled: true, autoAccept: true });
+  assert.equal(resolved.sources.learningReview.enabled, 'global');
+  assert.equal(resolved.sources.learningReview.autoAccept, 'project');
+  assert.deepEqual(resolved.effective.advisor, { consultationPolicy: 'manual', maxConsultationsPerTask: 8 });
+  setScopedWorkflowField('project', 'advisor', 'maxConsultationsPerTask', 2, options);
+  assert.equal(readWorkflowSettings(options).sources.advisor.maxConsultationsPerTask, 'project');
+  clearScopedWorkflowField('project', 'advisor', 'maxConsultationsPerTask', options);
+  resolved = readWorkflowSettings(options);
+  assert.equal(resolved.effective.advisor.maxConsultationsPerTask, 8);
+  assert.equal(resolved.sources.advisor.maxConsultationsPerTask, 'global');
+});
+
 test('workflow settings reject unknown sections, fields, and non-booleans without partial writes', () => {
   for (const invalid of [
     { advisor: { enabled: false } },
@@ -161,6 +232,9 @@ test('workflow settings reject unknown sections, fields, and non-booleans withou
     { memory: { preferenceInjectionBudgetTokens: 1.5 } },
     { memory: { preferenceInjectionBudgetTokens: '100' } },
     { memory: { autoInject: 'false' } },
+    { memory: { autoAcceptLearningReview: true } },
+    { learningReview: { autoAccept: 'false' } },
+    { learningReview: { extra: true } },
     { memory: { extra: 100 } },
   ]) assert.throws(() => validateWorkflowSettings(invalid), TypeError);
 

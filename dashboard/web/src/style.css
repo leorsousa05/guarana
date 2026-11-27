@@ -3156,10 +3156,83 @@ table.ledger.runs-table {
 
 .mem-tabs {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 0.25rem 0.75rem;
   margin: 0 0 1.2rem;
   border-bottom: 1px solid var(--hairline);
+}
+
+.learning-approvals,
+.learning-approval-list,
+.learning-approval,
+.learning-approval-copy { min-width: 0; }
+
+.learning-approvals-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.8rem;
+  border-bottom: 2px solid var(--ink);
+  margin-bottom: 0.4rem;
+  padding: 0.2rem 0 0.65rem;
+}
+
+.learning-approvals-kicker,
+.learning-approval-meta,
+.learning-approval-reason > span,
+.learning-approval-summary > span {
+  color: var(--ink);
+  opacity: 0.68;
+  font: 0.62rem/1.4 var(--mono);
+}
+
+.learning-approvals-head h4 { margin: 0.15rem 0; font: 650 1.05rem var(--display); }
+.learning-approvals-head > div > p:last-child { margin: 0.2rem 0 0; font-size: 0.75rem; }
+.learning-approvals-count { flex: 0 0 auto; margin: 0.3rem 0; font: 0.68rem var(--mono); }
+.learning-approvals-count strong { color: var(--guarana); font-size: 1.25rem; }
+
+.learning-approval-list { list-style: none; margin: 0; padding: 0; }
+.learning-approval-list > li { min-width: 0; border-bottom: 1px solid var(--hairline); }
+.learning-approval {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 9rem;
+  gap: 1.2rem;
+  border-left: 3px solid var(--guarana);
+  padding: 1rem 0 1rem 0.9rem;
+}
+.learning-approval-meta { display: flex; flex-wrap: wrap; gap: 0.35rem 0.8rem; }
+.learning-approval-status { color: var(--guarana); font-weight: 600; }
+.learning-approval h5 { margin: 0.35rem 0 0.65rem; font: 650 1rem/1.3 var(--display); overflow-wrap: anywhere; }
+.learning-approval-reason,
+.learning-approval-summary { margin: 0.4rem 0; font-size: 0.76rem; line-height: 1.5; overflow-wrap: anywhere; }
+.learning-approval-reason > span,
+.learning-approval-summary > span { display: block; margin-bottom: 0.12rem; }
+.learning-approval-summary p { margin: 0; overflow-wrap: anywhere; }
+.learning-approval-raw { margin-top: 0.65rem; font-size: 0.7rem; }
+.learning-approval-raw summary { min-height: 2rem; color: var(--ink); opacity: 0.68; cursor: pointer; font: 0.64rem var(--mono); }
+.learning-approval-raw pre { max-width: 100%; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 0.65rem/1.5 var(--mono); }
+.learning-approval-actions { display: flex; flex-direction: column; align-items: stretch; gap: 0.45rem; }
+.learning-approval-actions button {
+  min-height: 2.65rem;
+  border: 1px solid var(--ink);
+  background: var(--rail);
+  color: var(--rail-ink);
+  padding: 0.45rem 0.7rem;
+  font: 600 0.7rem var(--display);
+  cursor: pointer;
+}
+.learning-approval-actions button:last-child { background: transparent; color: var(--ink); }
+.learning-approval-actions button:hover:not(:disabled) { border-color: var(--guarana); color: var(--guarana); }
+.learning-approval-actions button:disabled { cursor: not-allowed; opacity: 0.55; }
+.learning-approval :focus-visible { outline: 2px solid var(--guarana); outline-offset: 2px; }
+.learning-approvals-empty { border-left: 3px solid var(--leaf); margin-top: 0.8rem; padding: 0.75rem 0.9rem; background: var(--canvas); }
+.learning-approvals-empty h5 { margin: 0.2rem 0; font: 650 0.9rem var(--display); }
+.learning-approvals-empty p:last-child { margin: 0.2rem 0 0; font-size: 0.75rem; }
+
+@media (max-width: 700px) {
+  .learning-approval { grid-template-columns: minmax(0, 1fr); gap: 0.7rem; }
+  .learning-approval-actions { flex-direction: row; flex-wrap: wrap; }
+  .learning-approval-actions button { flex: 1 1 7rem; }
 }
 
 .mem-workspace-switch {
@@ -4676,6 +4749,7 @@ table.ledger.runs-table {
 
 @media (max-width: 520px) {
   .mem-tabs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 0.2rem 0.1rem;
   }
 
@@ -5601,11 +5675,15 @@ table.ledger.runs-table {
 
 .ov-operations {
   display: grid;
-  grid-template-rows: minmax(0, 1.35fr) minmax(4.5rem, 0.65fr) minmax(4.5rem, 0.65fr);
+  grid-template-rows: minmax(0, 1.35fr) repeat(3, minmax(4.5rem, 0.65fr));
   gap: 0.55rem;
   min-width: 0;
   min-height: 0;
 }
+
+.ov-learning-review-list { list-style: none; margin: 0; padding: 0; overflow: auto; font-size: 0.62rem; }
+.ov-learning-review-list li { display: grid; grid-template-columns: auto auto; justify-content: space-between; gap: 0.12rem 0.4rem; border-top: 1px solid var(--hairline); padding: 0.16rem 0; }
+.ov-learning-review-list small { grid-column: 1 / -1; opacity: 0.72; overflow-wrap: anywhere; }
 
 .ov-panel {
   display: flex;
@@ -5795,7 +5873,7 @@ table.ledger.runs-table {
   .ov-context-fields { grid-template-columns: minmax(0, 0.55fr) minmax(0, 0.8fr) minmax(0, 1.65fr); gap: 0.2rem 0.45rem; }
   .ov-context-fields dd { font-size: 0.64rem; }
   .ov-workbench { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 0.35rem; }
-  .ov-operations { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1.2fr) minmax(0, 0.8fr); gap: 0.2rem 0.75rem; }
+  .ov-operations { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 0.8fr); gap: 0.2rem 0.75rem; }
   .ov-injection { grid-column: 1 / -1; }
   .ov-map-viewport { flex-basis: clamp(6rem, 13vh, 7.5rem); height: clamp(6rem, 13vh, 7.5rem); }
 }

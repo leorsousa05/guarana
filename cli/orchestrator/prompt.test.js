@@ -73,6 +73,10 @@ function toState(state) {
   let workflow = createWorkflow();
   for (const event of ['new_task', 'plan_complete', 'run_start']) workflow = apply(workflow, event);
   if (state === 'verifying') workflow = apply(workflow, 'code_complete');
+  if (state === 'completed') {
+    workflow = apply(workflow, 'code_complete');
+    workflow = apply(workflow, 'verify_pass');
+  }
   return workflow;
 }
 
@@ -133,6 +137,15 @@ test('active workflow states require concrete phase updates and a verification s
     assert.match(block, /Phase\/planning completion is not task completion/);
     assert.match(block, /After verification\/final gates, tell the user exact paths and checks\/results/);
   }
+});
+
+test('completed-state prompt preserves actionable post-task learning review trigger', () => {
+  const prompt = buildSystemBlock(toState('completed'));
+  assert.match(prompt, /After successful `verify_pass`, if learning review enabled and task substantive/);
+  assert.match(prompt, /follow `guarana:memory-maintenance`/);
+  assert.match(prompt, /manual user requests remain available/);
+  assert.doesNotMatch(buildSystemBlock(toState('coding')), /learning review/);
+  assert.doesNotMatch(prompt, /^\s*Review\s*$/m);
 });
 
 test('coding prompt keeps ordinary work sequential and selects DAG workers by task mode', () => {

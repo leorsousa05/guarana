@@ -11,6 +11,13 @@ import { fmtTs } from '../lib/format.js';
 const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const render = (element) => renderToStaticMarkup(element);
 
+test('approval styles use defined tokens and sentence-case labels', () => {
+  const memoryCss = fs.readFileSync(path.join(webRoot, 'src/style.css'), 'utf8');
+  const approvalStyles = memoryCss.match(/\.learning-approvals[\s\S]*?(?=\n\.mem-workspace-switch)/)?.[0] || '';
+  assert.doesNotMatch(approvalStyles, /var\(--muted\)/);
+  assert.doesNotMatch(approvalStyles, /text-transform:\s*uppercase/i);
+});
+
 async function loadMemory(t) {
   const vite = await createServer({ root: webRoot, server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
   t.after(() => vite.close());
@@ -46,35 +53,40 @@ async function loadMemoryInjectionsWithData(t, data) {
 }
 
 test('Memory SSR exposes separate workspaces, Project knowledge default, and independent project tabs', async (t) => {
-  const { Memory } = await loadMemory(t);
+  const { Memory, LearningApprovals } = await loadMemory(t);
   const html = render(React.createElement(Memory));
   const tabs = [...html.matchAll(/<button(?=[^>]*role="tab")([^>]*)>(.*?)<\/button>/gs)];
-  assert.equal(tabs.length, 7);
+  assert.equal(tabs.length, 8);
   assert.deepEqual(tabs.slice(0, 2).map(([, , content]) => content.match(/class="mem-workspace-tab-label">([^<]+)/)?.[1]), [
     'Project knowledge', 'User preferences',
   ]);
   assert.match(html, /class="mem-workspace-scope mem-workspace-scope--project">Selected project/);
   assert.match(html, /class="mem-workspace-scope mem-workspace-scope--preferences">Global · read-only/);
   assert.deepEqual(tabs.slice(2).map(([, , content]) => content.replace(/<[^>]*>/g, '')), [
-    'Overview', 'Search', 'Graph', 'Drafts', 'Legacy injections',
+    'Overview', 'Search', 'Graph', 'Drafts', 'Approvals', 'Legacy injections',
   ]);
+  assert.equal(tabs[6][2].replace(/<[^>]*>/g, ''), 'Approvals');
   assert.equal([...html.matchAll(/role="tablist"/g)].length, 2);
   assert.equal(tabs.filter(([, attrs]) => /aria-selected="true"/.test(attrs)).length, 2);
   assert.match(tabs[0][1], /aria-selected="true"/);
   assert.match(tabs[0][1], /tabindex="0"/);
   assert.match(tabs[2][1], /aria-selected="true"/);
-  assert.equal([...html.matchAll(/role="tabpanel"/g)].length, 7);
+  assert.equal([...html.matchAll(/role="tabpanel"/g)].length, 8);
   for (const id of ['project', 'preferences']) {
     assert.match(html, new RegExp(`id="memory-workspace-tab-${id}"[^>]*aria-controls="memory-workspace-panel-${id}"`));
     assert.match(html, new RegExp(`id="memory-workspace-panel-${id}"[^>]*aria-labelledby="memory-workspace-tab-${id}"`));
   }
-  for (const id of ['overview', 'search', 'graph', 'drafts', 'legacy-injections']) {
+  for (const id of ['overview', 'search', 'graph', 'drafts', 'approvals', 'legacy-injections']) {
     assert.match(html, new RegExp(`id="memory-project-tab-${id}"[^>]*aria-controls="memory-project-panel-${id}"`));
     assert.match(html, new RegExp(`id="memory-project-panel-${id}"[^>]*aria-labelledby="memory-project-tab-${id}"`));
   }
   assert.match(html, /loading project summary/);
   assert.match(html, /id="memory-workspace-panel-preferences"[^>]*hidden=""/);
   assert.match(html, /Project memory overview/);
+  const approvals = render(React.createElement(LearningApprovals));
+  assert.match(approvals, /aria-label="Learning review approvals"/);
+  assert.match(approvals, /class="learning-approvals-count"[^>]*><strong>0<\/strong> pending/);
+  assert.match(approvals, /Queue clear/);
   assert.doesNotMatch(html, /Global preference library|Private global memories/);
 });
 
@@ -82,7 +94,7 @@ test('Workspace and local tablists retain ArrowLeft, ArrowRight, Home, and End r
   const { handleTabKeyDown } = await loadMemory(t);
   const lists = [
     { ids: ['project', 'preferences'], cases: [['ArrowRight', 'project', 'preferences'], ['ArrowLeft', 'project', 'preferences'], ['Home', 'preferences', 'project'], ['End', 'project', 'preferences']] },
-    { ids: ['overview', 'search', 'graph', 'drafts', 'legacy-injections'], cases: [['ArrowRight', 'overview', 'search'], ['ArrowRight', 'drafts', 'legacy-injections'], ['ArrowLeft', 'overview', 'legacy-injections'], ['Home', 'search', 'overview'], ['End', 'overview', 'legacy-injections']] },
+    { ids: ['overview', 'search', 'graph', 'drafts', 'approvals', 'legacy-injections'], cases: [['ArrowRight', 'overview', 'search'], ['ArrowRight', 'drafts', 'approvals'], ['ArrowRight', 'approvals', 'legacy-injections'], ['ArrowLeft', 'overview', 'legacy-injections'], ['Home', 'search', 'overview'], ['End', 'overview', 'legacy-injections']] },
     { ids: ['library', 'graph', 'injection-history'], cases: [['ArrowRight', 'library', 'graph'], ['ArrowRight', 'graph', 'injection-history'], ['ArrowLeft', 'library', 'injection-history'], ['Home', 'injection-history', 'library'], ['End', 'library', 'injection-history']] },
   ];
   for (const { ids, cases } of lists) for (const [key, current, expected] of cases) {
@@ -174,15 +186,31 @@ test('Draft loads and review requests stay on the current project fetch boundary
   assert.match(source, /usePoll\('\/api\/memory\/graph\?scope=project'/);
   assert.match(source, /reviewMemoryDraft\(id, action, projectFetch, targetType\)/);
   assert.match(source, /\}, \[tab, projectFetch, draftReload\]\)/, 'project fetch changes and successful reviews reload the draft list');
+  assert.match(source, /projectFetch\('\/api\/memory\/learning-review'\)/, 'approval list loads through the selected-project API');
+  assert.match(source, /projectFetch\('\/api\/memory\/learning-review',/);
+  assert.match(source, /\}, \[projectFetch, reload\]\)/, 'project switching refetches approvals');
+  assert.match(source, /key=\{entry\.id\}/);
+  assert.match(source, /learning-approval-meta/);
+  assert.match(source, /learning-approval-summary/);
+  assert.match(source, /<details className="learning-approval-raw"><summary>Inspect full proposal data<\/summary><pre>/);
+  assert.match(source, /role="group" aria-label=\{`Review proposal: \$\{title\}`\}/);
+  assert.match(source, /'approve'\)\}>Approve<\/button>/);
+  assert.match(source, /'reject'\)\}>Reject<\/button>/);
   assert.match(source, /draftLoading && <p className="loading" role="status">/);
   assert.match(source, /draftError && <ErrorBanner/);
   assert.match(source, /draftNotice && <p[^>]*role="status" aria-live="polite"/);
   assert.match(app, /key=\{selectedProjectId\}/, 'switching projects remounts the dashboard and drops pending component state');
   assert.doesNotMatch(source, /\/api\/memory\/global|scope:\s*['"]global/i);
-  assert.match(memoryCss, /\.mem-tabs\s*\{[^}]*grid-template-columns:\s*repeat\(5, minmax\(0, 1fr\)\)/s);
+  assert.match(memoryCss, /\.mem-tabs\s*\{[^}]*grid-template-columns:\s*repeat\(6, minmax\(0, 1fr\)\)/s);
   assert.match(memoryCss, /\.mem-tab:focus-visible,[\s\S]*?\.memory-draft-actions select:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--guarana\)/s);
   assert.match(memoryCss, /\.memory-draft-actions\s*\{[^}]*flex-wrap:\s*wrap/s);
+  assert.match(memoryCss, /\.learning-approval\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) 9rem/s);
+  assert.match(memoryCss, /\.learning-approval-actions button\s*\{[^}]*background:\s*var\(--rail\)/s);
+  assert.match(memoryCss, /\.learning-approval :focus-visible\s*\{[^}]*outline:\s*2px solid var\(--guarana\)/s);
+  assert.match(memoryCss, /\.learning-approval-raw pre\s*\{[^}]*overflow-wrap:\s*anywhere/s);
+  assert.match(memoryCss, /@media \(max-width: 700px\)\s*\{\s*\.learning-approval\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\)/s);
   const mobileTabs = memoryCss.slice(memoryCss.indexOf('@media (max-width: 520px)'));
+  assert.match(mobileTabs, /\.mem-tabs\s*\{[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\)/s);
   assert.match(mobileTabs, /\.mem-tab-hint\s*\{[^}]*overflow-wrap:\s*anywhere/s);
   assert.match(mobileTabs, /\.memory-draft-type-label\s*\{\s*flex-basis:\s*100%;\s*\}/);
 });

@@ -83,44 +83,50 @@ state yourself. Git status/rev-parse preflight belongs to the primary.
    rename, migrate, or normalize ANY existing record or path, whether a single
    file or many. Preserve all existing and legacy names, as well as material not
    superseded by supplied facts.
- 2. Formulate a schema v1 JSON handoff with all required task fields from the
-    command contract. A handoff is limited to 64 KiB in UTF-8 bytes; do not split
-    an oversized transaction to bypass the limit. The recorder writes only its
-    fixed project-local records and rejects symlinked record targets. Use edit to
-    write it to `.specs/state/worker-specs-handoff.json`, then invoke exactly
-    `guarana specs record --file .specs/state/worker-specs-handoff.json` (or
-    `node bin/guarana.js specs record --file .specs/state/worker-specs-handoff.json`).
-    This recorder invocation (or the documented node equivalent) is the only
-    permitted shell use. Do not run git status/rev-parse preflight, stdin,
-    heredocs, or any other shell command. The command deletes the
-   temporary handoff on completion. It owns mechanical tracker, checkpoint,
-   status, and receipt formatting; do not manually edit those fields. Retain
-   responsibility for semantic requirements, acceptance criteria, factual
-   proof, independent verification decisions, and explicit shipping confirmation.
-   Preserve existing semantic text; only supply creation content when the feature
-   is new. For an existing mutable `.specs` record, use Edit only to change the
-   specific semantic narrative passage that supplied, confirmed facts explicitly
-   supersede; preserve unrelated and historical text verbatim. `specs record`
-   writes only its recorder-owned fields and does not rewrite arbitrary narrative.
-   Keep tracker, checkpoint, status, and receipt fields exclusively in
-   `specs record`.
-3. Do not edit `.specs/conventions.md` unless the handoff explicitly requests a
-   naming-convention change. Do not edit workflow JSON, telemetry, memory, code,
-   or unrelated files. Do not call `workflow_tick`, dispatch nested tasks, or
-   perform verification in place of the independent verifier. The project-root
-   `README.md` is outside this worker's `.specs` authority and permissions. Do
-   not rewrite historical change or verification evidence. If a request is out
-   of scope or Edit is denied, stop and report the exact path and reason; do not
-   broaden the edit or bypass permissions.
- 4. Inspect the command's JSON output, changed paths, and validator summary. Report
-    the result as returned; do not claim success if it fails.
+  2. Formulate a schema v1 JSON handoff with all required task fields from the
+     command contract. A handoff is limited to 64 KiB in UTF-8 bytes; do not split
+     an oversized transaction to bypass the limit. The recorder writes only its
+     fixed project-local records and rejects symlinked record targets. Create or
+     update `.specs/state/worker-specs-handoff.json` with an exposed file-writing
+     tool: prefer `patch`; otherwise use `write`, or `edit` if the file already
+     exists. OpenCode governs `patch`, `write`, and `edit` with the same `edit`
+     permission; every affected path must be authorized. Then invoke exactly
+     `guarana specs record --file .specs/state/worker-specs-handoff.json` (or
+     `node bin/guarana.js specs record --file .specs/state/worker-specs-handoff.json`).
+     This recorder invocation (or the documented node equivalent) is the only
+     permitted shell use. Do not run git status/rev-parse preflight, stdin,
+     heredocs, or any other shell command. The command deletes the temporary
+     handoff on completion. It owns mechanical tracker, checkpoint, status, and
+     receipt formatting; do not manually edit those fields. Retain responsibility
+     for semantic requirements, acceptance criteria, factual proof, independent
+     verification decisions, and explicit shipping confirmation. Preserve existing
+     semantic text; only supply creation content when the feature is new. For an
+     existing mutable `.specs` record, use the available focused `patch` or `edit`
+     tool only to change the specific semantic narrative passage that supplied,
+     confirmed facts explicitly supersede; preserve unrelated and historical text
+     verbatim. `specs record` writes only its recorder-owned fields and does not
+     rewrite arbitrary narrative. Keep tracker, checkpoint, status, and receipt
+     fields exclusively in `specs record`.
+  3. Do not edit `.specs/conventions.md` unless the handoff explicitly requests a
+     naming-convention change. Do not edit workflow JSON, telemetry, memory, code,
+     or unrelated files. Do not call `workflow_tick`, dispatch nested tasks, or
+     perform verification in place of the independent verifier. The project-root
+     `README.md` is outside this worker's `.specs` authority and permissions. Do
+     not rewrite historical change or verification evidence. If a request is out
+     of scope, stop and report the exact path and reason. If no file-writing tool
+     is exposed, stop and report tool unavailable, not permission denied. If an
+     actual write is denied, report the exact tool and path; do not broaden the
+     edit or bypass permissions.
+  4. Inspect the command's JSON output, changed paths, and validator summary. Report
+     the result as returned; do not claim success if it fails.
 
-An OpenCode `edit` denial does not by itself establish whether `specs record`
-ran. Report the exact denied operation and path, then the observed event
-sequence: whether `specs record` ran (`yes`, `no` only when observed not to have
-run, or `unknown`), and the exact JSON `ok` and `changed` values when available.
-If a recorder result with `ok: true` precedes a later Edit denial, report its
-exact `changed` paths as committed and report the denial as a separate event.
+An OpenCode `patch`, `write`, or `edit` denial does not by itself establish
+whether `specs record` ran. Report the exact denied tool and path, then the
+observed event sequence: whether `specs record` ran (`yes`, `no` only when
+observed not to have run, or `unknown`), and the exact JSON `ok` and `changed`
+values when available. If a recorder result with `ok: true` precedes a later
+file-write denial, report its exact `changed` paths as committed and report the
+denial as a separate event.
 For a no-run/unknown outcome or `ok: false`, report only observed facts; do not
 infer that no paths committed, that rollback completed, or that zero changes
 occurred without evidence. Do not invoke substitute writes/commands or retry.

@@ -2075,6 +2075,52 @@ describe('GuaranaOrchestrator', () => {
     await dispatch();
   });
 
+  it('applies manual/recommended Advisor prompt policy and per-task dispatch limits', async () => {
+    writeSettings('project', { advisor: { enabled: true, provider: 'provider', model: 'model' } });
+    const system = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID: 'advisor-policy' }, system);
+    assert.match(system.system.join('\n'), /consultation is recommended/i);
+    writeWorkflowSettings('global', { advisor: { consultationPolicy: 'manual', maxConsultationsPerTask: 2 } });
+    const manualSystem = { system: [] };
+    await api['experimental.chat.system.transform']({ sessionID: 'advisor-policy-manual' }, manualSystem);
+    assert.match(manualSystem.system.join('\n'), /do not proactively encourage or initiate consultation/i);
+    assert.match(manualSystem.system.join('\n'), /explicit user request.*remains possible/i);
+
+    const run = async (prompt, id, session = 'advisor-quota') => api['tool.execute.before'](
+      { tool: 'task', sessionID: session, callID: id },
+      { args: { subagent_type: 'guarana-advisor', prompt } },
+    );
+    await run('Distinct consultation one', 'quota-1');
+    await run('Distinct consultation two', 'quota-2');
+    await assert.rejects(run('Distinct consultation three', 'quota-3'), /unchanged blocker|limit/i);
+
+    const defaultRun = (prompt, id) => api['tool.execute.before'](
+      { tool: 'task', sessionID: 'advisor-default-quota', callID: id },
+      { args: { subagent_type: 'guarana-advisor', prompt } },
+    );
+    writeWorkflowSettings('global', {});
+    await defaultRun('Default context one', 'default-1');
+    await defaultRun('Default context two', 'default-2');
+    await defaultRun('Default context three', 'default-3');
+    await assert.rejects(defaultRun('Default context four', 'default-4'), /limit of 3/i);
+  });
+
+  it('uses project Advisor quota override and resets quota at a new workflow task boundary', async () => {
+    writeSettings('project', { advisor: { enabled: true, provider: 'provider', model: 'model' } });
+    writeWorkflowSettings('global', { advisor: { maxConsultationsPerTask: 1 } });
+    writeWorkflowSettings('project', { advisor: { maxConsultationsPerTask: 2 } });
+    const run = (prompt, id) => api['tool.execute.before'](
+      { tool: 'task', sessionID: 'advisor-task-boundary', callID: id },
+      { args: { subagent_type: 'guarana-advisor', prompt } },
+    );
+    await run('Question one', 'task-1');
+    await run('Question two', 'task-2');
+    await assert.rejects(run('Question three', 'task-3'), /unchanged blocker|limit/i);
+    const next = apply(workflow(), 'new_task', { goal: 'A separate workflow task', ts: Date.now() + 10 });
+    save(tmpDir, next);
+    await run('Question after task reset', 'task-4');
+  });
+
   it('uses project Advisor settings in preference to global settings', async () => {
     writeSettings('global', { advisor: { enabled: true, provider: 'provider', model: 'model' } });
     writeSettings('project', { advisor: { enabled: false } });

@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/leorsousa05/guarana"><img src="https://img.shields.io/github/stars/leorsousa05/guarana?style=for-the-badge&logo=github&logoColor=white&color=f59e0b" alt="GitHub stars"></a>
-  <a href="https://github.com/leorsousa05/guarana/tree/main"><img src="https://img.shields.io/badge/source-v1.5.4%20candidate-f59e0b?style=for-the-badge&logo=github&logoColor=white" alt="GitHub main source candidate v1.5.4, unpublished and untagged"></a>
+  <a href="https://github.com/leorsousa05/guarana/tree/main"><img src="https://img.shields.io/badge/source-v1.6.0%20candidate-f59e0b?style=for-the-badge&logo=github&logoColor=white" alt="GitHub main source candidate v1.6.0, unpublished and untagged"></a>
   <img src="https://img.shields.io/badge/core_dependencies-zero-059669?style=for-the-badge" alt="Zero core runtime dependencies">
   <br>
   <a href="https://opencode.ai/"><img src="https://img.shields.io/badge/runtime-OpenCode-111827?style=for-the-badge" alt="OpenCode runtime"></a>
@@ -29,7 +29,7 @@ and memory, while the important state stays inspectable on disk.
   <img src="https://img.shields.io/badge/license-MIT-2563eb?style=flat-square" alt="MIT license">
 </p>
 
-**Current source candidate:** `1.5.4` is unpublished and untagged; its source is on [`main`](https://github.com/leorsousa05/guarana/tree/main). The stable installation instructions below remain for the `v1.5.0` tag.
+**Current source candidate:** `1.6.0` is unpublished and untagged; its source is on [`main`](https://github.com/leorsousa05/guarana/tree/main). The stable installation instructions below remain for the `v1.5.0` tag.
 
 ## What's New in 1.5.0
 
@@ -303,9 +303,11 @@ guarana specs --help
 guarana specs -h
 
 guarana workflow read [--project]
-guarana workflow set <specs|verify|memory.autoInject> <true|false> [--project]
+guarana workflow set <specs|verify|memory.autoInject|learningReview.enabled|learningReview.autoAccept> <true|false> [--project]
+guarana workflow set advisor.consultationPolicy <manual|recommended> [--project]
+guarana workflow set advisor.maxConsultationsPerTask <positive-integer> [--project]
 guarana workflow set memory.preferenceInjectionBudgetTokens <positive-integer> [--project]
-guarana workflow clear [specs|verify|memory.autoInject|memory.preferenceInjectionBudgetTokens] [--project]
+guarana workflow clear [specs|verify|memory.autoInject|memory.preferenceInjectionBudgetTokens|learningReview.enabled|learningReview.autoAccept|advisor.consultationPolicy|advisor.maxConsultationsPerTask] [--project]
 guarana workflow --help
 guarana workflow -h
 
@@ -323,6 +325,31 @@ setting restores inheritance or the enabled default. The
 integer, or cleared; project values override global settings, and clearing a
 project value restores global inheritance. `--project` selects the project
 settings.
+`learningReview.enabled` and `learningReview.autoAccept` independently default
+to `false`; project values override global values. `advisor.consultationPolicy`
+defaults to `recommended` (proactive recommendations, not unconditional
+consultation) and may be set to `manual`. The positive integer
+`advisor.maxConsultationsPerTask` defaults to `3`. These values can be read,
+set, or cleared with `guarana workflow`; Dashboard Settings exposes the same
+effective values and sources, with project overrides clearable to inherit.
+
+When `learningReview.enabled` is true, Guarana may run one isolated learning
+review only after successful verification completes a substantive task. Failed,
+skipped, interrupted, trivial, or unchanged tasks are not reviewed. The review
+receives a bounded sanitized summary and safe relative changed paths, not a
+conversation transcript. Review failures do not undo task completion. Proposed
+memories and skills remain subject to the approval queue unless the independent
+`learningReview.autoAccept` setting is enabled.
+
+The Dashboard Overview shows bounded recent Advisor and learning-review usage
+history for the selected project. It displays outcome, provider/model and
+available token/cost metadata; unknown values remain unknown rather than being
+reported as zero. History is an allow-listed projection and excludes summaries,
+changed paths, prompts, proposals, and transcripts. Advisor policy `recommended`
+preserves proactive guidance without forcing a consultation; `manual` suppresses
+proactive consultation recommendations, while explicit user requests remain
+available. Advisor consultations are limited per workflow task and repeated
+unchanged contexts are refused.
 
 Memory search also accepts `--type <type>`, `--since <date|ms>`,
 `--until <date|ms>`, and `--limit <n>`. `compact` accepts an optional

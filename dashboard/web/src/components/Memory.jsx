@@ -19,6 +19,7 @@ const PROJECT_TABS = [
   ['search', 'Search'],
   ['graph', 'Graph'],
   ['drafts', 'Drafts'],
+  ['approvals', 'Approvals'],
   ['legacy-injections', 'Legacy injections'],
 ];
 
@@ -279,6 +280,7 @@ function ProjectKnowledge({ tab, setTab }) {
       </div>
 
       {PROJECT_TABS.map(([id]) => <div key={id} id={`memory-project-panel-${id}`} role="tabpanel" aria-labelledby={`memory-project-tab-${id}`} tabIndex={0} hidden={tab !== id}>
+        {tab === 'approvals' && id === 'approvals' && <LearningApprovals />}
         {tab === 'overview' && id === 'overview' && <>
           {summary.error && <ErrorBanner text={summary.error} />}
           <header className="mem-panel-heading">
@@ -336,6 +338,66 @@ function ProjectKnowledge({ tab, setTab }) {
       </div>)}
     </section>
   );
+}
+
+export function LearningApprovals() {
+  const projectFetch = useProjectFetch();
+  const [proposals, setProposals] = useState([]);
+  const [notice, setNotice] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(null);
+  const [reload, setReload] = useState(0);
+  useEffect(() => {
+    let current = true;
+    projectFetch('/api/memory/learning-review').then(async (response) => {
+      const result = await response.json();
+      if (!response.ok || result.error) throw new Error(result.error || response.statusText);
+      if (current) setProposals(result.proposals || []);
+    }).catch((err) => { if (current) setError(String(err)); });
+    return () => { current = false; };
+  }, [projectFetch, reload]);
+  const review = async (id, action) => {
+    setBusy(id); setError(''); setNotice('');
+    try {
+      const response = await projectFetch('/api/memory/learning-review', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, action }),
+      });
+      const result = await response.json();
+      if (!response.ok || result.error) throw new Error(result.error || response.statusText);
+      setNotice(`Proposal ${action === 'approve' ? 'approved' : 'rejected'}.`);
+      setReload((value) => value + 1);
+    } catch (err) { setError(String(err)); } finally { setBusy(null); }
+  };
+  return <section className="learning-approvals" aria-label="Learning review approvals">
+    <header className="learning-approvals-head">
+      <div><h4>Learning review approvals</h4>
+        <p>Inspect proposed project knowledge before it becomes part of this project.</p></div>
+      <p className="learning-approvals-count" aria-live="polite"><strong>{proposals.length}</strong> pending</p>
+    </header>
+    {error && <ErrorBanner text={error} />}
+    {notice && <p role="status">{notice}</p>}
+    {!proposals.length && !error && <div className="learning-approvals-empty"><p className="learning-approvals-kicker">Queue clear</p><h5>No proposals awaiting review</h5><p>New learning-review proposals for this project will appear here.</p></div>}
+    <ol className="learning-approval-list">{proposals.map((entry) => {
+      const proposal = entry.proposal;
+      const isMemory = proposal.action === 'save_memory';
+      const title = isMemory ? proposal.memory.intent : proposal.skill.name;
+      return <li key={entry.id}>
+      <article className="learning-approval">
+        <div className="learning-approval-copy">
+          <div className="learning-approval-meta"><span>{isMemory ? `Memory · ${proposal.memory.type}` : `Skill · ${proposal.action === 'create_skill' ? 'create' : 'update'}`}</span><span className="learning-approval-status">Pending</span></div>
+          <h5>{title}</h5>
+          <p className="learning-approval-reason"><span>Reason</span>{proposal.reason}</p>
+          <div className="learning-approval-summary"><span>{isMemory ? 'Summary' : 'Description'}</span><p>{isMemory ? proposal.memory.summary : proposal.skill.description || proposal.skill.content}</p></div>
+          <details className="learning-approval-raw"><summary>Inspect full proposal data</summary><pre>{JSON.stringify(proposal, null, 2)}</pre></details>
+        </div>
+        <div className="learning-approval-actions" role="group" aria-label={`Review proposal: ${title}`}>
+          <button type="button" disabled={Boolean(busy)} onClick={() => review(entry.id, 'approve')}>Approve</button>
+          <button type="button" disabled={Boolean(busy)} onClick={() => review(entry.id, 'reject')}>Reject</button>
+        </div>
+      </article>
+    </li>;
+    })}</ol>
+  </section>;
 }
 
 export function Memory() {

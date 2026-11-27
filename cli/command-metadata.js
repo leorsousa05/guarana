@@ -23,6 +23,9 @@ const MEMORY = {
     },
     { rows: ['  guarana memory prune --keep <n>        Preserve legacy draft atoms (safe no-op)'] },
     { rows: ['  guarana memory review --list           List legacy draft nodes (id, type, intent, ts), most recent first'] },
+    { rows: ['  guarana memory proposals --list        List learning-review proposals'] },
+    { rows: ['  guarana memory proposals --approve <id> Apply one pending proposal by exact ID'] },
+    { rows: ['  guarana memory proposals --reject <id> Reject one pending proposal by exact ID'] },
     { rows: ['  guarana memory review <id> --confirm --type <decision|bug|solution|refactor>  Convert a draft to project knowledge'] },
     { rows: ['  guarana memory review <id> --discard   Remove a legacy draft node and its edges'] },
     { rows: ['  guarana memory delete <id> --scope <project|global> --confirm  Hard-delete one confirmed node and its edges'] },
@@ -61,12 +64,16 @@ const WORKFLOW = {
       rows: ['  guarana workflow read [--project]'],
       details: [
         '    Show the selected scope\'s stored fields and current project-effective values.',
-        '    Unset fields inherit from global settings, then default to true.',
+        '    Unset fields inherit from global settings, then use their documented defaults.',
       ],
     },
     {
-      rows: ['  guarana workflow set <specs|verify|memory.autoInject> <true|false> [--project]'],
+      rows: ['  guarana workflow set <specs|verify|memory.autoInject|learningReview.enabled|learningReview.autoAccept> <true|false> [--project]'],
       details: ['    Set one automation or automatic-memory preference in global settings, or in the project with --project.'],
+    },
+    {
+      rows: ['  guarana workflow set advisor.consultationPolicy <manual|recommended> [--project]', '  guarana workflow set advisor.maxConsultationsPerTask <positive-integer> [--project]'],
+      details: ['    Advisor consultation defaults to recommended; the per-task limit defaults to 3.'],
     },
     {
       rows: ['  guarana workflow set memory.preferenceInjectionBudgetTokens <positive-integer> [--project]'],
@@ -76,7 +83,7 @@ const WORKFLOW = {
       ],
     },
     {
-      rows: ['  guarana workflow clear [specs|verify|memory.autoInject|memory.preferenceInjectionBudgetTokens] [--project]'],
+      rows: ['  guarana workflow clear [specs|verify|memory.autoInject|memory.preferenceInjectionBudgetTokens|learningReview.enabled|learningReview.autoAccept|advisor.consultationPolicy|advisor.maxConsultationsPerTask] [--project]'],
       details: [
         '    Clear one preference or all stored preferences in the selected scope.',
         '    Clearing a project preference restores inheritance from global settings; an unset budget uses model context.',

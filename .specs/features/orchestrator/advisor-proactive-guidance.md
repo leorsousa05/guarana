@@ -6,6 +6,9 @@
 Update the generated Guarana primary profile policy to proactively encourage useful read-only Advisor consultation during planning and other meaningful decision points when Advisor is enabled and configured.
 
 ## Requirements
+- Preserve the existing proactive recommendation while supporting manual or recommended consultation policy, without unconditional consultation.
+- Provide configurable per-task Advisor query limits and unchanged-context duplicate protection.
+- Record sanitized Advisor/review outcomes and provider/model/token/cost data when known; represent unknown cost distinctly from zero. Send learning-review inputs only as a bounded sanitized summary and changed paths.
 - When advisor.enabled=true and Advisor provider/model are configured, encourage consultation during planning for substantial or ambiguous work and later when independent advice materially helps with scope/assumptions/risks, architecture/trade-offs, execution decisions, debugging, or verification.
 - Do not make consultation universal for trivial tasks; ask distinct meaningful questions when valuable and avoid repeating identical unchanged questions.
 - Do not encourage or dispatch Advisor when disabled or unconfigured.
@@ -19,6 +22,7 @@ Update the generated Guarana primary profile policy to proactively encourage use
 - Do not change Advisor execution rights or worker dispatch rules.
 
 ## Acceptance criteria
+5. Regression tests prove manual/recommended policy behavior, configurable per-task query limits, unchanged-context duplicate protection, sanitized outcomes, and unknown cost distinct from zero.
 1. Enabled and configured primary output has proactive planning and other-phase consultation guidance, with no blocked-only restriction.
 2. Disabled or unconfigured output has no proactive encouragement and remains opt-in/blocked by settings.
 3. Owner, read-only, privacy, duplicate guard, and no-fabricated-handoff text is retained.

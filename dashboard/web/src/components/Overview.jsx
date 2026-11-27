@@ -208,6 +208,33 @@ function AdvisorPanel({ summary, summaryError, summaryLoading, history }) {
   );
 }
 
+function LearningReviewHistory({ state }) {
+  const rows = Array.isArray(state?.data?.history) ? state.data.history.slice(0, 25) : [];
+  return (
+    <section className="ov-panel ov-learning-review" aria-labelledby="ov-learning-review-title">
+      <header className="ov-panel-head"><h2 id="ov-learning-review-title">Learning review history</h2></header>
+      {state?.error || state?.data?.error ? <p className="ov-state" role="status">Learning review history unavailable.</p>
+        : !state?.data ? <p className="ov-state" role="status">Loading learning review history…</p>
+          : !rows.length ? <p className="ov-state" role="status">No learning reviews recorded.</p>
+            : <ol className="ov-learning-review-list" aria-label="Recent learning reviews">
+              {rows.map((row, index) => {
+                const ts = Number.isFinite(row?.ts) && Number.isFinite(new Date(row.ts).getTime()) ? row.ts : null;
+                const status = ['success', 'proposal', 'no_change', 'unavailable', 'failure'].includes(row?.status) ? row.status.replaceAll('_', ' ') : 'unknown';
+                const provider = typeof row?.providerID === 'string' && row.providerID.trim() ? row.providerID : null;
+                const model = typeof row?.modelID === 'string' && row.modelID.trim() ? row.modelID : null;
+                const tokens = Number.isFinite(row?.tokens) && row.tokens >= 0 ? row.tokens : null;
+                const cost = Number.isFinite(row?.cost) && row.cost >= 0 ? row.cost : null;
+                return <li key={`${ts ?? 'unknown'}-${index}`}>
+                  <time dateTime={ts === null ? undefined : new Date(ts).toISOString()}>{ts === null ? 'Unknown time' : new Date(ts).toLocaleString()}</time>
+                  <span>{status}</span>
+                  <small>{provider || 'Unknown provider'} · {model || 'Unknown model'} · {tokens === null ? 'Unknown tokens' : `${tokens} tokens`} · {cost === null ? 'Unknown cost' : `${cost} cost`}</small>
+                </li>;
+              })}
+            </ol>}
+    </section>
+  );
+}
+
 function InjectionPanel({ state, summary, summaryError, injection, graphStates, models, selectedIds, onSelect }) {
   const root = activeRootFromTelemetry(summary);
   const memories = Array.isArray(injection?.memories) ? injection.memories : [];
@@ -418,7 +445,7 @@ function ReadOnlyMemoryGraph({ scope, title, graphState, model, selectedId, onSe
   );
 }
 
-export function OverviewContent({ summary, summaryError, summaryLoading, workflow, workflowLoading, workflowError, state, workers, advisorHistory, injections, projectGraph, globalGraph }) {
+export function OverviewContent({ summary, summaryError, summaryLoading, workflow, workflowLoading, workflowError, state, workers, advisorHistory, learningReviewHistory, injections, projectGraph, globalGraph }) {
   const root = activeRootFromTelemetry(summary);
   const injection = !injections?.error && !injections?.data?.error
     ? latestInjectionForRoot(injections?.data?.injections, root)
@@ -463,6 +490,7 @@ export function OverviewContent({ summary, summaryError, summaryLoading, workflo
         <div className="ov-operations">
           <WorkersPanel state={workers} />
           <AdvisorPanel summary={summary} summaryError={summaryError} summaryLoading={summaryLoading} history={advisorHistory} />
+          <LearningReviewHistory state={learningReviewHistory} />
           <InjectionPanel state={injections} summary={summary} summaryError={summaryError} injection={injection}
             graphStates={graphStates} models={models} selectedIds={selectedIds} onSelect={onSelect} />
         </div>
@@ -480,8 +508,9 @@ export function OverviewContent({ summary, summaryError, summaryLoading, workflo
 export function Overview({ summary, summaryError, summaryLoading, state, workflow, workflowError, workflowLoading }) {
   const workers = usePoll('/api/opencode/active-subagents', 5000);
   const advisorHistory = usePoll('/api/telemetry/advisor-history?limit=40', 5000);
+  const learningReviewHistory = usePoll('/api/telemetry/learning-review-history?limit=25', 5000);
   const injections = usePoll('/api/memory/injections?limit=40', 5000);
   const projectGraph = usePoll(OVERVIEW_GRAPH_ENDPOINTS.project, 15000);
   const globalGraph = usePoll(OVERVIEW_GRAPH_ENDPOINTS.global, 15000);
-  return <OverviewContent {...{ summary, summaryError, summaryLoading, state, workflow, workflowError, workflowLoading, workers, advisorHistory, injections, projectGraph, globalGraph }} />;
+  return <OverviewContent {...{ summary, summaryError, summaryLoading, state, workflow, workflowError, workflowLoading, workers, advisorHistory, learningReviewHistory, injections, projectGraph, globalGraph }} />;
 }

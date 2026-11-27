@@ -414,6 +414,33 @@ test('code completion waits for primary integration before unlocking dependencie
   assert.equal(manifest.status, 'completed');
 });
 
+test('integrating a successful code retry unblocks its dependent tasks', () => {
+  let manifest = createRunManifest('retry-integration-run', [
+    { id: 'code-a', mode: 'code', ownedPaths: ['src/a.js'] },
+    readOnlyTask('dependent-b', { dependsOn: ['code-a'] }),
+  ], { now: 1 });
+  manifest = recordCodeWorktree(manifest, 'code-a', {
+    baseCommit: 'a'.repeat(40), worktreePath: '/tmp/worktrees/retry-integration-attempt-one', now: 2,
+  });
+  manifest = transitionSubtask(manifest, 'code-a', 'running', { now: 3 });
+  manifest = transitionSubtask(manifest, 'code-a', 'failed', { now: 4 });
+  assert.equal(manifest.tasks.find((task) => task.id === 'code-a').attemptHistory[0].status, 'failed');
+  assert.deepEqual(manifest.tasks.find((task) => task.id === 'dependent-b').blockedBy, ['code-a']);
+
+  manifest = retrySubtask(manifest, 'code-a', { primaryReviewed: true, now: 5 });
+  manifest = recordCodeWorktree(manifest, 'code-a', {
+    baseCommit: 'b'.repeat(40), worktreePath: '/tmp/worktrees/retry-integration-attempt-two', now: 6,
+  });
+  manifest = transitionSubtask(manifest, 'code-a', 'running', { now: 7 });
+  manifest = transitionSubtask(manifest, 'code-a', 'integration-pending', { now: 8 });
+  manifest = integrateCodeSubtask(manifest, 'code-a', { primaryReviewed: true, now: 9 });
+
+  const codeTask = manifest.tasks.find((task) => task.id === 'code-a');
+  assert.deepEqual(codeTask.attemptHistory.map((attempt) => attempt.status), ['failed', 'integration-pending']);
+  assert.equal(codeTask.attemptHistory[1].worktreePath, '/tmp/worktrees/retry-integration-attempt-two');
+  assert.deepEqual(readySubtasks(manifest), ['dependent-b']);
+});
+
 test('cancellation stops queued tasks and waits for host termination confirmation', () => {
   let manifest = createRunManifest('cancel-run', [
     readOnlyTask('active-task'), readOnlyTask('queued-task'),

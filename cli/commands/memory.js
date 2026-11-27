@@ -151,6 +151,23 @@ async function run(args, context = {}) {
       }
       break;
     }
+    case 'proposals': {
+      const queuePath = path.join(__dirname, '..', 'memory', 'learning-review-queue.js');
+      const queue = await import(pathToFileURL(queuePath).href);
+      if (parsed.action === 'list') {
+        const entries = queue.listLearningReviewProposals(process.cwd());
+        if (!entries.length) stdoutLine(context, 'no learning-review proposals');
+        for (const entry of entries) {
+          stdoutLine(context, `${entry.id} [${entry.status}] ${entry.proposal.action}: ${entry.proposal.reason}`);
+        }
+      } else {
+        const entry = parsed.action === 'approve'
+          ? await queue.acceptLearningReviewProposal(process.cwd(), parsed.id)
+          : queue.rejectLearningReviewProposal(process.cwd(), parsed.id);
+        stdoutLine(context, `${parsed.action === 'approve' ? 'applied' : 'rejected'} learning-review proposal ${parsed.id}${entry.status ? ` (${entry.status})` : ''}`);
+      }
+      break;
+    }
     case 'delete': {
       const scopedVault = parsed.scope === 'global'
         ? vault.userVaultDir()

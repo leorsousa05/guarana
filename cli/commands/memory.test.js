@@ -7,10 +7,12 @@ const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const { pathToFileURL } = require('node:url');
 const { searchMemory } = require('./memory.js');
 
 const BIN = path.join(__dirname, '..', '..', 'bin', 'guarana.js');
 const MEMORY_COMMAND = path.join(__dirname, 'memory.js');
+const QUEUE_RUNTIME = path.join(__dirname, '..', 'memory', 'learning-review-queue.js');
 
 function runResult(args, cwd, env = {}) {
   return spawnSync(process.execPath, [BIN, 'memory', ...args], {
@@ -159,6 +161,56 @@ describe('guarana memory review', () => {
     assert.ok(!nodes.some((x) => x.id === 'mem-a'));
     const edges = fs.readFileSync(path.join(cwd(), '.guarana', 'memory', 'edges.jsonl'), 'utf8');
     assert.ok(!edges.includes('mem-a'));
+  });
+});
+
+describe('guarana memory proposals', () => {
+  it('lists proposals, applies/rejects exact IDs, and keeps replayed or stale skill proposals unapplied', async () => {
+    const queue = await import(pathToFileURL(QUEUE_RUNTIME).href);
+    const { createSkill } = await import(pathToFileURL(path.join(__dirname, '..', 'skill-engine', 'index.js')).href);
+    const memoryProposal = queue.enqueueLearningReviewProposal(cwd(), {
+      action: 'save_memory',
+      reason: 'CLI approval test',
+      memory: { type: 'solution', intent: 'CLI approved proposal', summary: 'The exact queued proposal is applied.', tags: ['cli'] },
+    });
+    const rejectedSkill = queue.enqueueLearningReviewProposal(cwd(), {
+      action: 'create_skill',
+      reason: 'CLI rejection test',
+      skill: { name: 'cli-rejected-proposal', description: 'A rejected skill proposal.', category: 'general', scope: 'project', content: 'Must not be written.' },
+    });
+    const homeDir = path.join(tmp, 'home');
+    fs.mkdirSync(homeDir, { recursive: true });
+    const created = createSkill({
+      projectDir: cwd(), homeDir, scope: 'project',
+      name: 'cli-stale-proposal', description: 'Existing skill for stale update test.', category: 'general',
+      content: '# Existing skill\n',
+    });
+    assert.equal(created.error, undefined);
+    const staleSkill = queue.enqueueLearningReviewProposal(cwd(), {
+      action: 'update_skill',
+      reason: 'CLI stale update test',
+      skill: {
+        name: 'cli-stale-proposal', description: 'Stale update.', category: 'general', scope: 'project',
+        expectedRevision: '0'.repeat(64), content: '# Stale replacement\n',
+      },
+    });
+
+    const listed = run(['proposals', '--list'], cwd());
+    assert.match(listed, new RegExp(memoryProposal.id));
+    assert.match(listed, new RegExp(rejectedSkill.id));
+    assert.match(listed, new RegExp(staleSkill.id));
+
+    assert.match(run(['proposals', '--approve', memoryProposal.id], cwd()), /applied/);
+    assert.equal(listNodes(cwd()).some((node) => node.intent === 'CLI approved proposal'), true);
+    assert.match(run(['proposals', '--reject', rejectedSkill.id], cwd()), /rejected/);
+    const replay = runResult(['proposals', '--approve', rejectedSkill.id], cwd());
+    assert.notEqual(replay.status, 0);
+    assert.match(replay.stderr, /expected pending/);
+    const stale = runResult(['proposals', '--approve', staleSkill.id], cwd());
+    assert.notEqual(stale.status, 0);
+    assert.match(stale.stderr, /stale|revision|changed/i);
+    assert.equal(queue.listLearningReviewProposals(cwd()).find((entry) => entry.id === staleSkill.id).status, 'pending');
+    assert.equal(fs.existsSync(path.join(cwd(), '.opencode', 'skills', 'cli-rejected-proposal')), false);
   });
 });
 

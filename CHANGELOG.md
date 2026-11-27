@@ -6,6 +6,19 @@ separate maintainer action.
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-11-27 (unpublished, untagged candidate)
+
+### Added
+- Opt-in post-task learning reviews run after successful substantive tasks; proposed memories and skills enter a persistent approval queue with CLI review commands.
+- Scoped learning-review controls and Advisor consultation policy/limit settings are available through the CLI and Dashboard Settings.
+- Dashboard Overview shows bounded, privacy-safe Advisor and learning-review usage history without summaries, paths, prompts, proposals, or transcripts.
+
+### Changed
+- CLI and Dashboard Settings support the scoped learning-review and Advisor policy/limit controls, including project overrides and inheritance.
+
+### Fixed
+- Dashboard Settings no longer crashes when handling events whose `currentTarget` is unavailable.
+
 ## [1.5.4] - 2026-11-26 (unpublished, untagged candidate)
 
 ### Added

@@ -76,10 +76,10 @@ test('Settings SSR combines Models with scoped workflow and web preferences, eff
       },
     },
     workflowSettings: {
-      global: { verify: { enabled: false }, memory: { autoInject: false, preferenceInjectionBudgetTokens: 32768 } },
-      project: { specs: { enabled: false }, memory: { autoInject: true, preferenceInjectionBudgetTokens: 8192 } },
-      effective: { specs: { enabled: false }, verify: { enabled: false }, memory: { autoInject: true, preferenceInjectionBudgetTokens: 8192 } },
-      sources: { specs: 'project', verify: 'global', memory: { autoInject: 'project', preferenceInjectionBudgetTokens: 'project' } },
+      global: { verify: { enabled: false }, memory: { autoInject: false, preferenceInjectionBudgetTokens: 32768 }, learningReview: { autoAccept: true } },
+      project: { specs: { enabled: false }, memory: { autoInject: true, preferenceInjectionBudgetTokens: 8192 }, learningReview: { autoAccept: false } },
+      effective: { specs: { enabled: false }, verify: { enabled: false }, memory: { autoInject: true, preferenceInjectionBudgetTokens: 8192 }, learningReview: { autoAccept: false } },
+      sources: { specs: 'project', verify: 'global', memory: { autoInject: 'project', preferenceInjectionBudgetTokens: 'project' }, learningReview: { autoAccept: 'project' } },
     },
   }));
 
@@ -107,6 +107,14 @@ test('Settings SSR combines Models with scoped workflow and web preferences, eff
   assert.match(html, /<option value="65536">More \(65536\)<\/option>/);
   assert.match(html, /Current-project \+ Global preference injection budget \(tokens\)/);
   assert.match(html, /<label[^>]*for="settings-workflow-memory-autoInject"[^>]*><span>Automatically inject saved memory preferences<\/span>/);
+  assert.match(html, /<label[^>]*for="settings-workflow-learning-review-autoAccept"[^>]*><span>Automatically accept learning-review proposals<\/span>/);
+  assert.match(html, /id="settings-workflow-learning-review-autoAccept" type="checkbox"/);
+  assert.match(html, /Enable post-task learning review/);
+  assert.match(html, /Advisor consultation policy/);
+  assert.match(html, /Maximum Advisor consultations per task/);
+  assert.match(html, /id="settings-workflow-advisor-consultationPolicy"/);
+  assert.match(html, /id="settings-workflow-advisor-maxConsultationsPerTask" type="number"/);
+  assert.match(html, /Effective for selected project: disabled · Source: Project/);
   assert.match(html, /id="settings-workflow-memory-autoInject" type="checkbox"[^>]*checked=""/);
   assert.match(html, /Effective for selected project: enabled · Source: Project/);
   assert.match(html, /Spec files are not automatically injected either; consult only relevant records when needed/);
@@ -129,6 +137,7 @@ test('Settings SSR combines Models with scoped workflow and web preferences, eff
   assert.match(html, /aria-label="Clear project override for Specs \+ worker-specs"/);
   assert.match(html, /aria-label="Clear project override for preference injection budget"/);
   assert.match(html, /aria-label="Clear project override for automatic memory preference injection"/);
+  assert.match(html, /Clear project override/);
   assert.match(html, /aria-label="Clear project override for Start page"/);
   assert.match(html, /Save Project web preferences/);
   assert.doesNotMatch(html, /Save Global/);
@@ -176,6 +185,8 @@ test('preference budget selector renders Automatic fallback and preserves custom
 
   assert.match(automaticHtml, /<option value="" selected="">Automatic \(unset\)<\/option>/);
   assert.match(automaticHtml, /id="settings-workflow-memory-autoInject" type="checkbox"[^>]*checked=""/);
+  assert.match(automaticHtml, /id="settings-workflow-learning-review-autoAccept" type="checkbox"/);
+  assert.match(automaticHtml, /Effective for selected project: disabled · Source: Default/);
   assert.match(automaticHtml, /Effective for selected project: enabled · Source: Default/);
   assert.match(automaticHtml, /Effective for selected project: model context when available · Source: Default/);
   assert.match(automaticHtml, /Complete preference records are injected in trust and priority order when they fit the budget; records that do not fit are omitted without truncation\./);
@@ -250,7 +261,7 @@ test('live refresh changes 5-second data polls while fixed configuration polls r
 test('scoped Settings requests send only the selected scope and clear helpers preserve other fields', async (t) => {
   const vite = await createServer({ root: webRoot, server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
   t.after(() => vite.close());
-  const { clearWebField, clearWorkflowField, clearWorkflowBudgetField, clearWorkflowMemoryAutoInject, putScopedSettings, setWorkflowBudgetField, setWorkflowMemoryAutoInject } = await vite.ssrLoadModule('/src/components/Settings.jsx');
+  const { clearWebField, clearWorkflowField, clearWorkflowBudgetField, clearWorkflowMemoryAutoInject, clearWorkflowLearningReviewAutoAccept, putScopedSettings, setWorkflowBudgetField, setWorkflowMemoryAutoInject, setWorkflowLearningReviewAutoAccept } = await vite.ssrLoadModule('/src/components/Settings.jsx');
 
   const calls = [];
   const request = async (url, options) => {
@@ -265,6 +276,8 @@ test('scoped Settings requests send only the selected scope and clear helpers pr
   await putScopedSettings('/api/workflow/settings', 'global', clearWorkflowBudgetField({ memory: { preferenceInjectionBudgetTokens: 4096 }, verify: { enabled: false } }), request);
   await putScopedSettings('/api/workflow/settings', 'project', setWorkflowMemoryAutoInject({ memory: { preferenceInjectionBudgetTokens: 2048 } }, false), request);
   await putScopedSettings('/api/workflow/settings', 'project', clearWorkflowMemoryAutoInject({ memory: { autoInject: false, preferenceInjectionBudgetTokens: 2048 }, verify: { enabled: false } }), request);
+  await putScopedSettings('/api/workflow/settings', 'global', setWorkflowLearningReviewAutoAccept({}, true), request);
+  await putScopedSettings('/api/workflow/settings', 'project', clearWorkflowLearningReviewAutoAccept({ learningReview: { autoAccept: false }, verify: { enabled: false } }), request);
 
   assert.equal(calls[0].url, '/api/web/settings');
   assert.equal(calls[1].url, '/api/workflow/settings');
@@ -274,6 +287,8 @@ test('scoped Settings requests send only the selected scope and clear helpers pr
   assert.equal(calls[5].url, '/api/workflow/settings');
   assert.equal(calls[6].url, '/api/workflow/settings');
   assert.equal(calls[7].url, '/api/workflow/settings');
+  assert.equal(calls[8].url, '/api/workflow/settings');
+  assert.equal(calls[9].url, '/api/workflow/settings');
   assert.deepEqual(calls.map(({ body }) => body), [
     { scope: 'global', settings: { appearance: { theme: 'dark' } } },
     { scope: 'project', settings: { verify: { enabled: true } } },
@@ -283,6 +298,8 @@ test('scoped Settings requests send only the selected scope and clear helpers pr
     { scope: 'global', settings: { verify: { enabled: false } } },
     { scope: 'project', settings: { memory: { preferenceInjectionBudgetTokens: 2048, autoInject: false } } },
     { scope: 'project', settings: { verify: { enabled: false }, memory: { preferenceInjectionBudgetTokens: 2048 } } },
+    { scope: 'global', settings: { learningReview: { autoAccept: true } } },
+    { scope: 'project', settings: { verify: { enabled: false } } },
   ]);
   assert.ok(calls.every(({ options }) => options.method === 'PUT'));
   assert.ok(calls.every(({ options }) => options.headers['Content-Type'] === 'application/json'));
@@ -304,6 +321,24 @@ test('workflow checkbox updates capture checked before the deferred state update
     specs: { enabled: false },
     verify: { enabled: true },
   });
+});
+
+test('learning-review and Advisor controls capture values before deferred state updaters run', async (t) => {
+  const vite = await createServer({ root: webRoot, server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
+  t.after(() => vite.close());
+  const { scopedFieldUpdate } = await vite.ssrLoadModule('/src/components/Settings.jsx');
+
+  for (const { section, field, currentTarget, expected } of [
+    { section: 'learningReview', field: 'enabled', currentTarget: { type: 'checkbox', checked: true }, expected: true },
+    { section: 'learningReview', field: 'autoAccept', currentTarget: { type: 'checkbox', checked: true }, expected: true },
+    { section: 'advisor', field: 'consultationPolicy', currentTarget: { type: 'select-one', value: 'manual' }, expected: 'manual' },
+  ]) {
+    let deferredUpdater;
+    const event = { currentTarget };
+    deferredUpdater = scopedFieldUpdate(section, field, event);
+    event.currentTarget = null;
+    assert.equal(deferredUpdater({})[section][field], expected);
+  }
 });
 
 test('memory auto-injection checkbox captures checked before the deferred state updater runs', async (t) => {

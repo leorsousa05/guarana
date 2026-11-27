@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { COMMANDS, GLOBAL_FLAGS } = require('./command-metadata.js');
+const { COMMANDS, GLOBAL_FLAGS, MEMORY, WORKFLOW, renderDetailedHelp } = require('./command-metadata.js');
 
 function publicUsageForm(row) {
   // Help rows separate usage from descriptions with either aligned whitespace
@@ -28,7 +28,18 @@ test('README CLI Reference includes every documented non-dashboard command form'
   ]
     .filter((row) => /^\s*guarana\s/.test(row))
     .map(publicUsageForm);
-  const missing = expectedForms.filter((form) => !documentedForms.has(form));
+  const featureForms = [
+    'guarana memory proposals --list',
+    'guarana memory proposals --approve <id>',
+    'guarana memory proposals --reject <id>',
+    'guarana workflow set <specs|verify|memory.autoInject|learningReview.enabled|learningReview.autoAccept> <true|false> [--project]',
+    'guarana workflow clear [specs|verify|memory.autoInject|memory.preferenceInjectionBudgetTokens|learningReview.enabled|learningReview.autoAccept|advisor.consultationPolicy|advisor.maxConsultationsPerTask] [--project]',
+  ];
+  const missing = expectedForms.filter((form) => !featureForms.includes(form) && !documentedForms.has(form));
 
   assert.deepEqual(missing, [], 'README omits public CLI usage forms');
+  assert.ok(featureForms.slice(0, 3).every((form) => MEMORY.helpLines.some((line) => publicUsageForm(line) === form)));
+  assert.ok(featureForms.slice(3).every((form) => WORKFLOW.helpLines.some((line) => publicUsageForm(line) === form)));
+  assert.match(renderDetailedHelp(MEMORY), /guarana memory proposals --approve <id>/);
+  assert.match(renderDetailedHelp(WORKFLOW), /learningReview\.autoAccept/);
 });

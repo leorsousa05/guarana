@@ -492,10 +492,12 @@ export async function runOpenCodeReview({
   const runtimeConfig = resolveOpenCodeRuntimeConfig(projectDir, { homeDir, env });
   if (!runtimeConfig) return { ok: false, reason: 'no_explicit_opencode_model' };
   const { model, providerName, providerConfig } = runtimeConfig;
+  const runtimeMetadata = { providerID: providerName, modelID: model };
+  const failed = (reason) => ({ ok: false, reason, ...runtimeMetadata });
   if (!BUILTIN_PROVIDERS.has(providerName) && !providerConfig)
-    return { ok: false, reason: 'provider_configuration_unavailable' };
+    return failed('provider_configuration_unavailable');
   if (providerConfig?.npm)
-    return { ok: false, reason: 'provider_plugin_not_supported' };
+    return failed('provider_plugin_not_supported');
 
   let tempRoot;
   try {
@@ -586,14 +588,14 @@ export async function runOpenCodeReview({
       });
     });
 
-    if (execution.reason) return { ok: false, reason: execution.reason };
-    if (execution.timedOut) return { ok: false, reason: 'opencode_timed_out' };
-    if (execution.overflow) return { ok: false, reason: 'opencode_output_limit_exceeded' };
-    if (execution.code !== 0) return { ok: false, reason: `opencode_exit_${execution.code ?? execution.signal ?? 'unknown'}` };
+    if (execution.reason) return failed(execution.reason);
+    if (execution.timedOut) return failed('opencode_timed_out');
+    if (execution.overflow) return failed('opencode_output_limit_exceeded');
+    if (execution.code !== 0) return failed(`opencode_exit_${execution.code ?? execution.signal ?? 'unknown'}`);
     try {
-      return { ok: true, proposal: collectOpenCodeOutput(execution.stdout) };
+      return { ok: true, proposal: collectOpenCodeOutput(execution.stdout), ...runtimeMetadata };
     } catch (error) {
-      return { ok: false, reason: error.message };
+      return failed(error.message);
     }
   } finally {
     if (tempRoot) fs.rmSync(tempRoot, { recursive: true, force: true });

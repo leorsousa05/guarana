@@ -366,3 +366,30 @@ export function advisorHistoryForFile(file, limit = 25) {
     return [];
   }
 }
+
+export function learningReviewHistory(events, limit = 25) {
+  const bounded = Number.isInteger(limit) && limit > 0 ? Math.min(limit, 100) : 25;
+  return events.filter((event) => event.type === 'learning-review-outcome'
+    && ['success', 'proposal', 'no_change', 'unavailable', 'failure'].includes(event.status))
+    .sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0))
+    .slice(0, bounded)
+    .map((event) => ({
+      ts: typeof event.ts === 'number' ? event.ts : null,
+      status: event.status,
+      providerID: safeText(event.providerID),
+      modelID: safeText(event.modelID),
+      tokens: Number.isFinite(event.tokens) && event.tokens >= 0 ? event.tokens : null,
+      cost: Number.isFinite(event.cost) && event.cost >= 0 ? event.cost : null,
+    }));
+}
+
+export function learningReviewHistoryForFile(file, limit = 25) {
+  try {
+    const snapshot = snapshotFor(file);
+    if (!snapshot) return [];
+    const pending = parsePending(snapshot);
+    return learningReviewHistory(pending ? [...snapshot.events, pending] : snapshot.events, limit);
+  } catch {
+    return [];
+  }
+}

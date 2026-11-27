@@ -37,7 +37,7 @@ async function run(args, context = {}) {
 
   try {
     const settings = await loadSettingsModule();
-    const scope = scopeName(Boolean(context.useProject));
+    const scope = scopeName(Boolean(parsed.useProject || context.useProject));
     const options = settingsOptions();
 
     if (parsed.command === 'read') {
@@ -65,6 +65,16 @@ async function run(args, context = {}) {
       stdoutLine(context, `saved workflow preference memory.autoInject=${parsed.enabled} (${scope})`);
       return 0;
     }
+    if (parsed.command === 'set-auto-accept') {
+      settings.setLearningReviewAutoAccept(scope, parsed.enabled, options);
+      stdoutLine(context, `saved workflow preference learningReview.autoAccept=${parsed.enabled} (${scope})`);
+      return 0;
+    }
+    if (parsed.command === 'set-field') {
+      settings.setScopedWorkflowField(scope, parsed.section, parsed.field, parsed.value, options);
+      stdoutLine(context, `saved workflow preference ${parsed.section}.${parsed.field}=${parsed.value} (${scope})`);
+      return 0;
+    }
 
     if (parsed.command === 'set-budget') {
       settings.setPreferenceInjectionBudget(scope, parsed.budgetTokens, options);
@@ -75,6 +85,12 @@ async function run(args, context = {}) {
     if (parsed.command === 'clear-auto-inject') {
       settings.clearMemoryAutoInject(scope, options);
       stdoutLine(context, `cleared workflow preference memory.autoInject (${scope})`);
+    } else if (parsed.command === 'clear-auto-accept') {
+      settings.clearLearningReviewAutoAccept(scope, options);
+      stdoutLine(context, `cleared workflow preference learningReview.autoAccept (${scope})`);
+    } else if (parsed.command === 'clear-field') {
+      settings.clearScopedWorkflowField(scope, parsed.section, parsed.field, options);
+      stdoutLine(context, `cleared workflow preference ${parsed.section}.${parsed.field} (${scope})`);
     } else if (parsed.name === undefined) {
       settings.writeWorkflowSettings(scope, {}, options);
       stdoutLine(context, `cleared workflow preferences (${scope})`);

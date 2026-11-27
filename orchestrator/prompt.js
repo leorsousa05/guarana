@@ -185,6 +185,9 @@ export function buildSystemBlock(workflow, preferences) {
       : '- Follow `guarana:plan` for discovery, worker ownership, records, ADRs, and known-issue policy.',
     '- After each meaningful phase/subtask, tell the user: completed work, changed paths/behavior, next action, remaining/blockers. Phase/planning completion is not task completion.',
     '- After verification/final gates, tell the user exact paths and checks/results.',
+    ...(workflow.state === 'completed'
+      ? ['- After successful `verify_pass`, if learning review enabled and task substantive, follow `guarana:memory-maintenance`; manual user requests remain available.']
+      : []),
     ...(workflow.state === 'planning'
       ? [
         '- Use `workflow_tick` action `start_task` only after `guarana:plan` discovery is closed and any required `worker-specs` write is reported complete; pass nonempty `goal` and `condition`. Never skip discovery or required records. If discovery is open, stay in planning; use `plan_complete` only for an intentionally staged transition. Do not ask the user to accept a shortcut.',

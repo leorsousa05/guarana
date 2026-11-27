@@ -9,6 +9,9 @@ import path from 'node:path';
 const PREFERENCE_NAMES = ['specs', 'verify'];
 const PREFERENCE_BUDGET_FIELD = 'preferenceInjectionBudgetTokens';
 const MEMORY_AUTO_INJECT_FIELD = 'autoInject';
+const LEARNING_REVIEW_AUTO_ACCEPT_FIELD = 'autoAccept';
+const ADVISOR_POLICY_FIELD = 'consultationPolicy';
+const ADVISOR_LIMIT_FIELD = 'maxConsultationsPerTask';
 
 function assertObject(value, label) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -48,7 +51,7 @@ export function validateWorkflowSettings(settings) {
   const normalized = {};
 
   for (const section of Object.keys(settings)) {
-    if (![...PREFERENCE_NAMES, 'memory'].includes(section)) {
+    if (![...PREFERENCE_NAMES, 'memory', 'learningReview', 'advisor'].includes(section)) {
       throw new TypeError(`Unknown workflow settings section: ${section}`);
     }
   }
@@ -92,6 +95,39 @@ export function validateWorkflowSettings(settings) {
         throw new TypeError(`Workflow setting memory.${PREFERENCE_BUDGET_FIELD} must be a positive integer token budget`);
       }
       normalized.memory = { ...(normalized.memory || {}), [PREFERENCE_BUDGET_FIELD]: budget };
+    }
+  }
+
+  if (Object.hasOwn(settings, 'learningReview')) {
+    const learningReview = settings.learningReview;
+    assertObject(learningReview, 'Workflow settings section "learningReview"');
+    for (const field of Object.keys(learningReview)) {
+      if (field !== LEARNING_REVIEW_AUTO_ACCEPT_FIELD && field !== 'enabled') {
+        throw new TypeError(`Unknown workflow settings field: learningReview.${field}`);
+      }
+    }
+    normalized.learningReview = {};
+    for (const field of ['enabled', LEARNING_REVIEW_AUTO_ACCEPT_FIELD]) {
+      if (!Object.hasOwn(learningReview, field)) continue;
+      if (typeof learningReview[field] !== 'boolean') throw new TypeError(`Workflow setting learningReview.${field} must be a boolean`);
+      normalized.learningReview[field] = learningReview[field];
+    }
+  }
+
+  if (Object.hasOwn(settings, 'advisor')) {
+    const advisor = settings.advisor;
+    assertObject(advisor, 'Workflow settings section "advisor"');
+    for (const field of Object.keys(advisor)) {
+      if (![ADVISOR_POLICY_FIELD, ADVISOR_LIMIT_FIELD].includes(field)) throw new TypeError(`Unknown workflow settings field: advisor.${field}`);
+    }
+    normalized.advisor = {};
+    if (Object.hasOwn(advisor, ADVISOR_POLICY_FIELD)) {
+      if (!['manual', 'recommended'].includes(advisor[ADVISOR_POLICY_FIELD])) throw new TypeError(`Workflow setting advisor.${ADVISOR_POLICY_FIELD} must be "manual" or "recommended"`);
+      normalized.advisor[ADVISOR_POLICY_FIELD] = advisor[ADVISOR_POLICY_FIELD];
+    }
+    if (Object.hasOwn(advisor, ADVISOR_LIMIT_FIELD)) {
+      if (!Number.isSafeInteger(advisor[ADVISOR_LIMIT_FIELD]) || advisor[ADVISOR_LIMIT_FIELD] <= 0) throw new TypeError(`Workflow setting advisor.${ADVISOR_LIMIT_FIELD} must be a positive integer`);
+      normalized.advisor[ADVISOR_LIMIT_FIELD] = advisor[ADVISOR_LIMIT_FIELD];
     }
   }
 
@@ -155,6 +191,24 @@ export function mergeWorkflowSettings(globalSettings, projectSettings) {
   if (projectAutoInject !== undefined || globalAutoInject !== undefined) {
     effective.memory[MEMORY_AUTO_INJECT_FIELD] = projectAutoInject ?? globalAutoInject;
     sources.memory[MEMORY_AUTO_INJECT_FIELD] = projectAutoInject !== undefined ? 'project' : 'global';
+  }
+
+  effective.learningReview = {};
+  sources.learningReview = {};
+  for (const field of ['enabled', LEARNING_REVIEW_AUTO_ACCEPT_FIELD]) {
+    const fallback = false;
+    const projectValue = project.learningReview?.[field];
+    const globalValue = global.learningReview?.[field];
+    effective.learningReview[field] = projectValue ?? globalValue ?? fallback;
+    sources.learningReview[field] = projectValue !== undefined ? 'project' : globalValue !== undefined ? 'global' : 'default';
+  }
+  effective.advisor = {};
+  sources.advisor = {};
+  for (const [field, fallback] of [[ADVISOR_POLICY_FIELD, 'recommended'], [ADVISOR_LIMIT_FIELD, 3]]) {
+    const projectValue = project.advisor?.[field];
+    const globalValue = global.advisor?.[field];
+    effective.advisor[field] = projectValue ?? globalValue ?? fallback;
+    sources.advisor[field] = projectValue !== undefined ? 'project' : globalValue !== undefined ? 'global' : 'default';
   }
 
   return { global, project, effective, sources };
@@ -272,6 +326,46 @@ export function clearMemoryAutoInject(scope, options = {}) {
   if (current.memory) {
     delete current.memory[MEMORY_AUTO_INJECT_FIELD];
     if (!Object.keys(current.memory).length) delete current.memory;
+  }
+  return writeWorkflowSettings(scope, current, options);
+}
+
+export function setLearningReviewAutoAccept(scope, enabled, options = {}) {
+  if (typeof enabled !== 'boolean') {
+    throw new TypeError(`Workflow setting learningReview.${LEARNING_REVIEW_AUTO_ACCEPT_FIELD} must be a boolean`);
+  }
+  const file = scopeFile(scope, options);
+  const current = readScope(file);
+  current.learningReview = {
+    ...(current.learningReview || {}),
+    [LEARNING_REVIEW_AUTO_ACCEPT_FIELD]: enabled,
+  };
+  return writeWorkflowSettings(scope, current, options);
+}
+
+export function clearLearningReviewAutoAccept(scope, options = {}) {
+  const file = scopeFile(scope, options);
+  const current = readScope(file);
+  if (current.learningReview) {
+    delete current.learningReview[LEARNING_REVIEW_AUTO_ACCEPT_FIELD];
+    if (!Object.keys(current.learningReview).length) delete current.learningReview;
+  }
+  return writeWorkflowSettings(scope, current, options);
+}
+
+export function setScopedWorkflowField(scope, section, field, value, options = {}) {
+  const file = scopeFile(scope, options);
+  const current = readScope(file);
+  current[section] = { ...(current[section] || {}), [field]: value };
+  return writeWorkflowSettings(scope, current, options);
+}
+
+export function clearScopedWorkflowField(scope, section, field, options = {}) {
+  const file = scopeFile(scope, options);
+  const current = readScope(file);
+  if (current[section]) {
+    delete current[section][field];
+    if (!Object.keys(current[section]).length) delete current[section];
   }
   return writeWorkflowSettings(scope, current, options);
 }
